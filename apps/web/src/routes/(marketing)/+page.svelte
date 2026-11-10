@@ -63,7 +63,7 @@
 <main>
   <section class="border-b border-linea">
     <div
-      class="mx-auto grid min-h-[calc(100svh-4rem)] max-w-6xl items-center gap-12 px-6 py-16 lg:grid-cols-[1fr_auto] lg:py-24"
+      class="mx-auto grid max-w-6xl items-center gap-12 px-6 py-16 lg:min-h-[48rem] lg:grid-cols-[1fr_auto] lg:py-24"
     >
       <div>
         <h1
@@ -160,7 +160,7 @@
           <li class="border-l-2 border-linea py-1 pl-5">
             <p class="font-semibold text-nopal">{i + 1}</p>
             <h3 class="mt-3 text-lg font-semibold tracking-[-0.02em]">{paso.titulo}</h3>
-            <p class="mt-2 max-w-[60ch] text-piedra">{paso.texto}</p>
+            <p class="mt-2 max-w-[60ch] text-[15px] leading-relaxed text-piedra">{paso.texto}</p>
           </li>
         {/each}
       </ol>
