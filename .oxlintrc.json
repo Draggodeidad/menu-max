@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
+  "plugins": ["typescript", "unicorn", "import", "promise"],
+  "rules": {
+    "eqeqeq": "error",
+    "no-var": "error",
+    "prefer-const": "error",
+    "no-eval": "error",
+    "no-debugger": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/ban-ts-comment": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/consistent-type-imports": "error"
+  },
+  "ignorePatterns": ["**/.svelte-kit/**", "**/build/**", "**/dist/**", "**/coverage/**"],
+  "overrides": [
+    {
+      "files": ["**/*.d.ts"],
+      "rules": {
+        "unicorn/require-module-specifiers": "off"
+      }
+    }
+  ]
+}
