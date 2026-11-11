@@ -2,13 +2,19 @@ import { fail } from "@sveltejs/kit";
 import type { Cookies } from "@sveltejs/kit";
 import {
   COOKIE_AVANCE,
+  COOKIE_PEDIDOS,
   PanelError,
+  actualizarPedidoCreado,
   buscarPedido,
   getPanelPedidos,
   getResumenPanel,
   leerAvanceDemo,
+  leerPedidosCreados,
+  serializarPedidosCreados,
   siguienteEstado,
   type AvanceDemo,
+  type EstadoCreado,
+  type PedidoCreado,
 } from "#lib/server/demo.js";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -16,7 +22,8 @@ export const load: PageServerLoad = async ({ url, cookies, depends }) => {
   depends("app:pedidos");
   const avance = leerAvanceDemo(cookies.get(COOKIE_AVANCE));
   try {
-    const pedidos = await getPanelPedidos(url, avance);
+    const creados = leerPedidosCreados(cookies.get(COOKIE_PEDIDOS));
+    const pedidos = await getPanelPedidos(url, avance, creados);
     return { pedidos, resumen: getResumenPanel(pedidos), error: false };
   } catch (e) {
     if (!(e instanceof PanelError)) throw e;
@@ -32,6 +39,29 @@ function guardarAvance(cookies: Cookies, avance: AvanceDemo) {
     sameSite: "lax",
     maxAge: 60 * 60 * 8,
   });
+}
+
+// TEMPORAL: los pedidos creados en el checkout guardan su estado en `demo_pedidos`, con path "/",
+// para que el seguimiento por token lo lea; los pedidos base siguen en `demo_avance`.
+function guardarEstado(
+  cookies: Cookies,
+  id: string,
+  estado: EstadoCreado,
+  creados: PedidoCreado[],
+  avance: AvanceDemo,
+  motivoRechazo?: string,
+) {
+  if (creados.some((p) => p.token === id)) {
+    const nuevos = actualizarPedidoCreado(creados, id, { estado, motivoRechazo });
+    cookies.set(COOKIE_PEDIDOS, serializarPedidosCreados(nuevos), {
+      path: "/",
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 60 * 60 * 8,
+    });
+  } else {
+    guardarAvance(cookies, { ...avance, [id]: estado });
+  }
 }
 
 const MENSAJE_ESTADO = {
@@ -52,11 +82,12 @@ export const actions = {
     const datos = await request.formData();
     const id = String(datos.get("id") ?? "");
     const avance = leerAvanceDemo(cookies.get(COOKIE_AVANCE));
-    const pedido = buscarPedido(id, avance);
+    const creados = leerPedidosCreados(cookies.get(COOKIE_PEDIDOS));
+    const pedido = buscarPedido(id, avance, creados);
     if (!pedido) return fail(404, { ok: false, id, error: NO_ENCONTRADO });
 
     const siguiente = siguienteEstado(pedido.estado, pedido.modalidad);
-    guardarAvance(cookies, { ...avance, [id]: siguiente });
+    guardarEstado(cookies, id, siguiente, creados, avance);
     return { ok: true, id, mensaje: `Pedido #${pedido.codigo} ${MENSAJE_ESTADO[siguiente]}.` };
   },
 
@@ -65,7 +96,8 @@ export const actions = {
     const id = String(datos.get("id") ?? "");
     const motivo = String(datos.get("motivo") ?? "").trim();
     const avance = leerAvanceDemo(cookies.get(COOKIE_AVANCE));
-    const pedido = buscarPedido(id, avance);
+    const creados = leerPedidosCreados(cookies.get(COOKIE_PEDIDOS));
+    const pedido = buscarPedido(id, avance, creados);
     if (!pedido) return fail(404, { ok: false, id, error: NO_ENCONTRADO });
     if (pedido.estado !== "pending") {
       return fail(409, { ok: false, id, error: "Solo puedes rechazar pedidos por aceptar." });
@@ -79,7 +111,7 @@ export const actions = {
       });
     }
 
-    guardarAvance(cookies, { ...avance, [id]: "rejected" });
+    guardarEstado(cookies, id, "rejected", creados, avance, motivo);
     return { ok: true, id, mensaje: `Pedido #${pedido.codigo} rechazado.` };
   },
 } satisfies Actions;
