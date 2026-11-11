@@ -1,11 +1,14 @@
 import { error, fail, redirect } from "@sveltejs/kit";
 import {
+  COOKIE_AJUSTES,
   COOKIE_PEDIDOS,
   COOKIE_PUBLICADO,
   crearPedido,
   getEntrega,
   getNegocio,
+  leerAjustesDemo,
   leerPedidosCreados,
+  modalidadesActivas,
   publicadoPara,
   serializarPedidosCreados,
   simulaError,
@@ -14,10 +17,14 @@ import {
 import type { Actions, PageServerLoad } from "./$types";
 
 // Clave de idempotencia del envío (DESIGN.md §7.2-I), generada en `load`.
-export const load: PageServerLoad = ({ url, setHeaders }) => {
+export const load: PageServerLoad = ({ url, setHeaders, params, cookies }) => {
   setHeaders({ "cache-control": "no-store" });
+  const publicado = publicadoPara(params.slug, cookies.get(COOKIE_PUBLICADO));
+  const { servicio } = leerAjustesDemo(cookies.get(COOKIE_AJUSTES));
   return {
     mesa: url.searchParams.get("mesa"),
+    // El cliente solo muestra lo que el servidor habilita; la action vuelve a validarlo.
+    modalidades: modalidadesActivas(servicio, publicado),
     idempotencyKey: crypto.randomUUID(),
     entrega: getEntrega(), // TEMPORAL: sin API todavía
   };
@@ -47,7 +54,25 @@ export const actions: Actions = {
     const texto = (name: string) => String(form.get(name) ?? "").trim();
     const mesa = url.searchParams.get("mesa");
     const pedida = texto("modalidad");
-    const modalidad = mesa ? "mesa" : pedida === "domicilio" ? "domicilio" : "recoger";
+    // TEMPORAL: sin API todavía. Las modalidades y horarios vienen de los ajustes guardados.
+    const { servicio } = leerAjustesDemo(cookies.get(COOKIE_AJUSTES));
+    const activas = modalidadesActivas(
+      servicio,
+      publicadoPara(params.slug, cookies.get(COOKIE_PUBLICADO)),
+    );
+    const modalidad = mesa
+      ? "mesa"
+      : pedida === "domicilio" || pedida === "recoger"
+        ? pedida
+        : (activas.find((m) => m !== "mesa") ?? "recoger");
+    if (!activas.includes(modalidad)) {
+      return fail(409, {
+        error:
+          modalidad === "mesa"
+            ? "Este negocio ya no recibe pedidos en mesa. Pide en mostrador."
+            : "Esta modalidad no está disponible. Elige otra para continuar.",
+      });
+    }
     const values = {
       modalidad,
       nombre: texto("nombre"),
@@ -77,8 +102,13 @@ export const actions: Actions = {
     // recalculará precios, total y disponibilidad, y validará el horario.
     // Las banderas de desarrollo se leen del referer porque la action no conserva la query.
     const origen = new URL(request.headers.get("referer") ?? url);
-    const negocio = getNegocio(params.slug, origen, publicado);
-    if (!negocio) error(404, "Este menú no existe.");
+
+    const negocio = getNegocio(params.slug, origen, publicado, servicio);
+
+    if (!negocio) {
+      error(404, "Este menú no existe.");
+    }
+
     if (!negocio.abierto) {
       return fail(409, { error: `Estamos cerrados. Abrimos a las ${negocio.abre}.`, values });
     }

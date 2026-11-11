@@ -29,7 +29,8 @@
     `--brand:${data.tema.brand};--brand-bg:${data.tema.bg};--brand-text:${data.tema.text};` +
       `--brand-muted:color-mix(in srgb,${data.tema.text} 70%,${data.tema.bg});` +
       `--brand-line:color-mix(in srgb,${data.tema.text} 12%,${data.tema.bg});` +
-      `--brand-tint:color-mix(in srgb,${data.tema.text} 8%,${data.tema.bg})`,
+      `--brand-tint:color-mix(in srgb,${data.tema.text} 8%,${data.tema.bg});` +
+      `font-family:${data.tema.familia}`,
   );
 </script>
 
@@ -40,6 +41,13 @@
     content="Menú de {data.negocio.nombre}. Elige tus productos y envía tu pedido."
   />
   <meta property="og:title" content="{data.negocio.nombre} · Menú" />
+  {#if data.tema.fuente !== "sans"}
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=Source+Serif+4:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+  {/if}
 </svelte:head>
 
 <div style={vars} class="min-h-dvh bg-(color:--brand-bg) text-(color:--brand-text)">

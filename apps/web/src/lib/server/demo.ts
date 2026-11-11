@@ -12,15 +12,31 @@ export const slugNegocioDemo = "tacos-el-guero";
 const NOMBRE_NEGOCIO_DEMO = "Tacos El Güero";
 
 /** Devuelve `null` si el slug no es el negocio demo sembrado ni el publicado por este navegador. */
-export function getNegocio(slug: string, url: URL, publicado?: NegocioPublicado | null) {
+export function getNegocio(
+  slug: string,
+  url: URL,
+  publicado?: NegocioPublicado | null,
+  servicio?: Pick<AjustesDemo["servicio"], "abre" | "cierra">,
+) {
   if (slug !== slugNegocioDemo && publicado?.slug !== slug) return null;
+
   return {
     slug,
     nombre: publicado?.nombre ?? NOMBRE_NEGOCIO_DEMO,
+    // TEMPORAL: sin reloj para que las pruebas sean deterministas; solo la bandera cierra el negocio.
     abierto: !flag(url, "abierto", "false"),
-    cierra: "23:00",
-    abre: "09:00",
+    abre: servicio?.abre ?? AJUSTES_BASE.servicio.abre,
+    cierra: servicio?.cierra ?? AJUSTES_BASE.servicio.cierra,
   };
+}
+
+/** Modalidades que el negocio acepta: las del menú publicado o las guardadas en ajustes. */
+export function modalidadesActivas(
+  servicio: AjustesDemo["servicio"],
+  publicado?: NegocioPublicado | null,
+): Modalidad[] {
+  if (publicado) return MODALIDADES.filter((m) => publicado.modalidades.includes(m));
+  return MODALIDADES.filter((m) => servicio[m]);
 }
 
 // TEMPORAL: menú publicado desde /crear. Vive en una cookie por navegador (nunca en el
@@ -974,7 +990,7 @@ const AJUSTES_BASE: AjustesDemo = {
     mesa: true,
     recoger: true,
     domicilio: true,
-    abre: "13:00",
+    abre: "09:00",
     cierra: "23:00",
     tiempoMin: 25,
   },
@@ -1033,4 +1049,17 @@ function luminancia(hex: string): number {
 export function contraste(a: string, b: string): number {
   const [la, lb] = [luminancia(a), luminancia(b)];
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+const [presetBase = PRESETS_TEMA[0] as PresetInfo] = PRESETS_TEMA;
+const [fuenteBase = FUENTES_TEMA[0] as (typeof FUENTES_TEMA)[number]] = FUENTES_TEMA;
+
+/** Tema del menú público a partir de lo guardado en ajustes (preset + color primario + fuente). */
+export function resolverTema(ajustes: AjustesDemo) {
+  const preset = PRESETS_TEMA.find((p) => p.id === ajustes.tema.preset) ?? presetBase;
+  const fuente = FUENTES_TEMA.find((f) => f.id === ajustes.tema.fuente) ?? fuenteBase;
+  const primario = normalizaHex(ajustes.tema.primario);
+  // Un valor que no cumple el contraste (cookie manipulada) vuelve al color del preset.
+  const brand = primario && contraste(primario, preset.bg) >= 4.5 ? primario : preset.brand;
+  return { brand, bg: preset.bg, text: preset.text, fuente: fuente.id, familia: fuente.familia };
 }
