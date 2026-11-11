@@ -9,8 +9,19 @@ import {
 import type { LayoutServerLoad } from "./$types";
 
 export const load: LayoutServerLoad = ({ params, url, cookies }) => {
-  const publicado = publicadoPara(params.slug, cookies.get(COOKIE_PUBLICADO));
-  // TEMPORAL: sin API todavía. El tema guardado en /app/ajustes viaja en una cookie por navegador.
-  const tema = resolverTema(leerAjustesDemo(cookies.get(COOKIE_AJUSTES)));
-  return { negocio: getNegocio(params.slug, url, publicado), tema };
+  const publicado = publicadoPara(
+    params.slug,
+    cookies.get(COOKIE_PUBLICADO),
+  );
+
+  // TEMPORAL: sin API todavía. Los ajustes viven en una cookie del navegador.
+  const ajustes = leerAjustesDemo(cookies.get(COOKIE_AJUSTES));
+
+  const tema = resolverTema(ajustes);
+  const { servicio } = ajustes;
+
+  return {
+    negocio: getNegocio(params.slug, url, publicado, servicio),
+    tema,
+  };
 };

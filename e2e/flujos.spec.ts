@@ -131,7 +131,7 @@ test("el menú público omite los productos agotados del catálogo", async ({ pa
 });
 
 // H06: el checkout ignora las modalidades guardadas.
-test.fixme("las modalidades guardadas se respetan en el checkout", async ({ page }) => {
+test("las modalidades guardadas se respetan en el checkout", async ({ page }) => {
   await ir(page, "/app/ajustes");
   await page
     .getByRole("switch", { name: /A domicilio/ })

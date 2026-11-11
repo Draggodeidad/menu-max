@@ -11,14 +11,29 @@ const flag = (url: URL, name: string, value: string) => dev && url.searchParams.
 export const slugNegocioDemo = "tacos-el-guero";
 const NOMBRE_NEGOCIO_DEMO = "Tacos El Güero";
 
-export function getNegocio(slug: string, url: URL, publicado?: NegocioPublicado | null) {
+export function getNegocio(
+  slug: string,
+  url: URL,
+  publicado?: NegocioPublicado | null,
+  servicio?: Pick<AjustesDemo["servicio"], "abre" | "cierra">,
+) {
   return {
     slug,
     nombre: publicado?.nombre ?? NOMBRE_NEGOCIO_DEMO,
+    // TEMPORAL: sin reloj para que las pruebas sean deterministas; solo la bandera cierra el negocio.
     abierto: !flag(url, "abierto", "false"),
-    cierra: "23:00",
-    abre: "09:00",
+    abre: servicio?.abre ?? AJUSTES_BASE.servicio.abre,
+    cierra: servicio?.cierra ?? AJUSTES_BASE.servicio.cierra,
   };
+}
+
+/** Modalidades que el negocio acepta: las del menú publicado o las guardadas en ajustes. */
+export function modalidadesActivas(
+  servicio: AjustesDemo["servicio"],
+  publicado?: NegocioPublicado | null,
+): Modalidad[] {
+  if (publicado) return MODALIDADES.filter((m) => publicado.modalidades.includes(m));
+  return MODALIDADES.filter((m) => servicio[m]);
 }
 
 // TEMPORAL: menú publicado desde /crear. Vive en una cookie por navegador (nunca en el
@@ -965,7 +980,7 @@ const AJUSTES_BASE: AjustesDemo = {
     mesa: true,
     recoger: true,
     domicilio: true,
-    abre: "13:00",
+    abre: "09:00",
     cierra: "23:00",
     tiempoMin: 25,
   },
