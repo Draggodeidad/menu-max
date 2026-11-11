@@ -89,7 +89,11 @@ test("el pedido ofrece salida a WhatsApp sin enviar mensajes durante la prueba",
   );
   const href = (await enlace.getAttribute("href")) ?? "";
   expect(href).toContain("wa.me/525512345678");
-  expect(decodeURIComponent(href)).toMatch(/Total: \$[\d,]+\.\d{2} MXN/);
+  const mensaje = new URL(href).searchParams.get("text");
+  expect(mensaje).toContain("Ana Prueba");
+  expect(mensaje).toContain("1× Agua de horchata (1 L)");
+  expect(mensaje).toContain("Total: $35.00 MXN");
+  expect(mensaje).toContain(page.url());
 });
 
 test("acepta y avanza un pedido y conserva el cambio al recargar", async ({ page }) => {

@@ -472,8 +472,9 @@ export const COOKIE_PEDIDOS = "demo_pedidos";
 const MAX_PEDIDOS_CREADOS = 5;
 const PRIMER_CODIGO = 1047; // continúa tras los pedidos base (#1042-#1046)
 
-const MODALIDADES = new Set<string>(["mesa", "recoger", "domicilio"]);
 const esTexto = (v: unknown): v is string => typeof v === "string";
+const esModalidad = (v: unknown): v is Modalidad =>
+  esTexto(v) && MODALIDADES.some((modalidad) => modalidad === v);
 
 export function leerPedidosCreados(raw: string | undefined): PedidoCreado[] {
   if (!raw) return [];
@@ -485,8 +486,9 @@ export function leerPedidosCreados(raw: string | undefined): PedidoCreado[] {
       if (typeof item !== "object" || item === null) continue;
       const { token, codigo, estado, modalidad, cliente, lineas, creadoEn } = item;
       const c = cliente as Record<string, unknown> | null;
-      if (!esTexto(token) || !esTexto(codigo) || !esTexto(estado) || !esTexto(modalidad)) continue;
-      if (!ESTADOS_VALIDOS.has(estado) || !MODALIDADES.has(modalidad)) continue;
+      if (!esTexto(token) || !esTexto(codigo) || !esTexto(estado) || !esModalidad(modalidad))
+        continue;
+      if (!ESTADOS_VALIDOS.has(estado)) continue;
       if (typeof c !== "object" || c === null || !esTexto(c.nombre) || !esTexto(c.telefono))
         continue;
       if (!Array.isArray(lineas) || typeof creadoEn !== "number") continue;
@@ -497,7 +499,7 @@ export function leerPedidosCreados(raw: string | undefined): PedidoCreado[] {
         token,
         codigo,
         estado: estado as EstadoCreado,
-        modalidad: modalidad as Modalidad,
+        modalidad,
         mesa: esTexto(item.mesa) ? item.mesa : undefined,
         cliente: { nombre: c.nombre, telefono: c.telefono },
         direccion: esTexto(item.direccion) ? item.direccion : undefined,
