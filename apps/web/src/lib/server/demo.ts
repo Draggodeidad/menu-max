@@ -89,6 +89,41 @@ export async function getCategorias(url: URL) {
   ];
 }
 
+/**
+ * TEMPORAL: valida las líneas de un pedido contra el menú del negocio. El cliente solo manda
+ * ids, opción y cantidad; la API recalculará esto y los montos. Devuelve un mensaje accionable
+ * o `null` si todas las líneas son válidas.
+ */
+export async function validarLineasPedido(
+  lineas: { id: string; opcion: string }[],
+  url: URL,
+): Promise<string | null> {
+  type Producto = {
+    id: string;
+    nombre: string;
+    disponible?: boolean;
+    opciones?: { valores: string[] };
+  };
+  const productos = new Map<string, Producto>();
+  for (const categoria of await getCategorias(url)) {
+    for (const p of categoria.productos as Producto[]) productos.set(p.id, p);
+  }
+  for (const { id, opcion } of lineas) {
+    const producto = productos.get(id);
+    if (!producto) {
+      return "Un producto de tu pedido ya no está en el menú. Quítalo para continuar.";
+    }
+    if (producto.disponible === false) {
+      return `${producto.nombre} ya no está disponible. Quítalo para continuar.`;
+    }
+    const valores = producto.opciones?.valores ?? [];
+    if (valores.length > 0 ? !valores.includes(opcion) : opcion !== "") {
+      return `Elige una opción válida para ${producto.nombre}.`;
+    }
+  }
+  return null;
+}
+
 // TEMPORAL: seguimiento de pedido. Lo entregará la API con el token público.
 export type EstadoPedido =
   | "pending"
