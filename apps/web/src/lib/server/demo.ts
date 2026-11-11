@@ -9,14 +9,94 @@ const flag = (url: URL, name: string, value: string) => dev && url.searchParams.
 // TEMPORAL: negocio mostrado en la pantalla de activación.
 export const slugNegocioDemo = "tacos-el-guero";
 
-export function getNegocio(slug: string, url: URL) {
+export function getNegocio(slug: string, url: URL, publicado?: NegocioPublicado | null) {
   return {
     slug,
-    nombre: "Tacos El Güero",
+    nombre: publicado?.nombre ?? "Tacos El Güero",
     abierto: !flag(url, "abierto", "false"),
     cierra: "23:00",
     abre: "09:00",
   };
+}
+
+// TEMPORAL: menú publicado desde /crear. Vive en una cookie por navegador (nunca en el
+// módulo, que en SSR se comparte entre usuarios). La API lo guardará con el negocio.
+export type NegocioPublicado = {
+  slug: string;
+  nombre: string;
+  whatsapp: string;
+  modalidades: Modalidad[];
+  productos: { id: string; nombre: string; precioCents: number }[];
+};
+
+// TEMPORAL: productos de ejemplo con los que arranca /crear (precios como texto de formulario).
+export const PRODUCTOS_EJEMPLO_CREAR = [
+  { nombre: "Pastor con piña", precio: "22.00" },
+  { nombre: "Suadero confitado", precio: "24.00" },
+  { nombre: "Agua de horchata (1L)", precio: "35.00" },
+];
+
+export const COOKIE_PUBLICADO = "demo_publicado";
+/** Las cookies admiten ~4 kB; con este tope la demo avisa antes de que el navegador la descarte. */
+export const LIMITE_COOKIE_PUBLICADO = 3500;
+export const MAX_PRODUCTOS_PUBLICADO = 15;
+export const MODALIDADES: Modalidad[] = ["mesa", "recoger", "domicilio"];
+
+export const slugify = (nombre: string) =>
+  nombre
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+export function leerPublicado(raw: string | undefined): NegocioPublicado | null {
+  if (!raw) return null;
+  try {
+    const p: unknown = JSON.parse(raw);
+    if (!esRegistro(p) || typeof p.slug !== "string" || typeof p.nombre !== "string") return null;
+    if (typeof p.whatsapp !== "string" || !Array.isArray(p.modalidades)) return null;
+    if (!Array.isArray(p.productos)) return null;
+    return {
+      slug: p.slug,
+      nombre: p.nombre,
+      whatsapp: p.whatsapp,
+      modalidades: p.modalidades.filter((m): m is Modalidad => MODALIDADES.includes(m)),
+      productos: p.productos.filter(
+        (x): x is NegocioPublicado["productos"][number] =>
+          esRegistro(x) &&
+          typeof x.id === "string" &&
+          typeof x.nombre === "string" &&
+          typeof x.precioCents === "number",
+      ),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** El negocio publicado solo existe para su propio slug; cualquier otro usa el mock base. */
+export const publicadoPara = (slug: string, raw: string | undefined) => {
+  const negocio = leerPublicado(raw);
+  return negocio?.slug === slug ? negocio : null;
+};
+
+/** Categorías del menú público a partir del negocio publicado. */
+export function categoriasPublicado(negocio: NegocioPublicado) {
+  return [
+    {
+      id: "menu",
+      nombre: "Menú principal",
+      productos: negocio.productos.map((p) => ({
+        id: p.id,
+        nombre: p.nombre,
+        descripcion: "",
+        precioCents: p.precioCents,
+        imagen: PLACEHOLDER_IMAGE,
+      })),
+    },
+  ];
 }
 
 // TEMPORAL: datos de entrega por sucursal. Los entregará la API con el negocio.
