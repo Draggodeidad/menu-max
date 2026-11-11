@@ -13,3 +13,7 @@ playwright-report/
 # Planeación local de agentes (apps/api)
 apps/api/docs/STATUS.md
 apps/api/docs/tasks/
+
+# Cloudflare Workers (apps/api)
+.dev.vars
+.wrangler/

@@ -1,9 +1,10 @@
 import { Hono } from "hono";
-import { healthRoutes } from "./modules/health/health.routes.js";
+import type { AppEnv } from "./types";
 
 export function createApp() {
-  const app = new Hono();
+  const app = new Hono<AppEnv>();
 
-  app.route("/health", healthRoutes);
+  app.get("/v1/health", (c) => c.json({ status: "ok", environment: c.env.ENVIRONMENT }));
+
   return app;
 }
