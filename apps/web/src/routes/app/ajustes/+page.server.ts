@@ -58,8 +58,10 @@ export const load: PageServerLoad = async ({ url, cookies, parent, depends }) =>
 
 // TEMPORAL: sin API todavía. Los cambios se guardan en una cookie por usuario.
 function guardar(cookies: Cookies, ajustes: AjustesDemo) {
+  // `path: "/"` para que el menú público y el checkout lean los mismos ajustes; se borra la cookie anterior.
+  cookies.delete(COOKIE_AJUSTES, { path: "/app" });
   cookies.set(COOKIE_AJUSTES, JSON.stringify(ajustes), {
-    path: "/app",
+    path: "/",
     httpOnly: true,
     sameSite: "lax",
     maxAge: 60 * 60 * 8,
