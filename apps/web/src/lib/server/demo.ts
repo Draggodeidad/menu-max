@@ -2,6 +2,7 @@
 // `packages/contracts` y el cliente tipado `#lib/server/api.ts`. Borrar entonces.
 import { dev } from "$app/env";
 import { PLACEHOLDER_IMAGE } from "#lib/images.js";
+import { formatMoney } from "#lib/money.js";
 
 /** Banderas solo para desarrollo: ?abierto=false, ?vacio=1, ?lento=1 */
 const flag = (url: URL, name: string, value: string) => dev && url.searchParams.get(name) === value;
@@ -9,14 +10,94 @@ const flag = (url: URL, name: string, value: string) => dev && url.searchParams.
 // TEMPORAL: negocio mostrado en la pantalla de activación.
 export const slugNegocioDemo = "tacos-el-guero";
 
-export function getNegocio(slug: string, url: URL) {
+export function getNegocio(slug: string, url: URL, publicado?: NegocioPublicado | null) {
   return {
     slug,
-    nombre: "Tacos El Güero",
+    nombre: publicado?.nombre ?? "Tacos El Güero",
     abierto: !flag(url, "abierto", "false"),
     cierra: "23:00",
     abre: "09:00",
   };
+}
+
+// TEMPORAL: menú publicado desde /crear. Vive en una cookie por navegador (nunca en el
+// módulo, que en SSR se comparte entre usuarios). La API lo guardará con el negocio.
+export type NegocioPublicado = {
+  slug: string;
+  nombre: string;
+  whatsapp: string;
+  modalidades: Modalidad[];
+  productos: { id: string; nombre: string; precioCents: number }[];
+};
+
+// TEMPORAL: productos de ejemplo con los que arranca /crear (precios como texto de formulario).
+export const PRODUCTOS_EJEMPLO_CREAR = [
+  { nombre: "Pastor con piña", precio: "22.00" },
+  { nombre: "Suadero confitado", precio: "24.00" },
+  { nombre: "Agua de horchata (1L)", precio: "35.00" },
+];
+
+export const COOKIE_PUBLICADO = "demo_publicado";
+/** Las cookies admiten ~4 kB; con este tope la demo avisa antes de que el navegador la descarte. */
+export const LIMITE_COOKIE_PUBLICADO = 3500;
+export const MAX_PRODUCTOS_PUBLICADO = 15;
+export const MODALIDADES: Modalidad[] = ["mesa", "recoger", "domicilio"];
+
+export const slugify = (nombre: string) =>
+  nombre
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+export function leerPublicado(raw: string | undefined): NegocioPublicado | null {
+  if (!raw) return null;
+  try {
+    const p: unknown = JSON.parse(raw);
+    if (!esRegistro(p) || typeof p.slug !== "string" || typeof p.nombre !== "string") return null;
+    if (typeof p.whatsapp !== "string" || !Array.isArray(p.modalidades)) return null;
+    if (!Array.isArray(p.productos)) return null;
+    return {
+      slug: p.slug,
+      nombre: p.nombre,
+      whatsapp: p.whatsapp,
+      modalidades: p.modalidades.filter((m): m is Modalidad => MODALIDADES.includes(m)),
+      productos: p.productos.filter(
+        (x): x is NegocioPublicado["productos"][number] =>
+          esRegistro(x) &&
+          typeof x.id === "string" &&
+          typeof x.nombre === "string" &&
+          typeof x.precioCents === "number",
+      ),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** El negocio publicado solo existe para su propio slug; cualquier otro usa el mock base. */
+export const publicadoPara = (slug: string, raw: string | undefined) => {
+  const negocio = leerPublicado(raw);
+  return negocio?.slug === slug ? negocio : null;
+};
+
+/** Categorías del menú público a partir del negocio publicado. */
+export function categoriasPublicado(negocio: NegocioPublicado) {
+  return [
+    {
+      id: "menu",
+      nombre: "Menú principal",
+      productos: negocio.productos.map((p) => ({
+        id: p.id,
+        nombre: p.nombre,
+        descripcion: "",
+        precioCents: p.precioCents,
+        imagen: PLACEHOLDER_IMAGE,
+      })),
+    },
+  ];
 }
 
 // TEMPORAL: datos de entrega por sucursal. Los entregará la API con el negocio.
@@ -37,6 +118,11 @@ export const tema = { brand: "#1c1f1a", bg: "#ffffff", text: "#1c1f1a" };
 export async function getCategorias(url: URL) {
   if (flag(url, "lento", "1")) await new Promise((r) => setTimeout(r, 1500));
   if (flag(url, "vacio", "1")) return [];
+  return catalogoPublico();
+}
+
+/** Catálogo público del servidor: fuente de precios para calcular pedidos. */
+function catalogoPublico() {
   return [
     {
       id: "tacos",
@@ -145,7 +231,30 @@ const ESTADOS: EstadoPedido[] = [
 ];
 
 /** Solo desarrollo: ?estado=preparing, ?modalidad=domicilio|mesa, ?retraso=1 */
-export function getPedido(token: string, url: URL) {
+export function getPedido(token: string, url: URL, creados: PedidoCreado[] = []) {
+  const creado = creados.find((p) => p.token === token);
+  if (creado) {
+    const { lineas, totalCents } = calcularLineas(creado.lineas);
+    return {
+      token,
+      codigo: creado.codigo,
+      estado: creado.estado,
+      modalidad: creado.modalidad,
+      mesa: creado.mesa ?? "",
+      cliente: creado.cliente.nombre,
+      retraso: flag(url, "retraso", "1"),
+      motivoRechazo: creado.motivoRechazo ?? "El negocio no pudo atender tu pedido.",
+      negocio: { nombre: "Tacos El Güero", telefono: "+525512345678" },
+      lineas: lineas.map((l) => ({
+        id: l.id,
+        nombre: l.nombre,
+        descripcion: `${formatMoney(l.totalCents / l.cantidad)} c/u`,
+        cantidad: l.cantidad,
+        totalCents: l.totalCents,
+      })),
+      totalCents,
+    };
+  }
   const estado = dev ? url.searchParams.get("estado") : null;
   const modalidad = dev ? url.searchParams.get("modalidad") : null;
   return {
@@ -339,10 +448,11 @@ export const COOKIE_AVANCE = "demo_avance";
 
 export class PanelError extends Error {}
 
-export async function getPanelPedidos(url: URL, avance: AvanceDemo) {
+export async function getPanelPedidos(url: URL, avance: AvanceDemo, creados: PedidoCreado[] = []) {
   if (flag(url, "lento", "1")) await new Promise((r) => setTimeout(r, 1500));
   if (flag(url, "error", "1")) throw new PanelError("demo: error de carga");
-  return pedidosActivos(flag(url, "vacio", "1") ? [] : PEDIDOS_BASE, avance);
+  if (flag(url, "vacio", "1")) return [];
+  return pedidosActivos(baseConCreados(creados), avance);
 }
 
 /** Pedidos aún en el panel, con el avance simulado aplicado. */
@@ -357,13 +467,179 @@ export function pedidosActivos(base: PedidoPanel[], avance: AvanceDemo): PedidoP
 }
 
 /** Solo para validar acciones: busca un pedido del panel por id. */
-export function buscarPedido(id: string, avance: AvanceDemo): PedidoPanel | undefined {
-  return pedidosActivos(PEDIDOS_BASE, avance).find((p) => p.id === id);
+export function buscarPedido(
+  id: string,
+  avance: AvanceDemo,
+  creados: PedidoCreado[] = [],
+): PedidoPanel | undefined {
+  return pedidosActivos(baseConCreados(creados), avance).find((p) => p.id === id);
 }
 
-export function contarNuevos(avance: AvanceDemo): number {
-  return pedidosActivos(PEDIDOS_BASE, avance).filter((p) => p.estado === "pending").length;
+export function contarNuevos(avance: AvanceDemo, creados: PedidoCreado[] = []): number {
+  return pedidosActivos(baseConCreados(creados), avance).filter((p) => p.estado === "pending")
+    .length;
 }
+
+// TEMPORAL: pedidos creados desde el checkout. Sin backend, viven en una cookie por navegador
+// (nunca en el módulo, que en SSR se comparte entre usuarios) y guardan solo ids, cantidades,
+// datos del cliente y estado. Nombres e importes se recalculan siempre desde el catálogo del
+// servidor, de modo que el cliente no puede dictar precios. No hay sincronización entre
+// navegadores: el pedido solo existe en el navegador que lo creó.
+export type EstadoCreado = EstadoPanel | EstadoFinal;
+
+export type PedidoCreado = {
+  token: string;
+  codigo: string;
+  estado: EstadoCreado;
+  modalidad: Modalidad;
+  mesa?: string;
+  cliente: { nombre: string; telefono: string };
+  direccion?: string;
+  nota?: string;
+  motivoRechazo?: string;
+  lineas: { id: string; cantidad: number }[];
+  /** Marca de tiempo (ms) de creación. */
+  creadoEn: number;
+};
+
+export const COOKIE_PEDIDOS = "demo_pedidos";
+/** Tope para que la cookie quede por debajo de ~4 kB: se descartan los pedidos más antiguos. */
+const MAX_PEDIDOS_CREADOS = 5;
+const PRIMER_CODIGO = 1047; // continúa tras los pedidos base (#1042-#1046)
+
+const MODALIDADES = new Set<string>(["mesa", "recoger", "domicilio"]);
+const esTexto = (v: unknown): v is string => typeof v === "string";
+
+export function leerPedidosCreados(raw: string | undefined): PedidoCreado[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const pedidos: PedidoCreado[] = [];
+    for (const item of parsed as Record<string, unknown>[]) {
+      if (typeof item !== "object" || item === null) continue;
+      const { token, codigo, estado, modalidad, cliente, lineas, creadoEn } = item;
+      const c = cliente as Record<string, unknown> | null;
+      if (!esTexto(token) || !esTexto(codigo) || !esTexto(estado) || !esTexto(modalidad)) continue;
+      if (!ESTADOS_VALIDOS.has(estado) || !MODALIDADES.has(modalidad)) continue;
+      if (typeof c !== "object" || c === null || !esTexto(c.nombre) || !esTexto(c.telefono))
+        continue;
+      if (!Array.isArray(lineas) || typeof creadoEn !== "number") continue;
+      const lineasValidas = (lineas as Record<string, unknown>[]).filter(
+        (l) => esTexto(l?.id) && Number.isInteger(l.cantidad) && (l.cantidad as number) >= 1,
+      ) as { id: string; cantidad: number }[];
+      pedidos.push({
+        token,
+        codigo,
+        estado: estado as EstadoCreado,
+        modalidad: modalidad as Modalidad,
+        mesa: esTexto(item.mesa) ? item.mesa : undefined,
+        cliente: { nombre: c.nombre, telefono: c.telefono },
+        direccion: esTexto(item.direccion) ? item.direccion : undefined,
+        nota: esTexto(item.nota) ? item.nota : undefined,
+        motivoRechazo: esTexto(item.motivoRechazo) ? item.motivoRechazo : undefined,
+        lineas: lineasValidas.map(({ id, cantidad }) => ({ id, cantidad })),
+        creadoEn,
+      });
+    }
+    return pedidos;
+  } catch {
+    return [];
+  }
+}
+
+export function serializarPedidosCreados(pedidos: PedidoCreado[]): string {
+  return JSON.stringify(pedidos.slice(0, MAX_PEDIDOS_CREADOS));
+}
+
+/** Productos del servidor con los que se calculan importes (ids -> producto). */
+function productosPorId() {
+  const productos = new Map<string, { nombre: string; precioCents: number }>();
+  for (const categoria of catalogoPublico()) {
+    for (const p of categoria.productos) productos.set(p.id, p);
+  }
+  return productos;
+}
+
+/** Recalcula nombres e importes desde el catálogo del servidor; ignora ids desconocidos. */
+function calcularLineas(entrada: { id: string; cantidad: number }[]) {
+  const productos = productosPorId();
+  const lineas: { id: string; nombre: string; cantidad: number; totalCents: number }[] = [];
+  for (const { id, cantidad } of entrada) {
+    const producto = productos.get(id);
+    if (!producto) continue;
+    lineas.push({
+      id,
+      nombre: producto.nombre,
+      cantidad,
+      totalCents: producto.precioCents * cantidad,
+    });
+  }
+  return { lineas, totalCents: lineas.reduce((suma, l) => suma + l.totalCents, 0) };
+}
+
+export type NuevoPedido = {
+  token: string;
+  modalidad: Modalidad;
+  mesa?: string;
+  cliente: { nombre: string; telefono: string };
+  direccion?: string;
+  nota?: string;
+  lineas: { id: string; cantidad: number }[];
+};
+
+/** Ids que no existen en el catálogo del servidor. */
+export const productosDesconocidos = (lineas: { id: string }[]) => {
+  const productos = productosPorId();
+  return lineas.filter((l) => !productos.has(l.id)).map((l) => l.id);
+};
+
+/**
+ * Registra un pedido nuevo en `pedidos` (idempotente por token) y devuelve la lista nueva.
+ * No recibe importes: se calculan al leer.
+ */
+export function crearPedido(pedidos: PedidoCreado[], nuevo: NuevoPedido): PedidoCreado[] {
+  if (pedidos.some((p) => p.token === nuevo.token)) return pedidos;
+  const ultimo = Math.max(PRIMER_CODIGO - 1, ...pedidos.map((p) => Number(p.codigo) || 0));
+  const creado: PedidoCreado = {
+    ...nuevo,
+    codigo: String(ultimo + 1),
+    estado: "pending",
+    creadoEn: Date.now(),
+  };
+  return [creado, ...pedidos].slice(0, MAX_PEDIDOS_CREADOS);
+}
+
+/** Aplica un nuevo estado a un pedido creado; devuelve la lista nueva. */
+export function actualizarPedidoCreado(
+  pedidos: PedidoCreado[],
+  token: string,
+  cambios: { estado: EstadoCreado; motivoRechazo?: string },
+): PedidoCreado[] {
+  return pedidos.map((p) => (p.token === token ? { ...p, ...cambios } : p));
+}
+
+/** Pedidos creados con la forma del panel (id = token); los entregados o rechazados salen luego. */
+function creadosComoPanel(creados: PedidoCreado[]): PedidoPanel[] {
+  const ahora = Date.now();
+  return creados
+    .filter((p) => p.estado !== "delivered" && p.estado !== "rejected")
+    .map((p) => ({
+      id: p.token,
+      codigo: p.codigo,
+      modalidad: p.modalidad,
+      mesa: p.mesa,
+      estado: p.estado as EstadoPanel,
+      haceMin: Math.max(0, Math.floor((ahora - p.creadoEn) / 60000)),
+      cliente: p.cliente,
+      direccion: p.direccion,
+      nota: p.nota,
+      lineas: calcularLineas(p.lineas).lineas,
+      totalCents: calcularLineas(p.lineas).totalCents,
+    }));
+}
+
+const baseConCreados = (creados: PedidoCreado[]) => [...creadosComoPanel(creados), ...PEDIDOS_BASE];
 
 // TEMPORAL: negocio de la sesión simulada del panel y métricas del día.
 export function getNegocioPanel(url: URL) {

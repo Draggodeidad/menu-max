@@ -1,10 +1,11 @@
 import QRCode from "qrcode";
-import { slugNegocioDemo } from "#lib/server/demo.js";
+import { COOKIE_PUBLICADO, leerPublicado, slugNegocioDemo } from "#lib/server/demo.js";
 import type { PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = async ({ url }) => {
+export const load: PageServerLoad = async ({ url, cookies }) => {
   // TEMPORAL: el negocio publicado se sustituirá por los datos de la sesión.
-  const enlace = new URL(`/m/${slugNegocioDemo}`, url.origin).href;
+  const publicado = leerPublicado(cookies.get(COOKIE_PUBLICADO));
+  const enlace = new URL(`/m/${publicado?.slug ?? slugNegocioDemo}`, url.origin).href;
   const qr = QRCode.create(enlace, { errorCorrectionLevel: "M" });
   const svg = await QRCode.toString(enlace, { type: "svg", margin: 4 });
 
