@@ -10,6 +10,7 @@
   import UtensilsCrossed from "@lucide/svelte/icons/utensils-crossed";
   import type { LayoutProps } from "./$types";
   import CatalogoSkeleton from "./catalogo/CatalogoSkeleton.svelte";
+  import AjustesSkeleton from "./ajustes/AjustesSkeleton.svelte";
   import PedidosSkeleton from "./PedidosSkeleton.svelte";
 
   let { data, children }: LayoutProps = $props();
@@ -38,7 +39,7 @@
 {/snippet}
 
 <aside
-  class="fixed inset-y-0 left-0 hidden w-56 flex-col gap-4 border-r border-linea bg-white p-4 lg:flex"
+  class="fixed inset-y-0 left-0 hidden w-56 flex-col print:!hidden gap-4 border-r border-linea bg-white p-4 lg:flex"
 >
   {@render marca()}
 
@@ -96,9 +97,9 @@
   </a>
 </aside>
 
-<div class="min-h-dvh pb-16 lg:pb-0 lg:pl-56">
+<div class="min-h-dvh pb-16 lg:pb-0 lg:pl-56 print:pl-0">
   <header
-    class="sticky top-0 z-10 flex min-h-16 items-center justify-between gap-3 border-b border-linea bg-white px-4 sm:px-6"
+    class="sticky top-0 z-10 flex min-h-16 print:hidden items-center justify-between gap-3 border-b border-linea bg-white px-4 sm:px-6"
   >
     <div class="flex min-w-0 items-center gap-3">
       <p class="flex min-w-0 items-center gap-2 text-sm text-piedra">
@@ -148,6 +149,8 @@
     <PedidosSkeleton />
   {:else if navigating.to?.route.id === "/app/catalogo"}
     <CatalogoSkeleton />
+  {:else if navigating.to?.route.id === "/app/ajustes"}
+    <AjustesSkeleton />
   {:else}
     {@render children()}
   {/if}
@@ -155,7 +158,7 @@
 
 <nav
   aria-label="Navegación del panel"
-  class="fixed inset-x-0 bottom-0 z-10 border-t border-linea bg-white lg:hidden"
+  class="fixed inset-x-0 bottom-0 z-10 border-t border-linea bg-white lg:hidden print:hidden"
 >
   <ul class="grid grid-cols-3">
     {#each navegacion as item (item.href)}
