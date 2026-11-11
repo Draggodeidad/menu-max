@@ -13,7 +13,6 @@ for (const [nombre, ruta] of [
   ["seguimiento", "/pedido/prueba-1234"],
 ] as const) {
   test(`accesibilidad automática: ${nombre}`, async ({ page }) => {
-    test.fixme(nombre === "catálogo", "H10: lista de definiciones mal estructurada");
     await ir(page, ruta);
     const results = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -58,8 +57,7 @@ test("accesibilidad automática: checkout con productos", async ({ page }) => {
   ).toEqual([]);
 });
 
-// H10: el checkout no expone un landmark principal.
-test.fixme("checkout tiene un landmark principal", async ({ page }) => {
+test("checkout tiene un landmark principal", async ({ page }) => {
   await abrirPedido(page);
   await expect(page.getByRole("main")).toHaveCount(1);
 });

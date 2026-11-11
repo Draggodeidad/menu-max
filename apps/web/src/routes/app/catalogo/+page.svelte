@@ -153,12 +153,13 @@
       class="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-linea bg-linea lg:grid-cols-4"
     >
       {#each resumen as dato (dato.etiqueta)}
-        <div class="flex items-center justify-between gap-2 bg-white px-4 py-3">
-          <div>
-            <dt class="text-sm text-piedra">{dato.etiqueta}</dt>
-            <dd class="mt-0.5 text-lg font-semibold tabular-nums">{dato.valor}</dd>
-          </div>
-          <dato.icono class="size-5 shrink-0 text-piedra" aria-hidden="true" />
+        <div class="relative flex flex-col justify-center bg-white px-4 py-3 pr-11">
+          <dt class="text-sm text-piedra">{dato.etiqueta}</dt>
+          <dd class="mt-0.5 text-lg font-semibold tabular-nums">{dato.valor}</dd>
+          <dato.icono
+            class="absolute top-1/2 right-4 size-5 -translate-y-1/2 text-piedra"
+            aria-hidden="true"
+          />
         </div>
       {/each}
     </dl>

@@ -143,312 +143,314 @@
   </div>
 {/snippet}
 
-{#if !cart.ready}
-  <!-- Mientras se lee el carrito guardado en el navegador. Sin JavaScript se oculta. -->
-  <StorefrontSkeleton variant="pedido" />
-  <noscript>
-    <div class="mx-auto max-w-md px-5 py-16">
-      <h1 class="text-3xl font-bold tracking-[-0.03em]">Tu pedido</h1>
-      <p class="mt-2 text-base text-(color:--brand-muted)">
-        Para armar y enviar tu pedido activa JavaScript.
-      </p>
-      <Button href={menuHref} class="mt-6 {brandBtn}">Ver menú</Button>
-    </div>
-  </noscript>
-{:else}
-  <div
-    class="mx-auto min-h-dvh max-w-md bg-(color:--brand-bg) md:border-x md:border-(color:--brand-line)"
-  >
-    <header class="px-5 pt-4 pb-6">
-      <a
-        href={menuHref}
-        class="-ml-2 inline-flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm font-medium text-(color:--brand-muted) outline-none hover:text-(color:--brand-text) focus-visible:ring-2 focus-visible:ring-(color:--brand)/30"
-      >
-        <ArrowLeft aria-hidden="true" class="size-4" />
-        Volver al menú
-      </a>
-      <div class="mt-2 flex items-start justify-between gap-3">
+<main>
+  {#if !cart.ready}
+    <!-- Mientras se lee el carrito guardado en el navegador. Sin JavaScript se oculta. -->
+    <StorefrontSkeleton variant="pedido" />
+    <noscript>
+      <div class="mx-auto max-w-md px-5 py-16">
         <h1 class="text-3xl font-bold tracking-[-0.03em]">Tu pedido</h1>
-        {#if cart.count > 0}
-          <p
-            class="mt-1.5 rounded-full bg-(color:--brand-tint) px-3 py-1 text-sm font-medium tabular-nums"
-            aria-live="polite"
-          >
-            {cart.count}
-            {cart.count === 1 ? "producto" : "productos"}
-          </p>
-        {/if}
-      </div>
-      <p class="mt-1.5 text-base text-(color:--brand-muted)">
-        {data.negocio.nombre} · {data.entrega.sucursal}{data.mesa ? ` · Mesa ${data.mesa}` : ""}
-      </p>
-    </header>
-
-    {#if cart.count === 0}
-      <section class="border-t border-(color:--brand-line) px-5 py-10">
-        <h2 class={h2}>Tu pedido está vacío</h2>
-        <p class="mt-2 max-w-[60ch] text-base leading-relaxed text-(color:--brand-muted)">
-          Agrega productos desde el menú y aquí verás el resumen.
+        <p class="mt-2 text-base text-(color:--brand-muted)">
+          Para armar y enviar tu pedido activa JavaScript.
         </p>
         <Button href={menuHref} class="mt-6 {brandBtn}">Ver menú</Button>
-      </section>
-    {:else}
-      <form
-        bind:this={formEl}
-        method="POST"
-        action="{query}{query ? '&' : '?'}/enviar"
-        novalidate
-        use:enhance={enviar}
-      >
-        <input type="hidden" name="idempotencyKey" value={data.idempotencyKey} />
-        {#if data.mesa}
-          <input type="hidden" name="modalidad" value="mesa" />
-        {/if}
-
-        <section class={seccion} aria-labelledby="detalle">
-          <div class="flex items-baseline justify-between gap-3">
-            <h2 id="detalle" class={h2}>Detalle de consumo</h2>
-            <span class="text-sm text-(color:--brand-muted)">Comanda directa</span>
-          </div>
-
-          <div class="mt-4 overflow-hidden rounded-xl border border-(color:--brand-line)">
-            <ul class="divide-y divide-(color:--brand-line)">
-              {#each cart.lines as l (l.key)}
-                <li in:fly={{ y: -8, duration }} class="px-4 py-4">
-                  <input type="hidden" name="id" value={l.productId} />
-                  <input type="hidden" name="opcion" value={l.opcion ?? ""} />
-                  <input type="hidden" name="cantidad" value={l.cantidad} />
-                  <div class="flex items-start justify-between gap-4">
-                    <div class="min-w-0">
-                      <p class="text-base font-semibold">{l.nombre}</p>
-                      {#if l.opcion}
-                        <p class="text-sm text-(color:--brand-muted)">{l.opcion}</p>
-                      {/if}
-                    </div>
-                    <p class="font-semibold tabular-nums">
-                      {formatMoney(l.precioCents * l.cantidad)}
-                    </p>
-                  </div>
-                  <div class="mt-2 flex items-center justify-between gap-4">
-                    <p class="text-sm text-(color:--brand-muted) tabular-nums">
-                      {formatMoney(l.precioCents)} c/u
-                    </p>
-                    <div class="flex items-center rounded-lg bg-(color:--brand-tint)">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label={l.cantidad === 1
-                          ? `Quitar ${l.nombre}`
-                          : `Quitar uno de ${l.nombre}`}
-                        onclick={() => cart.setQty(l.key, l.cantidad - 1)}
-                        class="text-(color:--brand-text) hover:bg-(color:--brand-line) focus-visible:ring-(color:--brand)/30"
-                      >
-                        <Minus aria-hidden="true" />
-                      </Button>
-                      <span class="w-8 text-center font-semibold tabular-nums" aria-live="polite">
-                        {l.cantidad}
-                      </span>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label="Agregar uno de {l.nombre}"
-                        disabled={l.cantidad >= 99}
-                        onclick={() => cart.setQty(l.key, l.cantidad + 1)}
-                        class="text-(color:--brand-text) hover:bg-(color:--brand-line) focus-visible:ring-(color:--brand)/30"
-                      >
-                        <Plus aria-hidden="true" />
-                      </Button>
-                    </div>
-                  </div>
-                </li>
-              {/each}
-            </ul>
+      </div>
+    </noscript>
+  {:else}
+    <div
+      class="mx-auto min-h-dvh max-w-md bg-(color:--brand-bg) md:border-x md:border-(color:--brand-line)"
+    >
+      <header class="px-5 pt-4 pb-6">
+        <a
+          href={menuHref}
+          class="-ml-2 inline-flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm font-medium text-(color:--brand-muted) outline-none hover:text-(color:--brand-text) focus-visible:ring-2 focus-visible:ring-(color:--brand)/30"
+        >
+          <ArrowLeft aria-hidden="true" class="size-4" />
+          Volver al menú
+        </a>
+        <div class="mt-2 flex items-start justify-between gap-3">
+          <h1 class="text-3xl font-bold tracking-[-0.03em]">Tu pedido</h1>
+          {#if cart.count > 0}
             <p
-              class="flex items-baseline justify-between gap-3 border-t border-(color:--brand-line) bg-(color:--brand-tint) px-4 py-4"
-            >
-              <span class="text-base">Subtotal de consumo</span>
-              <span class="text-lg font-semibold tabular-nums" aria-live="polite">
-                {formatMoney(cart.totalCents)}
-              </span>
-            </p>
-          </div>
-        </section>
-
-        {#if sinModalidad}
-          <section class={seccion}>
-            <p
-              class="flex items-start gap-2 rounded-xl border border-(color:--brand-text) p-4 text-base font-medium"
-              role="alert"
-            >
-              <CircleAlert aria-hidden="true" class="mt-0.5 size-5 shrink-0" />
-              {data.mesa
-                ? "Este negocio no recibe pedidos en mesa por ahora."
-                : "Este negocio solo recibe pedidos en mesa. Escanea el código QR de tu mesa."}
-            </p>
-          </section>
-        {:else if !data.mesa}
-          <fieldset class="{seccion} min-w-0">
-            <legend class="float-left w-full {h2}">Modalidad de entrega</legend>
-            <div
-              class="mt-4 grid clear-both {ofrecidas.length > 1
-                ? 'grid-cols-2'
-                : 'grid-cols-1'} rounded-lg border border-(color:--brand-line) p-1"
-            >
-              {#each ofrecidas as m (m.valor)}
-                <label
-                  class="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors has-checked:bg-(color:--brand) has-checked:text-(color:--brand-bg) has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-(color:--brand)"
-                >
-                  <input
-                    type="radio"
-                    name="modalidad"
-                    value={m.valor}
-                    bind:group={elegida}
-                    class="sr-only"
-                  />
-                  <m.icono aria-hidden="true" class="size-4" />
-                  {m.label}
-                </label>
-              {/each}
-            </div>
-            <p
-              class="mt-3 flex items-start gap-2 text-sm text-(color:--brand-muted)"
+              class="mt-1.5 rounded-full bg-(color:--brand-tint) px-3 py-1 text-sm font-medium tabular-nums"
               aria-live="polite"
             >
-              <CircleCheck aria-hidden="true" class="mt-0.5 size-4 shrink-0" />
-              {nota}
-            </p>
-
-            {#if modalidad === "domicilio"}
-              <div class="mt-5" transition:slide={{ duration }}>
-                {@render etiqueta("direccion", "Dirección de entrega", "Requerido")}
-                <Input
-                  id="direccion"
-                  name="direccion"
-                  bind:value={direccion}
-                  autocomplete="street-address"
-                  placeholder="Calle, número y colonia"
-                  required
-                  aria-invalid={errores.direccion ? "true" : undefined}
-                  aria-describedby={errores.direccion ? "direccion-error" : undefined}
-                  class={campo}
-                />
-                {@render error("direccion-error", errores.direccion)}
-              </div>
-            {/if}
-          </fieldset>
-        {/if}
-
-        <section class={seccion} aria-labelledby="datos">
-          <h2 id="datos" class={h2}>Datos del cliente</h2>
-
-          <div class="mt-4">
-            {@render etiqueta("nombre", "Nombre completo", "Requerido")}
-            <Input
-              id="nombre"
-              name="nombre"
-              bind:value={nombre}
-              autocomplete="name"
-              placeholder="Tu nombre"
-              required
-              aria-invalid={errores.nombre ? "true" : undefined}
-              aria-describedby={errores.nombre ? "nombre-error" : undefined}
-              class={campo}
-            />
-            {@render error("nombre-error", errores.nombre)}
-          </div>
-
-          <div class="mt-5">
-            {@render etiqueta("telefono", "Teléfono (WhatsApp)", "Para confirmar comanda")}
-            <div
-              class="flex h-12 items-center rounded-lg border border-(color:--brand-line) bg-(color:--brand-bg) focus-within:border-(color:--brand) focus-within:ring-2 focus-within:ring-(color:--brand)/30 has-aria-invalid:border-(color:--brand-text) has-aria-invalid:ring-2 has-aria-invalid:ring-(color:--brand-text)/20"
-            >
-              <span class="pl-4 text-sm text-(color:--brand-muted)" aria-hidden="true">+52</span>
-              <Input
-                id="telefono"
-                name="telefono"
-                type="tel"
-                bind:value={telefono}
-                inputmode="tel"
-                autocomplete="tel-national"
-                maxlength={14}
-                placeholder="55 1234 5678"
-                required
-                aria-invalid={errores.telefono ? "true" : undefined}
-                aria-describedby={errores.telefono ? "telefono-error" : undefined}
-                class="h-full flex-1 border-0 bg-transparent pl-2 text-(color:--brand-text) placeholder:text-(color:--brand-muted) focus-visible:ring-0 aria-invalid:ring-0"
-              />
-            </div>
-            {@render error("telefono-error", errores.telefono)}
-          </div>
-
-          <div class="mt-5">
-            {@render etiqueta("notas", "Notas para la cocina", "Opcional")}
-            <textarea
-              id="notas"
-              name="notas"
-              bind:value={notas}
-              rows={3}
-              maxlength={200}
-              placeholder="Ej. Salsa roja aparte, sin cebolla, limón extra…"
-              aria-invalid={errores.notas ? "true" : undefined}
-              aria-describedby={errores.notas ? "notas-error" : undefined}
-              class="min-h-24 w-full resize-y rounded-lg border bg-transparent px-4 py-3 text-base outline-none focus-visible:ring-2 aria-invalid:ring-2 {campo}"
-            ></textarea>
-            {@render error("notas-error", errores.notas)}
-          </div>
-        </section>
-
-        <section class={seccion} aria-labelledby="pago">
-          <div class="flex items-start gap-3 rounded-xl bg-(color:--brand-tint) p-4">
-            <Banknote aria-hidden="true" class="mt-0.5 size-5 shrink-0" />
-            <div>
-              <h2 id="pago" class="text-lg font-semibold tracking-[-0.02em]">
-                Pagas en efectivo al recibir
-              </h2>
-              <p class="mt-1 text-sm text-(color:--brand-muted)">
-                Liquidación directa en barra o con el repartidor. No requerimos pagos por
-                adelantado.
-              </p>
-            </div>
-          </div>
-
-          <label class="mt-3 flex min-h-11 cursor-pointer items-center gap-3 text-sm">
-            <input
-              type="checkbox"
-              name="recordar"
-              bind:checked={recordar}
-              class="size-5 shrink-0 cursor-pointer accent-(color:--brand) outline-none focus-visible:ring-2 focus-visible:ring-(color:--brand)/30 focus-visible:ring-offset-2"
-            />
-            Recordar mis datos en este teléfono para la próxima vez
-          </label>
-        </section>
-
-        {#if form?.error}
-          <p
-            class="mx-5 mb-6 flex items-start gap-2 rounded-xl border border-(color:--brand-text) p-4 text-base font-medium outline-none"
-            role="alert"
-            tabindex="-1"
-          >
-            <CircleAlert aria-hidden="true" class="mt-0.5 size-5 shrink-0" />
-            {form.error}
-          </p>
-        {/if}
-
-        <div class="pb-40"></div>
-
-        <div
-          class="fixed inset-x-0 bottom-0 z-20 mx-auto max-w-md border-t border-(color:--brand-line) bg-(color:--brand-bg) px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-        >
-          {#if !data.negocio.abierto}
-            <p class="mb-2 px-2 text-sm text-(color:--brand-muted)">
-              Cerrado · abre a las {data.negocio.abre}. Podrás enviar tu pedido cuando abra.
+              {cart.count}
+              {cart.count === 1 ? "producto" : "productos"}
             </p>
           {/if}
-          <Button type="submit" size="lg" disabled={!puedeEnviar} class="w-full {brandBtn}">
-            {enviando ? "Enviando…" : `Enviar pedido · ${formatMoney(cart.totalCents)}`}
-          </Button>
         </div>
-      </form>
-    {/if}
-  </div>
-{/if}
+        <p class="mt-1.5 text-base text-(color:--brand-muted)">
+          {data.negocio.nombre} · {data.entrega.sucursal}{data.mesa ? ` · Mesa ${data.mesa}` : ""}
+        </p>
+      </header>
+
+      {#if cart.count === 0}
+        <section class="border-t border-(color:--brand-line) px-5 py-10">
+          <h2 class={h2}>Tu pedido está vacío</h2>
+          <p class="mt-2 max-w-[60ch] text-base leading-relaxed text-(color:--brand-muted)">
+            Agrega productos desde el menú y aquí verás el resumen.
+          </p>
+          <Button href={menuHref} class="mt-6 {brandBtn}">Ver menú</Button>
+        </section>
+      {:else}
+        <form
+          bind:this={formEl}
+          method="POST"
+          action="{query}{query ? '&' : '?'}/enviar"
+          novalidate
+          use:enhance={enviar}
+        >
+          <input type="hidden" name="idempotencyKey" value={data.idempotencyKey} />
+          {#if data.mesa}
+            <input type="hidden" name="modalidad" value="mesa" />
+          {/if}
+
+          <section class={seccion} aria-labelledby="detalle">
+            <div class="flex items-baseline justify-between gap-3">
+              <h2 id="detalle" class={h2}>Detalle de consumo</h2>
+              <span class="text-sm text-(color:--brand-muted)">Comanda directa</span>
+            </div>
+
+            <div class="mt-4 overflow-hidden rounded-xl border border-(color:--brand-line)">
+              <ul class="divide-y divide-(color:--brand-line)">
+                {#each cart.lines as l (l.key)}
+                  <li in:fly={{ y: -8, duration }} class="px-4 py-4">
+                    <input type="hidden" name="id" value={l.productId} />
+                    <input type="hidden" name="opcion" value={l.opcion ?? ""} />
+                    <input type="hidden" name="cantidad" value={l.cantidad} />
+                    <div class="flex items-start justify-between gap-4">
+                      <div class="min-w-0">
+                        <p class="text-base font-semibold">{l.nombre}</p>
+                        {#if l.opcion}
+                          <p class="text-sm text-(color:--brand-muted)">{l.opcion}</p>
+                        {/if}
+                      </div>
+                      <p class="font-semibold tabular-nums">
+                        {formatMoney(l.precioCents * l.cantidad)}
+                      </p>
+                    </div>
+                    <div class="mt-2 flex items-center justify-between gap-4">
+                      <p class="text-sm text-(color:--brand-muted) tabular-nums">
+                        {formatMoney(l.precioCents)} c/u
+                      </p>
+                      <div class="flex items-center rounded-lg bg-(color:--brand-tint)">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          aria-label={l.cantidad === 1
+                            ? `Quitar ${l.nombre}`
+                            : `Quitar uno de ${l.nombre}`}
+                          onclick={() => cart.setQty(l.key, l.cantidad - 1)}
+                          class="text-(color:--brand-text) hover:bg-(color:--brand-line) focus-visible:ring-(color:--brand)/30"
+                        >
+                          <Minus aria-hidden="true" />
+                        </Button>
+                        <span class="w-8 text-center font-semibold tabular-nums" aria-live="polite">
+                          {l.cantidad}
+                        </span>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          aria-label="Agregar uno de {l.nombre}"
+                          disabled={l.cantidad >= 99}
+                          onclick={() => cart.setQty(l.key, l.cantidad + 1)}
+                          class="text-(color:--brand-text) hover:bg-(color:--brand-line) focus-visible:ring-(color:--brand)/30"
+                        >
+                          <Plus aria-hidden="true" />
+                        </Button>
+                      </div>
+                    </div>
+                  </li>
+                {/each}
+              </ul>
+              <p
+                class="flex items-baseline justify-between gap-3 border-t border-(color:--brand-line) bg-(color:--brand-tint) px-4 py-4"
+              >
+                <span class="text-base">Subtotal de consumo</span>
+                <span class="text-lg font-semibold tabular-nums" aria-live="polite">
+                  {formatMoney(cart.totalCents)}
+                </span>
+              </p>
+            </div>
+          </section>
+
+          {#if sinModalidad}
+            <section class={seccion}>
+              <p
+                class="flex items-start gap-2 rounded-xl border border-(color:--brand-text) p-4 text-base font-medium"
+                role="alert"
+              >
+                <CircleAlert aria-hidden="true" class="mt-0.5 size-5 shrink-0" />
+                {data.mesa
+                  ? "Este negocio no recibe pedidos en mesa por ahora."
+                  : "Este negocio solo recibe pedidos en mesa. Escanea el código QR de tu mesa."}
+              </p>
+            </section>
+          {:else if !data.mesa}
+            <fieldset class="{seccion} min-w-0">
+              <legend class="float-left w-full {h2}">Modalidad de entrega</legend>
+              <div
+                class="mt-4 grid clear-both {ofrecidas.length > 1
+                  ? 'grid-cols-2'
+                  : 'grid-cols-1'} rounded-lg border border-(color:--brand-line) p-1"
+              >
+                {#each ofrecidas as m (m.valor)}
+                  <label
+                    class="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors has-checked:bg-(color:--brand) has-checked:text-(color:--brand-bg) has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-(color:--brand)"
+                  >
+                    <input
+                      type="radio"
+                      name="modalidad"
+                      value={m.valor}
+                      bind:group={elegida}
+                      class="sr-only"
+                    />
+                    <m.icono aria-hidden="true" class="size-4" />
+                    {m.label}
+                  </label>
+                {/each}
+              </div>
+              <p
+                class="mt-3 flex items-start gap-2 text-sm text-(color:--brand-muted)"
+                aria-live="polite"
+              >
+                <CircleCheck aria-hidden="true" class="mt-0.5 size-4 shrink-0" />
+                {nota}
+              </p>
+
+              {#if modalidad === "domicilio"}
+                <div class="mt-5" transition:slide={{ duration }}>
+                  {@render etiqueta("direccion", "Dirección de entrega", "Requerido")}
+                  <Input
+                    id="direccion"
+                    name="direccion"
+                    bind:value={direccion}
+                    autocomplete="street-address"
+                    placeholder="Calle, número y colonia"
+                    required
+                    aria-invalid={errores.direccion ? "true" : undefined}
+                    aria-describedby={errores.direccion ? "direccion-error" : undefined}
+                    class={campo}
+                  />
+                  {@render error("direccion-error", errores.direccion)}
+                </div>
+              {/if}
+            </fieldset>
+          {/if}
+
+          <section class={seccion} aria-labelledby="datos">
+            <h2 id="datos" class={h2}>Datos del cliente</h2>
+
+            <div class="mt-4">
+              {@render etiqueta("nombre", "Nombre completo", "Requerido")}
+              <Input
+                id="nombre"
+                name="nombre"
+                bind:value={nombre}
+                autocomplete="name"
+                placeholder="Tu nombre"
+                required
+                aria-invalid={errores.nombre ? "true" : undefined}
+                aria-describedby={errores.nombre ? "nombre-error" : undefined}
+                class={campo}
+              />
+              {@render error("nombre-error", errores.nombre)}
+            </div>
+
+            <div class="mt-5">
+              {@render etiqueta("telefono", "Teléfono (WhatsApp)", "Para confirmar comanda")}
+              <div
+                class="flex h-12 items-center rounded-lg border border-(color:--brand-line) bg-(color:--brand-bg) focus-within:border-(color:--brand) focus-within:ring-2 focus-within:ring-(color:--brand)/30 has-aria-invalid:border-(color:--brand-text) has-aria-invalid:ring-2 has-aria-invalid:ring-(color:--brand-text)/20"
+              >
+                <span class="pl-4 text-sm text-(color:--brand-muted)" aria-hidden="true">+52</span>
+                <Input
+                  id="telefono"
+                  name="telefono"
+                  type="tel"
+                  bind:value={telefono}
+                  inputmode="tel"
+                  autocomplete="tel-national"
+                  maxlength={14}
+                  placeholder="55 1234 5678"
+                  required
+                  aria-invalid={errores.telefono ? "true" : undefined}
+                  aria-describedby={errores.telefono ? "telefono-error" : undefined}
+                  class="h-full flex-1 border-0 bg-transparent pl-2 text-(color:--brand-text) placeholder:text-(color:--brand-muted) focus-visible:ring-0 aria-invalid:ring-0"
+                />
+              </div>
+              {@render error("telefono-error", errores.telefono)}
+            </div>
+
+            <div class="mt-5">
+              {@render etiqueta("notas", "Notas para la cocina", "Opcional")}
+              <textarea
+                id="notas"
+                name="notas"
+                bind:value={notas}
+                rows={3}
+                maxlength={200}
+                placeholder="Ej. Salsa roja aparte, sin cebolla, limón extra…"
+                aria-invalid={errores.notas ? "true" : undefined}
+                aria-describedby={errores.notas ? "notas-error" : undefined}
+                class="min-h-24 w-full resize-y rounded-lg border bg-transparent px-4 py-3 text-base outline-none focus-visible:ring-2 aria-invalid:ring-2 {campo}"
+              ></textarea>
+              {@render error("notas-error", errores.notas)}
+            </div>
+          </section>
+
+          <section class={seccion} aria-labelledby="pago">
+            <div class="flex items-start gap-3 rounded-xl bg-(color:--brand-tint) p-4">
+              <Banknote aria-hidden="true" class="mt-0.5 size-5 shrink-0" />
+              <div>
+                <h2 id="pago" class="text-lg font-semibold tracking-[-0.02em]">
+                  Pagas en efectivo al recibir
+                </h2>
+                <p class="mt-1 text-sm text-(color:--brand-muted)">
+                  Liquidación directa en barra o con el repartidor. No requerimos pagos por
+                  adelantado.
+                </p>
+              </div>
+            </div>
+
+            <label class="mt-3 flex min-h-11 cursor-pointer items-center gap-3 text-sm">
+              <input
+                type="checkbox"
+                name="recordar"
+                bind:checked={recordar}
+                class="size-5 shrink-0 cursor-pointer accent-(color:--brand) outline-none focus-visible:ring-2 focus-visible:ring-(color:--brand)/30 focus-visible:ring-offset-2"
+              />
+              Recordar mis datos en este teléfono para la próxima vez
+            </label>
+          </section>
+
+          {#if form?.error}
+            <p
+              class="mx-5 mb-6 flex items-start gap-2 rounded-xl border border-(color:--brand-text) p-4 text-base font-medium outline-none"
+              role="alert"
+              tabindex="-1"
+            >
+              <CircleAlert aria-hidden="true" class="mt-0.5 size-5 shrink-0" />
+              {form.error}
+            </p>
+          {/if}
+
+          <div class="pb-40"></div>
+
+          <div
+            class="fixed inset-x-0 bottom-0 z-20 mx-auto max-w-md border-t border-(color:--brand-line) bg-(color:--brand-bg) px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+          >
+            {#if !data.negocio.abierto}
+              <p class="mb-2 px-2 text-sm text-(color:--brand-muted)">
+                Cerrado · abre a las {data.negocio.abre}. Podrás enviar tu pedido cuando abra.
+              </p>
+            {/if}
+            <Button type="submit" size="lg" disabled={!puedeEnviar} class="w-full {brandBtn}">
+              {enviando ? "Enviando…" : `Enviar pedido · ${formatMoney(cart.totalCents)}`}
+            </Button>
+          </div>
+        </form>
+      {/if}
+    </div>
+  {/if}
+</main>
