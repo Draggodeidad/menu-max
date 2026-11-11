@@ -555,11 +555,28 @@ export type NuevoPedido = {
   lineas: { id: string; cantidad: number }[];
 };
 
-/** Ids que no existen en el catálogo del servidor. */
-export const productosDesconocidos = (lineas: { id: string }[]) => {
-  const productos = productosPorId();
-  return lineas.filter((l) => !productos.has(l.id)).map((l) => l.id);
-};
+/** TEMPORAL: valida que cada producto y opción sigan disponibles en el menú del servidor. */
+export async function validarLineasPedido(
+  lineas: { id: string; opcion: string }[],
+  url: URL,
+): Promise<string | null> {
+  const menuPorId = new Map(
+    (await getCategorias(url)).flatMap(({ productos }) =>
+      productos.map((producto) => [producto.id, producto] as const),
+    ),
+  );
+  for (const { id, opcion } of lineas) {
+    const producto = menuPorId.get(id);
+    if (!producto) {
+      return "Un producto de tu pedido ya no está en el menú. Quítalo para continuar.";
+    }
+    const valores = producto.opciones?.valores;
+    if (valores?.length ? !valores.includes(opcion) : opcion !== "") {
+      return `Elige una opción válida para ${producto.nombre}.`;
+    }
+  }
+  return null;
+}
 
 /**
  * Registra un pedido nuevo en `pedidos` (idempotente por token) y devuelve la lista nueva.

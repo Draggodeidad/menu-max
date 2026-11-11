@@ -5,9 +5,9 @@ import {
   getEntrega,
   getNegocio,
   leerPedidosCreados,
-  productosDesconocidos,
   serializarPedidosCreados,
   simulaError,
+  validarLineasPedido,
 } from "#lib/server/demo.js";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -27,6 +27,7 @@ export const actions: Actions = {
   enviar: async ({ request, url, params, cookies }) => {
     const form = await request.formData();
     const ids = form.getAll("id").map(String);
+    const opciones = form.getAll("opcion").map(String);
     const cantidades = form.getAll("cantidad").map(Number);
 
     const valido =
@@ -83,13 +84,13 @@ export const actions: Actions = {
       });
     }
 
-    const lineas = ids.map((id, i) => ({ id, cantidad: cantidades[i] }));
-    if (productosDesconocidos(lineas).length > 0) {
-      return fail(409, {
-        error: "Algún producto de tu pedido ya no está en el menú. Quítalo para continuar.",
-        values,
-      });
-    }
+    const lineas = ids.map((id, i) => ({
+      id,
+      cantidad: cantidades[i],
+      opcion: opciones[i] ?? "",
+    }));
+    const errorProductos = await validarLineasPedido(lineas, origen);
+    if (errorProductos) return fail(409, { error: errorProductos, values });
 
     // TEMPORAL: el token de seguimiento lo entregará la API; aquí es la clave de idempotencia.
     const clave = String(form.get("idempotencyKey") ?? "");
@@ -103,7 +104,7 @@ export const actions: Actions = {
       cliente: { nombre: values.nombre, telefono: values.telefono },
       direccion: modalidad === "domicilio" ? values.direccion : undefined,
       nota: values.notas || undefined,
-      lineas,
+      lineas: lineas.map(({ id, cantidad }) => ({ id, cantidad })),
     });
     cookies.set(COOKIE_PEDIDOS, serializarPedidosCreados(pedidos), {
       path: "/",
