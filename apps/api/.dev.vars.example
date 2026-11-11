@@ -1,0 +1,5 @@
+# Copia este archivo a .dev.vars para `pnpm --filter api dev`. Nunca commitees .dev.vars.
+# ENVIRONMENT viene de `vars` en wrangler.jsonc.
+
+# Secreto compartido con apps/web para el header x-mm-internal (mínimo 32 caracteres).
+INTERNAL_TOKEN=cambia-esto-por-un-valor-de-32-caracteres-o-mas
