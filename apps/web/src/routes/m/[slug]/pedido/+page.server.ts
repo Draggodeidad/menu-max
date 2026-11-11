@@ -1,5 +1,5 @@
 import { fail, redirect } from "@sveltejs/kit";
-import { getEntrega, getNegocio, simulaError } from "#lib/server/demo.js";
+import { getEntrega, getNegocio, simulaError, validarLineasPedido } from "#lib/server/demo.js";
 import type { Actions, PageServerLoad } from "./$types";
 
 // Clave de idempotencia del envío (DESIGN.md §7.2-I), generada en `load`.
@@ -18,6 +18,7 @@ export const actions: Actions = {
   enviar: async ({ request, url, params }) => {
     const form = await request.formData();
     const ids = form.getAll("id").map(String);
+    const opciones = form.getAll("opcion").map(String);
     const cantidades = form.getAll("cantidad").map(Number);
 
     const valido =
@@ -41,6 +42,15 @@ export const actions: Actions = {
       direccion: texto("direccion"),
       notas: texto("notas"),
     };
+
+    // TEMPORAL: sin API todavía. Los ids y opciones deben existir en el menú del negocio.
+    const errorProductos = await validarLineasPedido(
+      ids.map((id, i) => ({ id, opcion: opciones[i] ?? "" })),
+      url,
+    );
+    if (errorProductos) {
+      return fail(409, { error: errorProductos, values });
+    }
 
     const fieldErrors: Partial<Record<Campo, string>> = {};
     if (values.nombre.length < 2) {
