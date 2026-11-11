@@ -3,6 +3,7 @@ import type { Cookies } from "@sveltejs/kit";
 import QRCode from "qrcode";
 import {
   COOKIE_AJUSTES,
+  COOKIE_CATALOGO,
   FUENTES_TEMA,
   MAX_MESAS,
   PRESETS_TEMA,
@@ -12,6 +13,7 @@ import {
   getCategorias,
   getAjustes,
   leerAjustesDemo,
+  leerCambiosCatalogo,
   normalizaHex,
   type AjustesDemo,
   type PresetTema,
@@ -24,7 +26,7 @@ export const load: PageServerLoad = async ({ url, cookies, parent, depends }) =>
   const { negocio } = await parent();
   try {
     const ajustes = await getAjustes(url, cookies.get(COOKIE_AJUSTES));
-    const categorias = await getCategorias(url);
+    const categorias = await getCategorias(url, leerCambiosCatalogo(cookies.get(COOKIE_CATALOGO)));
     // Un QR por mesa: el enlace lleva `?mesa=n` (DESIGN.md §7.2 H).
     const mesas = await Promise.all(
       Array.from({ length: ajustes.mesas }, async (_, i) => {

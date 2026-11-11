@@ -34,8 +34,10 @@ const NOMBRE_VACIO = "Escribe un nombre de al menos 2 letras.";
 function guardar(cookies: Cookies, cambios: CambiosCatalogo): boolean {
   const valor = JSON.stringify(cambios);
   if (valor.length > LIMITE_COOKIE_CATALOGO) return false;
+  // `path: "/"` para que el menú público lea las mismas ediciones; se borra la cookie anterior.
+  cookies.delete(COOKIE_CATALOGO, { path: "/app" });
   cookies.set(COOKIE_CATALOGO, valor, {
-    path: "/app",
+    path: "/",
     httpOnly: true,
     sameSite: "lax",
     maxAge: 60 * 60 * 8,
