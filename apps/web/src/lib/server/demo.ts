@@ -19,6 +19,18 @@ export function getNegocio(slug: string, url: URL) {
   };
 }
 
+// TEMPORAL: datos de entrega por sucursal. Los entregará la API con el negocio.
+export function getEntrega() {
+  return {
+    sucursal: "Sucursal Roma Sur",
+    recoger: { tiempo: "15-20 min", direccion: "Coahuila 142, Col. Roma" },
+    domicilio: { tiempo: "30-40 min" },
+  };
+}
+
+/** Solo desarrollo: ?error=1 simula un producto que dejó de estar disponible. */
+export const simulaError = (url: URL) => flag(url, "error", "1");
+
 // Preset `minimal` de DESIGN.md §3.2
 export const tema = { brand: "#1c1f1a", bg: "#ffffff", text: "#1c1f1a" };
 
