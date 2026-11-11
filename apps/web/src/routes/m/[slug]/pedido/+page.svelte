@@ -33,7 +33,20 @@
   // Sin JavaScript el formulario vuelve con `form.values`; con JavaScript los campos no se reinician.
   // svelte-ignore state_referenced_locally -- solo valores iniciales
   const previos = form?.values;
-  let modalidad = $state<Modalidad>(previos?.modalidad === "domicilio" ? "domicilio" : "recoger");
+  const modalidades = [
+    { valor: "recoger", label: "Para recoger", icono: Store },
+    { valor: "domicilio", label: "A domicilio", icono: Bike },
+  ] as const;
+
+  const ofrecidas = $derived(modalidades.filter((m) => data.modalidades.includes(m.valor)));
+  let elegida = $state<Modalidad>(previos?.modalidad === "domicilio" ? "domicilio" : "recoger");
+  // Si la modalidad elegida ya no está habilitada, se usa la primera disponible.
+  const modalidad = $derived(
+    ofrecidas.some((m) => m.valor === elegida) ? elegida : (ofrecidas[0]?.valor ?? elegida),
+  );
+  const sinModalidad = $derived(
+    data.mesa ? !data.modalidades.includes("mesa") : ofrecidas.length === 0,
+  );
   let nombre = $state(previos?.nombre ?? "");
   let telefono = $state(previos?.telefono ?? "");
   let direccion = $state(previos?.direccion ?? "");
@@ -42,13 +55,10 @@
 
   const query = $derived(data.mesa ? `?mesa=${encodeURIComponent(data.mesa)}` : "");
   const menuHref = $derived(`/m/${data.negocio.slug}${query}`);
-  const puedeEnviar = $derived(data.negocio.abierto && cart.count > 0 && !enviando);
+  const puedeEnviar = $derived(
+    data.negocio.abierto && cart.count > 0 && !enviando && !sinModalidad,
+  );
   const errores = $derived(form?.fieldErrors ?? {});
-
-  const modalidades = [
-    { valor: "recoger", label: "Para recoger", icono: Store },
-    { valor: "domicilio", label: "A domicilio", icono: Bike },
-  ] as const;
 
   const nota = $derived(
     modalidad === "domicilio"
@@ -265,13 +275,27 @@
             </div>
           </section>
 
-          {#if !data.mesa}
+          {#if sinModalidad}
+            <section class={seccion}>
+              <p
+                class="flex items-start gap-2 rounded-xl border border-(color:--brand-text) p-4 text-base font-medium"
+                role="alert"
+              >
+                <CircleAlert aria-hidden="true" class="mt-0.5 size-5 shrink-0" />
+                {data.mesa
+                  ? "Este negocio no recibe pedidos en mesa por ahora."
+                  : "Este negocio solo recibe pedidos en mesa. Escanea el código QR de tu mesa."}
+              </p>
+            </section>
+          {:else if !data.mesa}
             <fieldset class="{seccion} min-w-0">
               <legend class="float-left w-full {h2}">Modalidad de entrega</legend>
               <div
-                class="mt-4 grid clear-both grid-cols-2 rounded-lg border border-(color:--brand-line) p-1"
+                class="mt-4 grid clear-both {ofrecidas.length > 1
+                  ? 'grid-cols-2'
+                  : 'grid-cols-1'} rounded-lg border border-(color:--brand-line) p-1"
               >
-                {#each modalidades as m (m.valor)}
+                {#each ofrecidas as m (m.valor)}
                   <label
                     class="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors has-checked:bg-(color:--brand) has-checked:text-(color:--brand-bg) has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-(color:--brand)"
                   >
@@ -279,7 +303,7 @@
                       type="radio"
                       name="modalidad"
                       value={m.valor}
-                      bind:group={modalidad}
+                      bind:group={elegida}
                       class="sr-only"
                     />
                     <m.icono aria-hidden="true" class="size-4" />

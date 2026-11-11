@@ -1,8 +1,9 @@
+import { error } from "@sveltejs/kit";
 import { formatMoney } from "#lib/money.js";
 import { COOKIE_PEDIDOS, getPedido, leerPedidosCreados, tema } from "#lib/server/demo.js";
 import type { PageServerLoad } from "./$types";
 
-type Pedido = ReturnType<typeof getPedido>;
+type Pedido = NonNullable<ReturnType<typeof getPedido>>;
 
 // Enlace wa.me con el resumen del pedido. Solo es un enlace: no se envía nada
 // hasta que el comensal lo abre y decide enviar el mensaje en WhatsApp.
@@ -31,6 +32,7 @@ export const load: PageServerLoad = ({ params, url, cookies, setHeaders, depends
   depends("app:pedido");
   const creados = leerPedidosCreados(cookies.get(COOKIE_PEDIDOS));
   const pedido = getPedido(params.token, url, creados);
+  if (!pedido) error(404, "No encontramos este pedido. Revisa el enlace de seguimiento.");
   // TEMPORAL: sin API todavía. El resumen sale del mismo pedido simulado que se muestra.
   return { pedido, tema, whatsappHref: enlaceWhatsApp(pedido, `${url.origin}${url.pathname}`) };
 };

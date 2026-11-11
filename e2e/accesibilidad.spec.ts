@@ -10,7 +10,7 @@ for (const [nombre, ruta] of [
   ["catálogo", "/app/catalogo"],
   ["ajustes", "/app/ajustes"],
   ["menú público", "/m/tacos-el-guero"],
-  ["seguimiento", "/pedido/prueba"],
+  ["seguimiento", "/pedido/prueba-1234"],
 ] as const) {
   test(`accesibilidad automática: ${nombre}`, async ({ page }) => {
     await ir(page, ruta);
