@@ -351,3 +351,257 @@ export function getResumenPanel(pedidos: PedidoPanel[]) {
     canal: top,
   };
 }
+
+// TEMPORAL: catálogo editable del panel (`/app/catalogo`). Lo entregará la API del negocio.
+export type VarianteCatalogo = {
+  id: string;
+  nombre: string;
+  /** Costo adicional en centavos. */
+  extraCents: number;
+  activa: boolean;
+};
+
+export type ProductoCatalogo = {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  precioCents: number;
+  disponible: boolean;
+  imagen?: string;
+  variantes: VarianteCatalogo[];
+};
+
+export type CategoriaCatalogo = { id: string; nombre: string; productos: ProductoCatalogo[] };
+
+/** Resultado de una form action del catálogo (cada componente lo filtra por `id`). */
+export type ResultadoCatalogo = {
+  ok: boolean;
+  accion:
+    | "guardar"
+    | "eliminar"
+    | "agregar-producto"
+    | "agregar-categoria"
+    | "eliminar-categoria"
+    | "mover-categoria"
+    | "agregar-variante"
+    | "alternar-variante"
+    | "subir-foto";
+  id: string;
+  mensaje?: string;
+  error?: string;
+  fieldErrors?: { nombre?: string; precio?: string; extra?: string };
+  values?: { nombre?: string; precio?: string; extra?: string };
+};
+
+const CATALOGO_BASE: CategoriaCatalogo[] = [
+  {
+    id: "tacos",
+    nombre: "Tacos",
+    productos: [
+      {
+        id: "pastor",
+        nombre: "Pastor con piña",
+        descripcion: "Marinado artesanal en trompo, cilantro, cebolla y rebanada de piña asada.",
+        precioCents: 2200,
+        disponible: true,
+        imagen: PLACEHOLDER_IMAGE,
+        variantes: [
+          { id: "maiz", nombre: "Tortilla de maíz nixtamalizada", extraCents: 0, activa: true },
+          { id: "harina", nombre: "Tortilla de harina de trigo", extraCents: 500, activa: true },
+        ],
+      },
+      {
+        id: "suadero",
+        nombre: "Suadero confitado",
+        descripcion: "Carne de res cocinada a fuego lento en manteca hasta quedar dorada y jugosa.",
+        precioCents: 2400,
+        disponible: true,
+        imagen: PLACEHOLDER_IMAGE,
+        variantes: [],
+      },
+      {
+        id: "gringa",
+        nombre: "Gringa de pastor",
+        descripcion: "Dos tortillas de harina rellenas con queso oaxaca fundido y carne al pastor.",
+        precioCents: 4500,
+        disponible: false,
+        variantes: [],
+      },
+    ],
+  },
+  {
+    id: "bebidas",
+    nombre: "Bebidas",
+    productos: [
+      {
+        id: "horchata",
+        nombre: "Agua de horchata (1L)",
+        descripcion:
+          "Elaborada con arroz, leche condensada y un toque aromático de canela mexicana.",
+        precioCents: 3500,
+        disponible: true,
+        imagen: PLACEHOLDER_IMAGE,
+        variantes: [],
+      },
+      {
+        id: "cola",
+        nombre: "Coca-Cola de vidrio (355ml)",
+        descripcion: "Refresco embotellado de vidrio, servido bien frío.",
+        precioCents: 2800,
+        disponible: true,
+        imagen: PLACEHOLDER_IMAGE,
+        variantes: [],
+      },
+    ],
+  },
+];
+
+/** TEMPORAL: las ediciones simuladas viven en una cookie por usuario, nunca en el módulo. */
+export type CambiosCatalogo = {
+  productos: Record<
+    string,
+    { precioCents?: number; disponible?: boolean; eliminado?: boolean; conFoto?: boolean }
+  >;
+  /** Clave `${productoId}:${varianteId}` → activa. */
+  variantes: Record<string, boolean>;
+  nuevasVariantes: (VarianteCatalogo & { productoId: string })[];
+  nuevosProductos: { id: string; categoriaId: string; nombre: string; precioCents: number }[];
+  nuevasCategorias: { id: string; nombre: string }[];
+  categoriasEliminadas: string[];
+  /** Orden de ids de categoría; las que falten van al final. */
+  orden: string[];
+};
+
+export const COOKIE_CATALOGO = "demo_catalogo";
+/** Las cookies admiten ~4 kB; con este tope la demo avisa antes de que el navegador la descarte. */
+export const LIMITE_COOKIE_CATALOGO = 3500;
+
+export const cambiosCatalogoVacios = (): CambiosCatalogo => ({
+  productos: {},
+  variantes: {},
+  nuevasVariantes: [],
+  nuevosProductos: [],
+  nuevasCategorias: [],
+  categoriasEliminadas: [],
+  orden: [],
+});
+
+const esRegistro = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+function lista<T>(v: unknown, valido: (x: unknown) => x is T): T[] {
+  return Array.isArray(v) ? v.filter(valido) : [];
+}
+
+export function leerCambiosCatalogo(raw: string | undefined): CambiosCatalogo {
+  const vacio = cambiosCatalogoVacios();
+  if (!raw) return vacio;
+  try {
+    const p: unknown = JSON.parse(raw);
+    if (!esRegistro(p)) return vacio;
+    return {
+      productos: esRegistro(p.productos) ? (p.productos as CambiosCatalogo["productos"]) : {},
+      variantes: esRegistro(p.variantes) ? (p.variantes as CambiosCatalogo["variantes"]) : {},
+      nuevasVariantes: lista(
+        p.nuevasVariantes,
+        (x): x is CambiosCatalogo["nuevasVariantes"][number] =>
+          esRegistro(x) &&
+          typeof x.id === "string" &&
+          typeof x.productoId === "string" &&
+          typeof x.nombre === "string" &&
+          typeof x.extraCents === "number" &&
+          typeof x.activa === "boolean",
+      ),
+      nuevosProductos: lista(
+        p.nuevosProductos,
+        (x): x is CambiosCatalogo["nuevosProductos"][number] =>
+          esRegistro(x) &&
+          typeof x.id === "string" &&
+          typeof x.categoriaId === "string" &&
+          typeof x.nombre === "string" &&
+          typeof x.precioCents === "number",
+      ),
+      nuevasCategorias: lista(
+        p.nuevasCategorias,
+        (x): x is CambiosCatalogo["nuevasCategorias"][number] =>
+          esRegistro(x) && typeof x.id === "string" && typeof x.nombre === "string",
+      ),
+      categoriasEliminadas: lista(
+        p.categoriasEliminadas,
+        (x): x is string => typeof x === "string",
+      ),
+      orden: lista(p.orden, (x): x is string => typeof x === "string"),
+    };
+  } catch {
+    return vacio;
+  }
+}
+
+/** Catálogo base con las ediciones simuladas aplicadas, en el orden elegido. */
+export function aplicarCambiosCatalogo(cambios: CambiosCatalogo): CategoriaCatalogo[] {
+  const todas = [
+    ...CATALOGO_BASE.map((c) => ({ id: c.id, nombre: c.nombre })),
+    ...cambios.nuevasCategorias,
+  ].filter((c) => !cambios.categoriasEliminadas.includes(c.id));
+
+  const ids = todas.map((c) => c.id);
+  const orden = [
+    ...cambios.orden.filter((id) => ids.includes(id)),
+    ...ids.filter((id) => !cambios.orden.includes(id)),
+  ];
+
+  return orden.flatMap((id) => {
+    const categoria = todas.find((c) => c.id === id);
+    if (!categoria) return [];
+    const base = CATALOGO_BASE.find((c) => c.id === id)?.productos ?? [];
+    const nuevos: ProductoCatalogo[] = cambios.nuevosProductos
+      .filter((n) => n.categoriaId === id)
+      .map((n) => ({
+        id: n.id,
+        nombre: n.nombre,
+        descripcion: "",
+        precioCents: n.precioCents,
+        disponible: true,
+        variantes: [],
+      }));
+
+    const productos = [...base, ...nuevos].flatMap((producto) => {
+      const edicion = cambios.productos[producto.id];
+      if (edicion?.eliminado) return [];
+      const variantes = [
+        ...producto.variantes,
+        ...cambios.nuevasVariantes.filter((v) => v.productoId === producto.id),
+      ].map((v) => ({ ...v, activa: cambios.variantes[`${producto.id}:${v.id}`] ?? v.activa }));
+      return [
+        {
+          ...producto,
+          precioCents: edicion?.precioCents ?? producto.precioCents,
+          disponible: edicion?.disponible ?? producto.disponible,
+          imagen: edicion?.conFoto ? PLACEHOLDER_IMAGE : producto.imagen,
+          variantes,
+        },
+      ];
+    });
+    return [{ id, nombre: categoria.nombre, productos }];
+  });
+}
+
+export class CatalogoError extends Error {}
+
+/** Solo desarrollo: ?lento=1, ?error=1 y ?vacio=1 muestran carga, error y vacío. */
+export async function getCatalogo(url: URL, cambios: CambiosCatalogo) {
+  if (flag(url, "lento", "1")) await new Promise((r) => setTimeout(r, 1500));
+  if (flag(url, "error", "1")) throw new CatalogoError("demo: error de carga");
+  return flag(url, "vacio", "1") ? [] : aplicarCambiosCatalogo(cambios);
+}
+
+export function getResumenCatalogo(categorias: CategoriaCatalogo[]) {
+  const productos = categorias.flatMap((c) => c.productos);
+  return {
+    activos: productos.filter((p) => p.disponible).length,
+    productos: productos.length,
+    categorias: categorias.length,
+    sincronizado: true, // TEMPORAL: el estado real lo reportará la API
+    moneda: "MXN ($)", // TEMPORAL: vendrá de los ajustes del negocio
+  };
+}
