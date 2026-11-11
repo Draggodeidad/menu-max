@@ -1025,3 +1025,16 @@ export function contraste(a: string, b: string): number {
   const [la, lb] = [luminancia(a), luminancia(b)];
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
+
+const [presetBase = PRESETS_TEMA[0] as PresetInfo] = PRESETS_TEMA;
+const [fuenteBase = FUENTES_TEMA[0] as (typeof FUENTES_TEMA)[number]] = FUENTES_TEMA;
+
+/** Tema del menú público a partir de lo guardado en ajustes (preset + color primario + fuente). */
+export function resolverTema(ajustes: AjustesDemo) {
+  const preset = PRESETS_TEMA.find((p) => p.id === ajustes.tema.preset) ?? presetBase;
+  const fuente = FUENTES_TEMA.find((f) => f.id === ajustes.tema.fuente) ?? fuenteBase;
+  const primario = normalizaHex(ajustes.tema.primario);
+  // Un valor que no cumple el contraste (cookie manipulada) vuelve al color del preset.
+  const brand = primario && contraste(primario, preset.bg) >= 4.5 ? primario : preset.brand;
+  return { brand, bg: preset.bg, text: preset.text, fuente: fuente.id, familia: fuente.familia };
+}
