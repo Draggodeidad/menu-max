@@ -841,8 +841,12 @@ export type ProductoMenu = {
   opciones?: { titulo: string; valores: string[] };
 };
 
+// TEMPORAL: fallo de lectura del menú público, disponible solo en desarrollo.
+export class MenuError extends Error {}
+
 export async function getCategorias(url: URL, cambios = cambiosCatalogoVacios()) {
   if (flag(url, "lento", "1")) await new Promise((r) => setTimeout(r, 1500));
+  if (flag(url, "error", "1")) throw new MenuError("demo: error de carga del menú");
   if (flag(url, "vacio", "1")) return [];
   return aplicarCambiosCatalogo(cambios).map((categoria) => ({
     id: categoria.id,
