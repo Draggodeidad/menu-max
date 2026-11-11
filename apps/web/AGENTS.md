@@ -15,19 +15,36 @@ Confirma en tu primer mensaje: "Leí DESIGN.md" y en una línea qué pantalla/ar
 
 ---
 
+## 0.1 Fase actual: frontend con datos mock
+
+Hoy se entrega **solo el frontend**. No hay API activa ni `packages/contracts`. Esto cambia cómo se aplican las reglas de abajo:
+
+- **Todo dato viene de mocks, y eso no es motivo para detenerse.** No esperes un contrato ni preguntes por él: construye la pantalla completa con datos de ejemplo.
+- **Dónde viven los mocks:** solo en servidor, en `$lib/server/demo.ts` (o `$lib/server/demo/` si crece). Se consumen desde `+page.server.ts` / `+layout.server.ts` y desde las form actions, igual que se consumiría la API. Los componentes nunca importan mocks.
+- **Forma realista:** modela los datos como los entregaría un backend (dinero en centavos, ids, `imagen` opcional, estados como cadenas fijas). Los tipos se declaran junto al mock o al componente que los usa y se marcan `// TEMPORAL`.
+- **Imágenes:** usa `PLACEHOLDER_IMAGE` de `$lib/images.ts`; nunca fotos reales ni rutas de R2 inventadas.
+- **Mutaciones:** la form action valida lo mínimo (ids y cantidades), no recibe precios y devuelve un resultado simulado. Deja un comentario `// TEMPORAL: sin API todavía`.
+- **Banderas de desarrollo** para ver estados difíciles (cerrado, vacío, carga lenta, error) con `dev` de `$app/env` y parámetros de URL (`?abierto=false`, `?vacio=1`, `?lento=1`). Nunca activas en producción.
+- **Sesión:** las pantallas que exigen sesión (`/app/*`) se construyen con una sesión simulada en `event.locals`, aislada en un solo lugar para reemplazarla.
+- **Al llegar la API:** se borra `demo.ts`, se crea `$lib/server/api.ts` (§6.1) y los esquemas pasan a `packages/contracts`. Las pantallas no deben cambiar, porque ya consumen `load` y actions.
+
+Sigue vigente: el servidor decide (el cliente no manda precios ni totales como dato confiable), el backend (`apps/api`) no se toca, y la lógica de negocio no vive en componentes.
+
+---
+
 ## 1. Stack y versiones
 
-| Pieza       | Elección                                                                 |
-| ----------- | ------------------------------------------------------------------------ |
-| Framework   | SvelteKit (versión de `package.json`) + **Svelte 5 (Runes)**             |
-| Lenguaje    | TypeScript estricto                                                      |
-| Estilos     | **Tailwind CSS v4** (configuración en CSS, sin `tailwind.config.js`)     |
-| Componentes | **shadcn-svelte** (sobre `bits-ui`) en `$lib/components/ui`              |
-| Íconos      | `@lucide/svelte`                                                         |
-| Validación  | Zod desde `packages/contracts` (no se redefinen esquemas en el frontend) |
-| Adaptador   | `@sveltejs/adapter-cloudflare` (Worker `web`)                            |
-| Pruebas     | Vitest + `@testing-library/svelte`, Playwright para E2E                  |
-| Gestor      | pnpm workspaces                                                          |
+| Pieza       | Elección                                                                  |
+| ----------- | ------------------------------------------------------------------------- |
+| Framework   | SvelteKit (versión de `package.json`) + **Svelte 5 (Runes)**              |
+| Lenguaje    | TypeScript estricto                                                       |
+| Estilos     | **Tailwind CSS v4** (configuración en CSS, sin `tailwind.config.js`)      |
+| Componentes | **shadcn-svelte** (sobre `bits-ui`) en `$lib/components/ui`               |
+| Íconos      | `@lucide/svelte`                                                          |
+| Validación  | Zod desde `packages/contracts` cuando exista; mientras, mínima en actions |
+| Adaptador   | `@sveltejs/adapter-cloudflare` (Worker `web`)                             |
+| Pruebas     | Vitest + `@testing-library/svelte`, Playwright para E2E                   |
+| Gestor      | pnpm workspaces                                                           |
 
 **Dependencias:** se pueden agregar dependencias de frontend para lograr una interfaz moderna y cuidada (shadcn-svelte y todo lo que instala: `bits-ui`, `tailwind-variants`, `clsx`, `tailwind-merge`, `tw-animate-css`; además librerías de animación, gráficas, formularios, fechas, toasts, carruseles, etc.). Criterios para aceptar una:
 
@@ -69,7 +86,7 @@ apps/web/
 ├── DESIGN.md
 ├── components.json                # config de shadcn-svelte
 ├── svelte.config.js
-├── wrangler.jsonc                 # binding API → Worker Hono
+├── wrangler.jsonc                 # binding API → Worker Hono (no se toca en fase mock)
 └── src/
     ├── app.css                    # Tailwind v4 + tokens (copiado de DESIGN.md §3.5)
     ├── app.d.ts                   # App.Locals, App.Platform, App.Error
@@ -82,8 +99,10 @@ apps/web/
     │   │   ├── MenuView.svelte
     │   │   └── OrderCard.svelte
     │   ├── server/                # solo servidor: nunca se importa desde el cliente
-    │   │   └── api.ts             # cliente tipado sobre platform.env.API
+    │   │   ├── demo.ts            # TEMPORAL: datos mock (fase actual, §0.1)
+    │   │   └── api.ts             # cliente tipado sobre platform.env.API (cuando exista la API)
     │   ├── cart.svelte.ts
+    │   ├── images.ts              # PLACEHOLDER_IMAGE
     │   ├── money.ts
     │   └── utils.ts               # cn()
     └── routes/                    # ver DESIGN.md §8
@@ -156,9 +175,9 @@ SvelteKit 3 eliminó `$lib`. Importa con `#lib/...` (definido en `imports` de `p
 
 ### 6.1 Carga de datos
 
-- Datos que requieren la API → `+page.server.ts` / `+layout.server.ts`. El navegador **nunca** llama al Worker `api` directamente.
-- La API se consume solo a través de `$lib/server/api.ts`, que usa `event.platform.env.API.fetch(...)` (Service Binding) y reenvía el contexto de sesión validado.
-- Tipa `App.Platform` en `app.d.ts` con el binding `API`. No uses `process.env`; los secretos y bindings vienen de `platform.env` o `$env/static/private` / `$env/dynamic/private`.
+- Los datos se cargan en `+page.server.ts` / `+layout.server.ts`. El navegador **nunca** llama al Worker `api` directamente. Fase actual: la fuente es `$lib/server/demo.ts` (§0.1).
+- Con API activa, se consume solo a través de `$lib/server/api.ts`, que usa `event.platform.env.API.fetch(...)` (Service Binding) y reenvía el contexto de sesión validado.
+- Cuando exista la API, tipa `App.Platform` en `app.d.ts` con el binding `API`. No uses `process.env`; los secretos y bindings vienen de `platform.env` o `$env/static/private` / `$env/dynamic/private`.
 - Usa `depends('app:pedidos')` + `invalidate('app:pedidos')` para refrescar. Polling solo donde `DESIGN.md` lo indica, en un `$effect` que limpie su intervalo.
 - Para datos lentos no críticos, devuelve la promesa sin `await` desde `load` y resuélvela con `{#await}`.
 - `error(404, ...)` y `redirect(303, ...)` de `@sveltejs/kit`; nunca devuelvas objetos de error a mano.
@@ -174,7 +193,7 @@ SvelteKit 3 eliminó `$lib`. Importa con `#lib/...` (definido en `imports` de `p
     return async ({ update }) => { await update(); enviando = false; };
   }}>
   ```
-- Valida en el servidor con el esquema Zod de `packages/contracts`. Devuelve `fail(400, { fieldErrors, values })` y muestra el error bajo cada campo con `aria-invalid` y `aria-describedby`.
+- Valida en el servidor: con el esquema Zod de `packages/contracts` cuando exista; en fase mock, validación mínima escrita en la action (§0.1). Devuelve `fail(400, { fieldErrors, values })` y muestra el error bajo cada campo con `aria-invalid` y `aria-describedby`.
 - **Nunca envíes precios ni totales desde el cliente** como dato confiable. El checkout manda ids, variantes y cantidades; la API recalcula.
 - Checkout: incluye la clave de idempotencia generada en `load` como `<input type="hidden">`.
 - Tras crear algo, `redirect(303, ...)`.
@@ -191,12 +210,12 @@ SvelteKit 3 eliminó `$lib`. Importa con `#lib/...` (definido en `imports` de `p
 - Landing `(marketing)`: `export const prerender = true` si no depende de datos dinámicos.
 - Menú público: SSR con `setHeaders({ 'cache-control': 'public, max-age=60, s-maxage=300' })` (ajustar según el ADR de caché). **Nunca** caches `/app/*`, checkout ni `/pedido/[token]`.
 - `<svelte:head>` en cada ruta pública: `<title>`, `description`, Open Graph con nombre y portada del negocio.
-- `import.meta.env.SSR` / `browser` de `$app/environment` para el código que solo corre en el navegador. `localStorage` y `sessionStorage`, siempre en `try/catch`.
+- `import.meta.env.SSR` / `browser` de `$app/env` para el código que solo corre en el navegador. `localStorage` y `sessionStorage`, siempre en `try/catch`.
 
 ### 6.5 Imágenes
 
 - Siempre `width`, `height`, `alt` (nombre del producto), `loading="lazy"` y `decoding="async"` excepto la portada del negocio.
-- Las URLs las entrega la API; no construyas rutas de R2 en el frontend.
+- Las URLs las entregará la API; no construyas rutas de R2 en el frontend. En fase mock usa `PLACEHOLDER_IMAGE` a través de `ProductImage.svelte`.
 
 ---
 
@@ -217,7 +236,7 @@ SvelteKit 3 eliminó `$lib`. Importa con `#lib/...` (definido en `imports` de `p
 - Lógica pura (`money.ts`, `cart.svelte.ts`, slugify): unitarias con Vitest.
 - Componentes con lógica (`MenuView`, `OrderCard`): pruebas de interacción con `@testing-library/svelte`.
 - Flujos críticos en Playwright: landing → `/crear` → publicar → `/app/listo`; menú → carrito → checkout → seguimiento; aceptar y avanzar un pedido en el panel.
-- La API se simula en pruebas; no apuntes a entornos remotos.
+- La API se simula en pruebas (en fase mock, con `demo.ts`); no apuntes a entornos remotos.
 
 ---
 
@@ -230,7 +249,8 @@ Antes de reportar una tarea como terminada:
 - [ ] Primitivas shadcn restiladas a los tokens; sin duplicar lo que ya resuelve la primitiva.
 - [ ] Sin `export let`, `$:`, `on:`, stores ni estado mutable de módulo.
 - [ ] Las mutaciones son form actions con `use:enhance` y funcionan sin JS.
-- [ ] Ningún dato de la API se pide desde el navegador; todo pasa por `$lib/server/api.ts`.
+- [ ] Ningún dato se pide desde el navegador: todo pasa por `load`/actions en servidor (mock en `$lib/server/demo.ts` hasta que exista `$lib/server/api.ts`).
+- [ ] Los mocks y stubs nuevos están marcados `// TEMPORAL` y listados en el reporte final.
 - [ ] Dependencias nuevas justificadas en el PR y compatibles con SSR y Workers.
 - [ ] `pnpm --filter web check`, `lint` y `test` pasan.
 - [ ] Revisé la pantalla a 360px y en desktop, con teclado.
@@ -243,5 +263,5 @@ Antes de reportar una tarea como terminada:
 - La tarea pide algo de la lista negra de `DESIGN.md §11`.
 - Una dependencia exigiría cambiar la arquitectura (estado global, otro kit de UI, CSS-in-JS) o no funciona en Workers.
 - La pantalla no existe en el flujo de `DESIGN.md §7`.
-- Necesitas un endpoint o un contrato que no existe en `packages/contracts`. No lo inventes en el frontend.
+- Necesitas que el backend cambie o exponga algo (endpoint, contrato, migración). No lo inventes ni lo toques: en fase mock simula el dato en `demo.ts` y anótalo en el reporte final como dependencia pendiente. No te detengas por eso.
 - Un cambio afectaría el backend, migraciones o `wrangler.jsonc`.
