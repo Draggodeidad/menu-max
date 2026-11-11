@@ -11,6 +11,9 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
   },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
   "devDependencies": {
     "@internationalized/date": "^3.12.4",
     "@lucide/svelte": "^1.70.0",
@@ -18,6 +21,7 @@
     "@sveltejs/kit": "^3.1.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.3.5",
+    "@types/qrcode": "^1.5.6",
     "bits-ui": "^2.20.6",
     "clsx": "^2.1.1",
     "svelte": "^5.57.3",

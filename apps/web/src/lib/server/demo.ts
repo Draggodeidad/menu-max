@@ -6,6 +6,9 @@ import { PLACEHOLDER_IMAGE } from "#lib/images.js";
 /** Banderas solo para desarrollo: ?abierto=false, ?vacio=1, ?lento=1 */
 const flag = (url: URL, name: string, value: string) => dev && url.searchParams.get(name) === value;
 
+// TEMPORAL: negocio mostrado en la pantalla de activación.
+export const slugNegocioDemo = "tacos-el-guero";
+
 export function getNegocio(slug: string, url: URL) {
   return {
     slug,
