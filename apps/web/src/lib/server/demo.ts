@@ -7,13 +7,14 @@ import { formatMoney } from "#lib/money.js";
 /** Banderas solo para desarrollo: ?abierto=false, ?vacio=1, ?lento=1 */
 const flag = (url: URL, name: string, value: string) => dev && url.searchParams.get(name) === value;
 
-// TEMPORAL: negocio mostrado en la pantalla de activación.
+// TEMPORAL: negocio único de la demo; panel, menú público y activación leen de aquí.
 export const slugNegocioDemo = "tacos-el-guero";
+const NOMBRE_NEGOCIO_DEMO = "Tacos El Güero";
 
 export function getNegocio(slug: string, url: URL, publicado?: NegocioPublicado | null) {
   return {
     slug,
-    nombre: publicado?.nombre ?? "Tacos El Güero",
+    nombre: publicado?.nombre ?? NOMBRE_NEGOCIO_DEMO,
     abierto: !flag(url, "abierto", "false"),
     cierra: "23:00",
     abre: "09:00",
@@ -114,66 +115,6 @@ export const simulaError = (url: URL) => flag(url, "error", "1");
 
 // Preset `minimal` de DESIGN.md §3.2
 export const tema = { brand: "#1c1f1a", bg: "#ffffff", text: "#1c1f1a" };
-
-export async function getCategorias(url: URL) {
-  if (flag(url, "lento", "1")) await new Promise((r) => setTimeout(r, 1500));
-  if (flag(url, "vacio", "1")) return [];
-  return catalogoPublico();
-}
-
-/** Catálogo público del servidor: fuente de precios para calcular pedidos. */
-function catalogoPublico() {
-  return [
-    {
-      id: "tacos",
-      nombre: "Tacos",
-      productos: [
-        {
-          id: "pastor",
-          nombre: "Pastor con piña",
-          descripcion: "Carne adobada al trompo, cilantro fresco, cebolla picada y piña asada.",
-          precioCents: 2200,
-          imagen: PLACEHOLDER_IMAGE,
-          opciones: { titulo: "Tortilla", valores: ["Maíz", "Harina"] },
-        },
-        {
-          id: "suadero",
-          nombre: "Suadero confitado",
-          descripcion: "Suadero suave cocinado lentamente en comal con doble tortilla taquera.",
-          precioCents: 2400,
-          imagen: PLACEHOLDER_IMAGE,
-        },
-        {
-          id: "gringa",
-          nombre: "Gringa de pastor",
-          descripcion: "Tortilla de harina grande con queso asadero fundido y carne al pastor.",
-          precioCents: 4500,
-          imagen: PLACEHOLDER_IMAGE,
-        },
-      ],
-    },
-    {
-      id: "bebidas",
-      nombre: "Bebidas",
-      productos: [
-        {
-          id: "horchata",
-          nombre: "Agua de horchata (1 L)",
-          descripcion: "Receta artesanal de la casa con arroz y canela fresca.",
-          precioCents: 3500,
-          imagen: PLACEHOLDER_IMAGE,
-        },
-        {
-          id: "cola",
-          nombre: "Coca-Cola de vidrio",
-          descripcion: "Presentación mexicana original de 355 ml bien fría.",
-          precioCents: 2800,
-          imagen: PLACEHOLDER_IMAGE,
-        },
-      ],
-    },
-  ];
-}
 
 // TEMPORAL: seguimiento de pedido. Lo entregará la API con el token público.
 export type EstadoPedido =
@@ -522,7 +463,7 @@ export function serializarPedidosCreados(pedidos: PedidoCreado[]): string {
 /** Productos del servidor con los que se calculan importes (ids -> producto). */
 function productosPorId() {
   const productos = new Map<string, { nombre: string; precioCents: number }>();
-  for (const categoria of catalogoPublico()) {
+  for (const categoria of CATALOGO_BASE) {
     for (const p of categoria.productos) productos.set(p.id, p);
   }
   return productos;
@@ -628,9 +569,9 @@ const baseConCreados = (creados: PedidoCreado[]) => [...creadosComoPanel(creados
 // TEMPORAL: negocio de la sesión simulada del panel y métricas del día.
 export function getNegocioPanel(url: URL) {
   return {
-    nombre: "Taquería El Nopal",
-    slug: "taqueria-el-nopal",
-    sucursal: "Taquería El Nopal",
+    nombre: NOMBRE_NEGOCIO_DEMO,
+    slug: slugNegocioDemo,
+    sucursal: NOMBRE_NEGOCIO_DEMO,
     abierto: !flag(url, "abierto", "false"),
   };
 }
@@ -730,7 +671,7 @@ const CATALOGO_BASE: CategoriaCatalogo[] = [
     productos: [
       {
         id: "horchata",
-        nombre: "Agua de horchata (1L)",
+        nombre: "Agua de horchata (1 L)",
         descripcion:
           "Elaborada con arroz, leche condensada y un toque aromático de canela mexicana.",
         precioCents: 3500,
@@ -888,6 +829,39 @@ export async function getCatalogo(url: URL, cambios: CambiosCatalogo) {
   if (flag(url, "lento", "1")) await new Promise((r) => setTimeout(r, 1500));
   if (flag(url, "error", "1")) throw new CatalogoError("demo: error de carga");
   return flag(url, "vacio", "1") ? [] : aplicarCambiosCatalogo(cambios);
+}
+
+// TEMPORAL: lo que ve el comensal. Es el mismo catálogo del panel, sin lo agotado.
+export type ProductoMenu = {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  precioCents: number;
+  imagen?: string;
+  opciones?: { titulo: string; valores: string[] };
+};
+
+export async function getCategorias(url: URL, cambios = cambiosCatalogoVacios()) {
+  if (flag(url, "lento", "1")) await new Promise((r) => setTimeout(r, 1500));
+  if (flag(url, "vacio", "1")) return [];
+  return aplicarCambiosCatalogo(cambios).map((categoria) => ({
+    id: categoria.id,
+    nombre: categoria.nombre,
+    productos: categoria.productos
+      .filter((p) => p.disponible)
+      .map((p): ProductoMenu => {
+        const valores = p.variantes.filter((v) => v.activa).map((v) => v.nombre);
+        return {
+          id: p.id,
+          nombre: p.nombre,
+          descripcion: p.descripcion,
+          precioCents: p.precioCents,
+          imagen: p.imagen,
+          // TEMPORAL: el extra de cada variante aún no se suma al precio del carrito.
+          opciones: valores.length > 0 ? { titulo: "Opción", valores } : undefined,
+        };
+      }),
+  }));
 }
 
 export function getResumenCatalogo(categorias: CategoriaCatalogo[]) {
