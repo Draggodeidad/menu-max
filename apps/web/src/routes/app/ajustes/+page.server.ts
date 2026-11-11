@@ -205,7 +205,12 @@ export const actions = {
       pendiente: true,
     });
     guardar(cookies, ajustes);
-    return { seccion: "equipo", ok: true, mensaje: `Invitación enviada a ${values.correo}.` };
+    return {
+      seccion: "equipo",
+      accion: "invitar",
+      ok: true,
+      mensaje: `Invitación simulada para ${values.correo}. No se envió ningún correo.`,
+    };
   },
 
   rol: async ({ request, cookies }) => {
@@ -227,7 +232,12 @@ export const actions = {
     }
     miembro.rol = rol as RolEquipo;
     guardar(cookies, ajustes);
-    return { seccion: "equipo", ok: true, mensaje: `Rol de ${miembro.nombre} actualizado.` };
+    return {
+      seccion: "equipo",
+      accion: "rol",
+      ok: true,
+      mensaje: `Rol de ${miembro.nombre} actualizado.`,
+    };
   },
 
   quitar: async ({ request, cookies }) => {
@@ -245,7 +255,12 @@ export const actions = {
     }
     ajustes.equipo = ajustes.equipo.filter((m) => m.id !== id);
     guardar(cookies, ajustes);
-    return { seccion: "equipo", ok: true, mensaje: `${miembro.nombre} ya no tiene acceso.` };
+    return {
+      seccion: "equipo",
+      accion: "quitar",
+      ok: true,
+      mensaje: `${miembro.nombre} ya no tiene acceso.`,
+    };
   },
 
   mesas: async ({ request, cookies }) => {
