@@ -148,7 +148,7 @@ test.fixme("el tema guardado se aplica al menú público", async ({ page }) => {
 });
 
 // H04: la action acepta IDs inexistentes.
-test.fixme("checkout rechaza un producto inexistente", async ({ page }) => {
+test("checkout rechaza un producto inexistente", async ({ page }) => {
   await abrirPedido(page);
   await page.getByLabel("Nombre completo").fill("Ana Prueba");
   await page.getByLabel("Teléfono (WhatsApp)").fill("5512345678");
