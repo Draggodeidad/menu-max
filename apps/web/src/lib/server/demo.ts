@@ -6,13 +6,14 @@ import { PLACEHOLDER_IMAGE } from "#lib/images.js";
 /** Banderas solo para desarrollo: ?abierto=false, ?vacio=1, ?lento=1 */
 const flag = (url: URL, name: string, value: string) => dev && url.searchParams.get(name) === value;
 
-// TEMPORAL: negocio mostrado en la pantalla de activación.
+// TEMPORAL: negocio único de la demo; panel, menú público y activación leen de aquí.
 export const slugNegocioDemo = "tacos-el-guero";
+const NOMBRE_NEGOCIO_DEMO = "Tacos El Güero";
 
 export function getNegocio(slug: string, url: URL) {
   return {
     slug,
-    nombre: "Tacos El Güero",
+    nombre: NOMBRE_NEGOCIO_DEMO,
     abierto: !flag(url, "abierto", "false"),
     cierra: "23:00",
     abre: "09:00",
@@ -333,9 +334,9 @@ export function contarNuevos(avance: AvanceDemo): number {
 // TEMPORAL: negocio de la sesión simulada del panel y métricas del día.
 export function getNegocioPanel(url: URL) {
   return {
-    nombre: "Taquería El Nopal",
-    slug: "taqueria-el-nopal",
-    sucursal: "Taquería El Nopal",
+    nombre: NOMBRE_NEGOCIO_DEMO,
+    slug: slugNegocioDemo,
+    sucursal: NOMBRE_NEGOCIO_DEMO,
     abierto: !flag(url, "abierto", "false"),
   };
 }
