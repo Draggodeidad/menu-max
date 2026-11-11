@@ -23,7 +23,7 @@ Toda pantalla, campo o clic que no empuje una de las dos se elimina.
 4. **Modales con criterio.** `Dialog`, `Sheet` y `AlertDialog` de shadcn-svelte están permitidos cuando aportan (confirmar eliminar, carrito en móvil, formularios cortos). Para lo que cabe en la página se usa la página.
 5. **Nativo cuando basta, componente cuando mejora.** Un `<form>`, `<details>` o `input type=color` se queda nativo si resuelve bien. Si un componente de shadcn-svelte da mejor accesibilidad o acabado, se usa.
 6. **Lo que ve el dueño es lo que ve el cliente.** La vista previa y el menú público usan el mismo componente (`MenuView`).
-7. **El servidor decide.** Precios, totales, permisos y estados se calculan en la API; la UI solo muestra.
+7. **El servidor decide.** Precios, totales, permisos y estados se calculan en la API; la UI solo muestra. (Fase actual: la UI se entrega con datos mock en servidor, ver `AGENTS.md §0.1`; el diseño no cambia cuando llegue la API.)
 8. **Una sola audacia.** El momento memorable es el nombre del negocio apareciendo en vivo dentro del teléfono de la vista previa. Todo lo demás es sobrio.
 
 ---
@@ -372,7 +372,9 @@ routes/
 lib/
 ├── cart.svelte.ts
 ├── money.ts
-├── server/api.ts
+├── server/demo.ts      (TEMPORAL: datos mock)
+├── server/api.ts       (cuando exista la API)
+├── images.ts
 └── components/Phone.svelte · MenuView.svelte · OrderCard.svelte
 ```
 
