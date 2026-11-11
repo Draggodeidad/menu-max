@@ -104,8 +104,7 @@ test("acepta y avanza un pedido y conserva el cambio al recargar", async ({ page
   await expect(pedido.getByRole("button", { name: "Marcar listo" })).toBeVisible();
 });
 
-// H05: el menú no consume el catálogo editado.
-test.fixme("el precio editado en el catálogo se refleja en el menú público", async ({ page }) => {
+test("el precio editado en el catálogo se refleja en el menú público", async ({ page }) => {
   await ir(page, "/app/catalogo");
   const precio = page.getByLabel("Precio de Pastor con piña en pesos");
   await precio.fill("32.00");
@@ -118,6 +117,13 @@ test.fixme("el precio editado en el catálogo se refleja en el menú público", 
     .locator("li")
     .filter({ has: page.getByRole("heading", { name: "Pastor con piña" }) });
   await expect(producto).toContainText("$32.00");
+});
+
+test("el menú público omite los productos agotados del catálogo", async ({ page }) => {
+  await ir(page, menu);
+  await expect(page.getByRole("heading", { name: "Gringa de pastor" })).toHaveCount(0);
+  await ir(page, "/app/catalogo");
+  await expect(page.locator("#producto-gringa")).toBeVisible();
 });
 
 // H06: el checkout ignora las modalidades guardadas.
