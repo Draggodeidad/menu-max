@@ -15,8 +15,7 @@ test("landing lleva el nombre a crear y conserva el borrador", async ({ page }) 
   await expect(page.getByLabel("Nombre del producto 1")).toHaveValue("Sopa de tortilla");
 });
 
-// H01: publicación deshabilitada.
-test.fixme("crear permite publicar el menú y abrirlo desde el QR", async ({ page }) => {
+test("crear permite publicar el menú y abrirlo desde el QR", async ({ page }) => {
   await ir(page, "/crear?nombre=Cocina%20de%20Ana");
   await page.getByLabel("WhatsApp para recibir pedidos").fill("5512345678");
   await page.getByLabel("Correo electrónico").fill("ana@example.com");
@@ -29,8 +28,7 @@ test.fixme("crear permite publicar el menú y abrirlo desde el QR", async ({ pag
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Cocina de Ana");
 });
 
-// H01: no existe validación de publicación.
-test.fixme("crear valida campos obligatorios antes de publicar", async ({ page }) => {
+test("crear valida campos obligatorios antes de publicar", async ({ page }) => {
   await ir(page, "/crear");
   await page.getByRole("button", { name: "Publicar menú" }).scrollIntoViewIfNeeded();
   await expect(page.getByRole("button", { name: "Publicar menú" })).toBeEnabled();

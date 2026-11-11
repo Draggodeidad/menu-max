@@ -12,7 +12,7 @@
   type Producto = {
     id: string;
     nombre: string;
-    descripcion: string;
+    descripcion?: string;
     precioCents: number;
     imagen?: string;
     opciones?: { titulo: string; valores: string[] };
@@ -149,9 +149,11 @@
               <div class="flex gap-4">
                 <div class="min-w-0 flex-1">
                   <h3 class="text-base font-semibold">{p.nombre}</h3>
-                  <p class="mt-1 text-sm leading-relaxed text-(color:--brand-muted)">
-                    {p.descripcion}
-                  </p>
+                  {#if p.descripcion}
+                    <p class="mt-1 text-sm leading-relaxed text-(color:--brand-muted)">
+                      {p.descripcion}
+                    </p>
+                  {/if}
                   <p class="mt-3 font-semibold tabular-nums">{formatMoney(p.precioCents)}</p>
                 </div>
                 <div class="flex shrink-0 flex-col items-end justify-between gap-3">
