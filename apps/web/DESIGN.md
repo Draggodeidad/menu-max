@@ -416,3 +416,9 @@ lib/
 - Etiquetas en mayúsculas, eyebrows, numeración decorativa, flechas en botones.
 - Color de marca MenusMax dentro del menú público.
 - Dependencias que no funcionan en SSR o en Cloudflare Workers, o que pesan mucho en el menú público.
+
+---
+
+## 12. Excepción: seguimiento de pedido
+
+La pantalla `/pedido/[token]` sigue el wireframe de Seguimiento: usa los tokens de MenusMax `cal`, `blanco`, `tinta`, `piedra`, `linea` y `nopal`; muestra el enlace para llamar al negocio en todos los estados y conserva el texto «Detalle de tu orden». Las demás pantallas públicas mantienen su tema de negocio y el vocabulario de §6. Las etiquetas de sección usan sentence case para conservar la legibilidad.

@@ -3,204 +3,223 @@
   import { MediaQuery } from "svelte/reactivity";
   import { fade } from "svelte/transition";
   import Check from "@lucide/svelte/icons/check";
-  import CircleAlert from "@lucide/svelte/icons/circle-alert";
+  import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import Phone from "@lucide/svelte/icons/phone";
+  import Store from "@lucide/svelte/icons/store";
+  import Banknote from "@lucide/svelte/icons/banknote";
   import type { PageProps } from "./$types";
-  import { Button } from "#lib/components/ui/button/index.js";
   import { formatMoney } from "#lib/money.js";
 
   let { data }: PageProps = $props();
   const pedido = $derived(data.pedido);
+  let actualizando = $state(false);
+  let errorActualizacion = $state(false);
+
+  async function actualizar() {
+    if (actualizando) return;
+    actualizando = true;
+    try {
+      await invalidate("app:pedido");
+      errorActualizacion = false;
+    } catch {
+      errorActualizacion = true;
+    } finally {
+      actualizando = false;
+    }
+  }
   const reducedMotion = new MediaQuery("(prefers-reduced-motion: reduce)");
   const duration = $derived(reducedMotion.current ? 0 : 200);
-
-  // Mismos derivados del tema que `m/[slug]/+layout.svelte` (DESIGN.md §3.6).
-  const vars = $derived(
-    `--brand:${data.tema.brand};--brand-bg:${data.tema.bg};--brand-text:${data.tema.text};` +
-      `--brand-muted:color-mix(in srgb,${data.tema.text} 70%,${data.tema.bg});` +
-      `--brand-line:color-mix(in srgb,${data.tema.text} 12%,${data.tema.bg});` +
-      `--brand-tint:color-mix(in srgb,${data.tema.text} 8%,${data.tema.bg})`,
-  );
-
-  const pasos = $derived.by(() => {
-    const listo =
-      pedido.modalidad === "mesa"
-        ? "Listo para tu mesa"
-        : pedido.modalidad === "domicilio"
-          ? "Listo para salir"
-          : "Listo para recoger";
-    return [
-      { estado: "pending", label: "Pedido enviado" },
-      { estado: "accepted", label: "Pedido aceptado" },
-      { estado: "preparing", label: "En preparación" },
-      { estado: "ready", label: listo },
-      ...(pedido.modalidad === "domicilio"
-        ? [{ estado: "out_for_delivery", label: "En camino" }]
-        : []),
-      { estado: "delivered", label: "Entregado" },
-    ];
-  });
-
+  const pasos = $derived([
+    { estado: "pending", label: "Recibido", descripcion: "Comanda enviada a la taquería · 14:32" },
+    { estado: "accepted", label: "Aceptado", descripcion: "El negocio confirmó el pedido · 14:33" },
+    {
+      estado: "preparing",
+      label: "En preparación",
+      descripcion: "Tus tacos se están dorando al comal en este momento.",
+    },
+    {
+      estado: "ready",
+      label: pedido.modalidad === "domicilio" ? "Listo para salir" : "Listo para entrega",
+      descripcion:
+        pedido.modalidad === "domicilio"
+          ? "Tu pedido está listo para salir."
+          : "Te avisaremos para pasar a barra con tu número",
+    },
+    ...(pedido.modalidad === "domicilio"
+      ? [{ estado: "out_for_delivery", label: "En camino", descripcion: "Tu pedido va en camino." }]
+      : []),
+    { estado: "delivered", label: "Entregado", descripcion: "¡Buen provecho!" },
+  ]);
   const actual = $derived(
     Math.max(
       0,
-      pasos.findIndex((p) => p.estado === pedido.estado),
+      pasos.findIndex((paso) => paso.estado === pedido.estado),
     ),
   );
   const rechazado = $derived(pedido.estado === "rejected");
   const final = $derived(rechazado || pedido.estado === "delivered");
-  // "Llamar al negocio" solo si hay un problema (DESIGN.md §7.2-J).
-  const hayProblema = $derived(rechazado || pedido.retraso);
-
-  const titulo = $derived(
-    rechazado
-      ? "El negocio no pudo aceptar tu pedido"
-      : pedido.estado === "delivered"
-        ? "Tu pedido fue entregado"
-        : `${pasos[actual].label}`,
+  const titulo = $derived(rechazado ? "Pedido rechazado" : pasos[actual].label);
+  const modalidad = $derived(
+    pedido.modalidad === "mesa"
+      ? `Mesa ${pedido.mesa}`
+      : pedido.modalidad === "domicilio"
+        ? "A domicilio"
+        : "Para recoger en sucursal",
   );
 
-  // Polling cada 10 s que se detiene en estados finales (sincroniza con un intervalo externo).
   $effect(() => {
     if (final) return;
-    const id = setInterval(() => invalidate("app:pedido"), 10_000);
+    const id = setInterval(() => {
+      void actualizar();
+    }, 10_000);
     return () => clearInterval(id);
   });
 </script>
 
 <svelte:head>
-  <title>Pedido {pedido.codigo} · {pedido.negocio.nombre}</title>
+  <title>Pedido #{pedido.codigo} · {pedido.negocio.nombre}</title>
   <meta name="robots" content="noindex" />
 </svelte:head>
 
-<div style={vars} class="min-h-dvh bg-(color:--brand-bg) text-(color:--brand-text)">
-  <main
-    class="mx-auto min-h-dvh max-w-md bg-(color:--brand-bg) md:border-x md:border-(color:--brand-line)"
-  >
-    <header class="px-5 pt-8 pb-6">
-      <p class="text-base text-(color:--brand-muted)">
-        {pedido.negocio.nombre} · Pedido {pedido.codigo}{pedido.modalidad === "mesa"
-          ? ` · Mesa ${pedido.mesa}`
-          : ""}
-      </p>
-      <div aria-live="polite">
-        {#key titulo}
-          <h1 in:fade={{ duration }} class="mt-2 text-3xl font-bold tracking-[-0.03em]">
-            {titulo}
-          </h1>
-        {/key}
-      </div>
-      {#if rechazado}
-        <p class="mt-2 max-w-[60ch] text-base leading-relaxed text-(color:--brand-muted)">
-          {pedido.motivoRechazo} No se te cobrará nada.
-        </p>
-      {:else if !final}
-        <p class="mt-2 text-base text-(color:--brand-muted)">
-          Esta página se actualiza sola. No necesitas recargarla.
-        </p>
-      {/if}
-    </header>
+<div class="min-h-dvh bg-cal text-tinta">
+  <header class="bg-background">
+    <div class="mx-auto flex max-w-md items-center justify-between gap-4 px-5 py-4">
+      <span class="font-bold">{pedido.negocio.nombre}</span>
+      <span class="rounded-full bg-cal px-3 py-1 text-sm font-semibold"
+        >Pedido #{pedido.codigo}</span
+      >
+    </div>
+  </header>
 
-    {#if hayProblema}
-      <section class="border-t border-(color:--brand-line) px-5 py-6" aria-labelledby="problema">
-        <div class="flex items-start gap-3 rounded-xl border border-(color:--brand-text) p-4">
-          <CircleAlert aria-hidden="true" class="mt-0.5 size-5 shrink-0" />
-          <div class="min-w-0">
-            <h2 id="problema" class="text-lg font-semibold tracking-[-0.02em]">
-              {rechazado ? "Puedes hacer otro pedido" : "Tu pedido tarda más de lo normal"}
-            </h2>
-            <p class="mt-1 text-sm text-(color:--brand-muted)">
-              {rechazado
-                ? "Llama al negocio si tienes dudas."
-                : "Si necesitas saber qué pasa, llama al negocio."}
-            </p>
-          </div>
+  <main class="mx-auto max-w-md space-y-6 px-5 py-6">
+    <section
+      class="rounded-xl border border-linea bg-background p-5"
+      aria-label="Estado actual del pedido"
+    >
+      <div class="flex flex-wrap items-end justify-between gap-3">
+        <div aria-live="polite">
+          <p class="text-sm font-semibold text-piedra">Estado actual</p>
+          {#key titulo}<h1 in:fade={{ duration }} class="text-2xl font-bold">{titulo}</h1>{/key}
         </div>
-        <Button
-          href="tel:{pedido.negocio.telefono}"
-          size="lg"
-          class="mt-4 w-full rounded-lg bg-(color:--brand) text-(color:--brand-bg) hover:bg-(color:--brand)/90 focus-visible:ring-(color:--brand)/30"
+        <div class="text-right">
+          <p class="text-sm text-piedra">Total comanda</p>
+          <p class="text-2xl font-bold text-nopal tabular-nums">
+            {formatMoney(pedido.totalCents)} MXN
+          </p>
+        </div>
+      </div>
+      <div class="mt-4 flex flex-wrap gap-2 border-t border-linea pt-3 text-sm">
+        <span class="inline-flex items-center gap-1 rounded-full bg-cal px-3 py-1 font-medium"
+          ><Store aria-hidden="true" class="size-4" />{modalidad}</span
         >
-          <Phone aria-hidden="true" />
-          Llamar al negocio
-        </Button>
-      </section>
-    {/if}
+        <span class="rounded-full bg-cal px-3 py-1 text-piedra">{pedido.cliente}</span>
+      </div>
+    </section>
 
-    {#if !rechazado}
-      <section class="border-t border-(color:--brand-line) px-5 py-6" aria-labelledby="estado">
-        <h2 id="estado" class="text-xl font-semibold tracking-[-0.02em]">Estado del pedido</h2>
-        <ol class="mt-5">
+    <section class="rounded-xl border border-linea bg-background p-5" aria-labelledby="progreso">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-linea pb-3">
+        <h2 id="progreso" class="text-sm font-semibold text-piedra">Progreso en cocina</h2>
+        {#if !final && !errorActualizacion}<span
+            class="flex items-center gap-2 text-sm font-medium text-nopal"
+            ><span class="size-2 rounded-full bg-nopal"></span>{actualizando
+              ? "Actualizando…"
+              : "Actualizando en vivo"}</span
+          >{/if}
+      </div>
+      {#if errorActualizacion}
+        <div role="alert" class="mt-4 text-sm text-piedra">
+          <p>No se pudo actualizar el pedido. Inténtalo de nuevo.</p>
+          <button
+            type="button"
+            onclick={actualizar}
+            disabled={actualizando}
+            class="min-h-11 font-semibold text-nopal underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-nopal disabled:opacity-50"
+            >{actualizando ? "Actualizando…" : "Reintentar"}</button
+          >
+        </div>
+      {/if}
+      {#if rechazado}
+        <p class="mt-4 font-semibold">El negocio no pudo aceptar tu pedido</p>
+        <p class="mt-1 text-sm text-piedra">{pedido.motivoRechazo} No se te cobrará nada.</p>
+      {:else}
+        {#if pedido.retraso}<p class="mt-4 text-sm text-piedra">
+            Tu pedido tarda más de lo normal. Llama al negocio si necesitas ayuda.
+          </p>{/if}
+        <ol class="mt-4">
           {#each pasos as paso, i (paso.estado)}
-            {@const hecho = i < actual || pedido.estado === "delivered"}
-            {@const ahora = i === actual && pedido.estado !== "delivered"}
+            {@const hecho = i < actual}
+            {@const ahora = i === actual}
             <li
-              class="relative flex gap-4 pb-6 last:pb-0"
+              class="relative flex gap-4 pb-5 last:pb-0"
               aria-current={ahora ? "step" : undefined}
             >
-              {#if i < pasos.length - 1}
-                <span
+              {#if i < pasos.length - 1}<span
                   aria-hidden="true"
-                  class="absolute top-8 bottom-0 left-4 w-px -translate-x-1/2 {hecho
-                    ? 'bg-(color:--brand)'
-                    : 'bg-(color:--brand-line)'}"
-                ></span>
-              {/if}
+                  class="absolute top-3 bottom-0 left-1 w-px {hecho ? 'bg-nopal' : 'bg-linea'}"
+                ></span>{/if}
               <span
                 aria-hidden="true"
-                class="relative z-10 grid size-8 shrink-0 place-items-center rounded-full border {hecho
-                  ? 'border-(color:--brand) bg-(color:--brand) text-(color:--brand-bg)'
-                  : ahora
-                    ? 'border-(color:--brand) bg-(color:--brand-bg)'
-                    : 'border-(color:--brand-line) bg-(color:--brand-bg)'}"
-              >
-                {#if hecho}
-                  <Check class="size-4" />
-                {:else if ahora}
-                  <span class="size-3 rounded-full bg-(color:--brand)"></span>
-                {/if}
-              </span>
-              <div class="min-h-8 pt-1">
-                <p
-                  class="text-base {ahora
-                    ? 'font-semibold'
-                    : hecho
-                      ? 'font-medium'
-                      : 'text-(color:--brand-muted)'}"
-                >
+                class="relative mt-1 size-3 shrink-0 rounded-full {hecho || ahora
+                  ? 'bg-nopal'
+                  : 'bg-linea'}"
+              ></span>
+              <div class="min-w-0 flex-1">
+                <p class="font-semibold {i > actual ? 'text-piedra' : ''}">
                   {paso.label}
+                  {#if ahora}<span
+                      class="ml-1 rounded-full bg-cal px-2 py-1 text-sm font-medium text-nopal"
+                      >Actual</span
+                    >{/if}
                 </p>
-                {#if ahora}
-                  <p in:fade={{ duration }} class="text-sm text-(color:--brand-muted)">
-                    <span class="sr-only">Paso actual. </span>Ahora
-                  </p>
-                {/if}
+                <p class="mt-1 text-sm {ahora ? 'text-nopal' : 'text-piedra'}">
+                  {paso.descripcion}
+                </p>
               </div>
+              {#if hecho}<Check aria-hidden="true" class="size-5 shrink-0 text-nopal" />{/if}
             </li>
           {/each}
         </ol>
-      </section>
-    {/if}
-
-    <section class="border-t border-(color:--brand-line) px-5 py-6" aria-labelledby="resumen">
-      <h2 id="resumen" class="text-xl font-semibold tracking-[-0.02em]">Tu pedido</h2>
-      <ul class="mt-4 divide-y divide-(color:--brand-line)">
-        {#each pedido.lineas as l (l.id)}
-          <li class="flex items-baseline justify-between gap-4 py-3">
-            <span class="text-base">
-              <span class="tabular-nums">{l.cantidad}</span> × {l.nombre}
-            </span>
-            <span class="font-medium tabular-nums">{formatMoney(l.totalCents)}</span>
-          </li>
-        {/each}
-      </ul>
-      <p
-        class="flex items-baseline justify-between border-t border-(color:--brand-line) pt-4 text-lg font-semibold"
-      >
-        <span>Total</span>
-        <span class="tabular-nums">{formatMoney(pedido.totalCents)}</span>
-      </p>
-      <p class="mt-2 text-sm text-(color:--brand-muted)">Pagas en efectivo al recibir.</p>
+      {/if}
     </section>
+
+    <details open class="group rounded-xl border border-linea bg-background p-5">
+      <summary
+        class="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-nopal"
+      >
+        <span>Detalle de tu orden ({pedido.lineas.length} platillos)</span>
+        <ChevronDown aria-hidden="true" class="size-4 shrink-0 group-open:rotate-180" />
+      </summary>
+      {#if pedido.lineas.length}
+        <ul class="divide-y divide-linea border-t border-linea">
+          {#each pedido.lineas as linea (linea.id)}
+            <li class="flex items-center justify-between gap-4 py-3">
+              <div>
+                <p class="font-semibold">{linea.cantidad}× {linea.nombre}</p>
+                <p class="text-sm text-piedra">{linea.descripcion}</p>
+              </div>
+              <span class="font-semibold tabular-nums">{formatMoney(linea.totalCents)}</span>
+            </li>
+          {/each}
+        </ul>
+      {:else}<p class="border-t border-linea py-4 text-sm text-piedra">
+          No hay productos en el detalle de este pedido. Llama al negocio para aclararlo.
+        </p>{/if}
+      <div
+        class="flex flex-wrap items-center justify-between gap-2 border-t border-linea pt-3 text-sm"
+      >
+        <span class="text-piedra">Método de liquidación:</span><span
+          class="inline-flex items-center gap-1 font-semibold"
+          ><Banknote aria-hidden="true" class="size-4" />Efectivo al recibir</span
+        >
+      </div>
+    </details>
+    <footer class="pb-8 text-center text-sm text-piedra">
+      <p>¿Necesitas hacer una aclaración o agregar algo?</p>
+      <a
+        href="tel:{pedido.negocio.telefono}"
+        class="inline-flex min-h-11 items-center gap-1 font-semibold text-nopal underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-nopal"
+        ><Phone aria-hidden="true" class="size-4" />Llamar a {pedido.negocio.nombre} (55 1234 5678)</a
+      >
+    </footer>
   </main>
 </div>

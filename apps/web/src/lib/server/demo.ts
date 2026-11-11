@@ -116,17 +116,38 @@ export function getPedido(token: string, url: URL) {
   return {
     token,
     codigo: token.replace(/-/g, "").slice(0, 4).toUpperCase(),
-    estado: ESTADOS.find((e) => e === estado) ?? ("accepted" as EstadoPedido),
+    estado: ESTADOS.find((e) => e === estado) ?? ("preparing" as EstadoPedido),
     modalidad: modalidad === "domicilio" || modalidad === "mesa" ? modalidad : "recoger",
     mesa: "4",
+    cliente: "Rodrigo Mendoza",
     retraso: flag(url, "retraso", "1"),
     motivoRechazo: "Nos quedamos sin pastor por hoy.",
-    negocio: { nombre: "Tacos El Güero", telefono: "+525555550123" },
-    lineas: [
-      { id: "pastor", nombre: "Pastor con piña", cantidad: 2, totalCents: 4400 },
-      { id: "suadero", nombre: "Suadero confitado", cantidad: 1, totalCents: 2400 },
-      { id: "horchata", nombre: "Agua de horchata (1 L)", cantidad: 1, totalCents: 3500 },
-    ],
+    negocio: { nombre: "Tacos El Güero", telefono: "+525512345678" },
+    lineas: flag(url, "vacio", "1")
+      ? []
+      : [
+          {
+            id: "pastor",
+            nombre: "Pastor con piña",
+            descripcion: "Tortilla de maíz artesanal ($22.00 c/u)",
+            cantidad: 2,
+            totalCents: 4400,
+          },
+          {
+            id: "suadero",
+            nombre: "Suadero confitado",
+            descripcion: "Con cilantro y cebolla asada",
+            cantidad: 1,
+            totalCents: 2400,
+          },
+          {
+            id: "horchata",
+            nombre: "Agua de horchata (1L)",
+            descripcion: "Receta casera con canela fresca",
+            cantidad: 1,
+            totalCents: 3500,
+          },
+        ],
     totalCents: 10300,
   };
 }
