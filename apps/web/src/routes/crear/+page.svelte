@@ -7,6 +7,7 @@
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import Plus from "@lucide/svelte/icons/plus";
   import X from "@lucide/svelte/icons/x";
+  import { onMount } from "svelte";
 
   type Producto = { id: number; nombre: string; precio: string };
   const ejemplo: Producto[] = [
@@ -31,7 +32,9 @@
   );
   const moneda = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
 
-  $effect(() => {
+  // Se restaura una sola vez al montar. Con $effect el efecto leía y escribía
+  // `productos` a la vez, y con un borrador guardado entraba en un bucle infinito.
+  onMount(() => {
     try {
       const guardado = localStorage.getItem("menusmax-borrador");
       if (guardado) {
