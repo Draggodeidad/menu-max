@@ -9,6 +9,7 @@
   import User from "@lucide/svelte/icons/user";
   import UtensilsCrossed from "@lucide/svelte/icons/utensils-crossed";
   import type { LayoutProps } from "./$types";
+  import CatalogoSkeleton from "./catalogo/CatalogoSkeleton.svelte";
   import PedidosSkeleton from "./PedidosSkeleton.svelte";
 
   let { data, children }: LayoutProps = $props();
@@ -145,6 +146,8 @@
 
   {#if navigating.to?.route.id === "/app"}
     <PedidosSkeleton />
+  {:else if navigating.to?.route.id === "/app/catalogo"}
+    <CatalogoSkeleton />
   {:else}
     {@render children()}
   {/if}
