@@ -1,5 +1,14 @@
 import { fail, redirect } from "@sveltejs/kit";
-import { getEntrega, getNegocio, simulaError } from "#lib/server/demo.js";
+import {
+  COOKIE_PEDIDOS,
+  crearPedido,
+  getEntrega,
+  getNegocio,
+  leerPedidosCreados,
+  productosDesconocidos,
+  serializarPedidosCreados,
+  simulaError,
+} from "#lib/server/demo.js";
 import type { Actions, PageServerLoad } from "./$types";
 
 // Clave de idempotencia del envío (DESIGN.md §7.2-I), generada en `load`.
@@ -15,7 +24,7 @@ export const load: PageServerLoad = ({ url, setHeaders }) => {
 type Campo = "nombre" | "telefono" | "direccion" | "notas";
 
 export const actions: Actions = {
-  enviar: async ({ request, url, params }) => {
+  enviar: async ({ request, url, params, cookies }) => {
     const form = await request.formData();
     const ids = form.getAll("id").map(String);
     const cantidades = form.getAll("cantidad").map(Number);
@@ -73,7 +82,35 @@ export const actions: Actions = {
         values,
       });
     }
+
+    const lineas = ids.map((id, i) => ({ id, cantidad: cantidades[i] }));
+    if (productosDesconocidos(lineas).length > 0) {
+      return fail(409, {
+        error: "Algún producto de tu pedido ya no está en el menú. Quítalo para continuar.",
+        values,
+      });
+    }
+
     // TEMPORAL: el token de seguimiento lo entregará la API; aquí es la clave de idempotencia.
-    redirect(303, `/pedido/${String(form.get("idempotencyKey") ?? crypto.randomUUID())}`);
+    const clave = String(form.get("idempotencyKey") ?? "");
+    const token = /^[\w-]{8,64}$/.test(clave) ? clave : crypto.randomUUID();
+    // TEMPORAL: sin API todavía. El pedido se guarda en una cookie por navegador; los importes
+    // no se guardan: se recalculan desde el catálogo del servidor.
+    const pedidos = crearPedido(leerPedidosCreados(cookies.get(COOKIE_PEDIDOS)), {
+      token,
+      modalidad,
+      mesa: mesa ?? undefined,
+      cliente: { nombre: values.nombre, telefono: values.telefono },
+      direccion: modalidad === "domicilio" ? values.direccion : undefined,
+      nota: values.notas || undefined,
+      lineas,
+    });
+    cookies.set(COOKIE_PEDIDOS, serializarPedidosCreados(pedidos), {
+      path: "/",
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 60 * 60 * 8,
+    });
+    redirect(303, `/pedido/${token}`);
   },
 };
