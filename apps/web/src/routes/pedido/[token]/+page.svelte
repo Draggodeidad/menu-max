@@ -7,6 +7,7 @@
   import Phone from "@lucide/svelte/icons/phone";
   import Store from "@lucide/svelte/icons/store";
   import Banknote from "@lucide/svelte/icons/banknote";
+  import MessageCircle from "@lucide/svelte/icons/message-circle";
   import type { PageProps } from "./$types";
   import { formatMoney } from "#lib/money.js";
 
@@ -181,6 +182,37 @@
         </ol>
       {/if}
     </section>
+
+    {#if !rechazado}
+      <section
+        class="rounded-xl border border-linea bg-background p-5"
+        aria-labelledby="whatsapp-titulo"
+      >
+        <h2 id="whatsapp-titulo" class="font-semibold">Avisa al negocio por WhatsApp</h2>
+        {#if data.whatsappHref}
+          <p class="mt-1 text-sm text-piedra">
+            Se abrirá WhatsApp con tu pedido escrito. Tú decides si envías el mensaje; tu pedido ya
+            quedó registrado y el seguimiento sigue aquí.
+          </p>
+          <a
+            href={data.whatsappHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-nopal px-4 font-semibold text-white hover:bg-nopal/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-nopal"
+            ><MessageCircle aria-hidden="true" class="size-5" />Abrir WhatsApp con mi pedido<span
+              class="sr-only"
+            >
+              (se abre en otra pestaña)</span
+            ></a
+          >
+        {:else}
+          <p class="mt-1 text-sm text-piedra">
+            Este negocio no tiene un número de WhatsApp disponible. Puedes seguir tu pedido aquí o
+            llamar al negocio.
+          </p>
+        {/if}
+      </section>
+    {/if}
 
     <details open class="group rounded-xl border border-linea bg-background p-5">
       <summary
