@@ -143,8 +143,7 @@ test.fixme("las modalidades guardadas se respetan en el checkout", async ({ page
   await expect(page.getByRole("radio", { name: "A domicilio" })).toHaveCount(0);
 });
 
-// H07: el menú usa un tema fijo.
-test.fixme("el tema guardado se aplica al menú público", async ({ page }) => {
+test("el tema guardado se aplica al menú público", async ({ page }) => {
   await ir(page, "/app/ajustes");
   await page.getByLabel("Color primario de acción (botones y destacados)").fill("#123456");
   await page.getByRole("button", { name: /Guardar cambios de tema/i }).click();
