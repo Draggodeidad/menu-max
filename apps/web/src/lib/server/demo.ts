@@ -85,3 +85,45 @@ export async function getCategorias(url: URL) {
     },
   ];
 }
+
+// TEMPORAL: seguimiento de pedido. Lo entregará la API con el token público.
+export type EstadoPedido =
+  | "pending"
+  | "accepted"
+  | "preparing"
+  | "ready"
+  | "out_for_delivery"
+  | "delivered"
+  | "rejected";
+
+const ESTADOS: EstadoPedido[] = [
+  "pending",
+  "accepted",
+  "preparing",
+  "ready",
+  "out_for_delivery",
+  "delivered",
+  "rejected",
+];
+
+/** Solo desarrollo: ?estado=preparing, ?modalidad=domicilio|mesa, ?retraso=1 */
+export function getPedido(token: string, url: URL) {
+  const estado = dev ? url.searchParams.get("estado") : null;
+  const modalidad = dev ? url.searchParams.get("modalidad") : null;
+  return {
+    token,
+    codigo: token.replace(/-/g, "").slice(0, 4).toUpperCase(),
+    estado: ESTADOS.find((e) => e === estado) ?? ("accepted" as EstadoPedido),
+    modalidad: modalidad === "domicilio" || modalidad === "mesa" ? modalidad : "recoger",
+    mesa: "4",
+    retraso: flag(url, "retraso", "1"),
+    motivoRechazo: "Nos quedamos sin pastor por hoy.",
+    negocio: { nombre: "Tacos El Güero", telefono: "+525555550123" },
+    lineas: [
+      { id: "pastor", nombre: "Pastor con piña", cantidad: 2, totalCents: 4400 },
+      { id: "suadero", nombre: "Suadero confitado", cantidad: 1, totalCents: 2400 },
+      { id: "horchata", nombre: "Agua de horchata (1 L)", cantidad: 1, totalCents: 3500 },
+    ],
+    totalCents: 10300,
+  };
+}
