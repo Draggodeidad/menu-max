@@ -1,6 +1,12 @@
 <script lang="ts">
   import { page } from "$app/state";
   import Phone from "#lib/components/Phone.svelte";
+  import { Button } from "#lib/components/ui/button/index.js";
+  import { Input } from "#lib/components/ui/input/index.js";
+  import { Label } from "#lib/components/ui/label/index.js";
+  import ChevronDown from "@lucide/svelte/icons/chevron-down";
+  import Plus from "@lucide/svelte/icons/plus";
+  import X from "@lucide/svelte/icons/x";
 
   type Producto = { id: number; nombre: string; precio: string };
   const ejemplo: Producto[] = [
@@ -102,9 +108,11 @@
                 </p>
               </div>
               <span
-                class="grid size-8 shrink-0 place-items-center rounded-full bg-piedra/60 text-white"
-                aria-hidden="true">+</span
+                class="grid size-8 shrink-0 place-items-center rounded-full bg-tinta text-white"
+                aria-hidden="true"
               >
+                <Plus class="size-4" />
+              </span>
             </li>
           {/each}
         </ul>
@@ -119,19 +127,18 @@
 <header class="border-b border-linea bg-white">
   <div class="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
     <a href="/" class="text-xl font-bold tracking-[-0.03em]">MenusMax</a>
-    <a
-      href="/entrar"
-      class="inline-flex h-11 items-center rounded-lg border border-linea bg-white px-5 text-sm font-medium hover:bg-cal"
-      >Entrar</a
-    >
+    <Button href="/entrar" variant="outline" class="h-11 px-5 text-sm">Entrar</Button>
   </div>
 </header>
 
 <main class="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-12">
   <details open class="mb-8 lg:hidden">
-    <summary class="cursor-pointer rounded-lg border border-linea bg-white px-4 py-3 font-semibold"
-      >Vista previa de tu menú</summary
+    <summary
+      class="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-linea bg-white px-4 py-3 font-semibold focus-visible:ring-2 focus-visible:ring-nopal/30 focus-visible:outline-none [&::-webkit-details-marker]:hidden"
     >
+      Vista previa de tu menú
+      <ChevronDown class="size-5 text-piedra" aria-hidden="true" />
+    </summary>
     <div class="pt-6">{@render vistaPrevia()}</div>
   </details>
   <div class="grid items-start gap-12 lg:grid-cols-[minmax(0,560px)_1fr]">
@@ -142,14 +149,14 @@
       </p>
       <form class="mt-8" onsubmit={(event) => event.preventDefault()}>
         <div>
-          <label for="nombre" class="text-sm font-semibold">Nombre de tu negocio</label>
-          <input
+          <Label for="nombre" class="font-semibold">Nombre de tu negocio</Label>
+          <Input
             id="nombre"
             name="nombre"
             autocomplete="organization"
             bind:value={nombre}
             placeholder="Nombre de tu negocio"
-            class="mt-2 h-12 w-full rounded-lg border border-linea bg-white px-4 outline-none placeholder:text-piedra focus:border-nopal focus:ring-2 focus:ring-nopal/20"
+            class="mt-2"
           />
         </div>
         <div class="mt-5">
@@ -159,26 +166,25 @@
           </p>
         </div>
         <fieldset class="mt-10">
-          <div class="flex items-baseline justify-between gap-3">
-            <legend class="font-semibold">Productos y precios</legend><span
-              class="text-sm text-piedra">Pesos MXN</span
-            >
-          </div>
+          <legend class="text-xl font-semibold tracking-[-0.02em]">Productos y precios</legend>
+          <p class="mt-1 text-sm text-piedra">
+            Agrega los productos de tu menú y sus precios en pesos MXN.
+          </p>
           <div class="mt-3 space-y-2">
             {#each productos as producto, i (producto.id)}
               <div class="flex gap-2">
-                <label class="sr-only" for="producto-{producto.id}"
-                  >Nombre del producto {i + 1}</label
+                <Label class="sr-only" for="producto-{producto.id}"
+                  >Nombre del producto {i + 1}</Label
                 >
-                <input
+                <Input
                   id="producto-{producto.id}"
                   bind:value={producto.nombre}
                   placeholder="Nombre del producto"
-                  class="h-12 min-w-0 flex-1 rounded-lg border border-linea px-3 text-sm outline-none placeholder:text-piedra focus:border-nopal focus:ring-2 focus:ring-nopal/20"
+                  class="min-w-0 flex-1 px-3 text-sm"
                 />
-                <label class="sr-only" for="precio-{producto.id}">Precio del producto {i + 1}</label
+                <Label class="sr-only" for="precio-{producto.id}">Precio del producto {i + 1}</Label
                 >
-                <input
+                <Input
                   id="precio-{producto.id}"
                   bind:value={producto.precio}
                   type="number"
@@ -186,35 +192,34 @@
                   step="0.01"
                   inputmode="decimal"
                   placeholder="$ 0.00"
-                  class="h-12 w-24 rounded-lg border border-linea px-3 text-sm tabular-nums outline-none placeholder:text-piedra focus:border-nopal focus:ring-2 focus:ring-nopal/20 sm:w-32"
+                  class="w-24 px-3 text-sm tabular-nums sm:w-32"
                 />
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  size="icon"
+                  class="size-12 text-piedra"
                   aria-label="Quitar producto {i + 1}"
                   onclick={() => (productos = productos.filter((p) => p.id !== producto.id))}
-                  class="grid size-12 shrink-0 place-items-center rounded-lg border border-linea text-piedra hover:bg-cal"
-                  ><svg
-                    viewBox="0 0 24 24"
-                    class="size-5"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" /></svg
-                  ></button
                 >
+                  <X class="size-5" aria-hidden="true" />
+                </Button>
               </div>
             {/each}
           </div>
-          <button
+          <Button
             type="button"
+            variant="outline"
+            class="mt-4 h-11 text-sm"
             onclick={() =>
               (productos = [...productos, { id: siguienteId++, nombre: "", precio: "" }])}
-            class="mt-3 h-11 rounded-lg border border-linea px-4 text-sm font-medium hover:bg-cal"
-            >+ Agregar producto</button
           >
+            <Plus class="size-4" aria-hidden="true" /> Agregar producto
+          </Button>
         </fieldset>
         <fieldset class="mt-10">
-          <legend class="text-sm font-semibold">Cómo entregas tus pedidos</legend>
+          <legend class="text-xl font-semibold tracking-[-0.02em]">Cómo entregas tus pedidos</legend
+          >
           <div class="mt-3 flex flex-wrap gap-2">
             {#each [{ valor: "mesa", etiqueta: "Mesa (en el local)" }, { valor: "recoger", etiqueta: "Para recoger" }, { valor: "domicilio", etiqueta: "A domicilio" }] as modalidad (modalidad.valor)}
               <label
@@ -232,14 +237,14 @@
           </div>
         </fieldset>
         <div class="mt-10">
-          <label for="whatsapp" class="text-sm font-semibold">WhatsApp para recibir pedidos</label>
-          <input
+          <Label for="whatsapp" class="font-semibold">WhatsApp para recibir pedidos</Label>
+          <Input
             id="whatsapp"
             type="tel"
             autocomplete="tel"
             bind:value={whatsapp}
             placeholder="10 dígitos"
-            class="mt-2 h-12 w-full rounded-lg border border-linea px-4 outline-none placeholder:text-piedra focus:border-nopal focus:ring-2 focus:ring-nopal/20"
+            class="mt-2"
           />
           <p class="mt-2 text-sm text-piedra">Tus clientes enviarán su pedido a este número.</p>
         </div>
@@ -250,30 +255,25 @@
           </p>
           <div class="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
-              <label for="correo" class="text-sm font-semibold">Correo electrónico</label><input
+              <Label for="correo" class="font-semibold">Correo electrónico</Label><Input
                 id="correo"
                 type="email"
                 autocomplete="email"
                 placeholder="tu@negocio.com"
-                class="mt-1 h-12 w-full rounded-lg border border-linea px-4 text-sm outline-none placeholder:text-piedra focus:border-nopal focus:ring-2 focus:ring-nopal/20"
+                class="mt-2 text-sm"
               />
             </div>
             <div>
-              <label for="contrasena" class="text-sm font-semibold">Contraseña</label><input
+              <Label for="contrasena" class="font-semibold">Contraseña</Label><Input
                 id="contrasena"
                 type="password"
                 autocomplete="new-password"
                 placeholder="Mínimo 8 caracteres"
-                class="mt-1 h-12 w-full rounded-lg border border-linea px-4 text-sm outline-none placeholder:text-piedra focus:border-nopal focus:ring-2 focus:ring-nopal/20"
+                class="mt-2 text-sm"
               />
             </div>
           </div>
-          <button
-            type="submit"
-            disabled
-            class="mt-4 h-12 w-full rounded-lg bg-nopal px-5 font-semibold text-white disabled:opacity-50"
-            >Publicar menú</button
-          >
+          <Button type="submit" disabled class="mt-6 w-full">Publicar menú</Button>
           <p class="mt-2 text-sm text-piedra">
             La publicación aún no está disponible. Tu borrador se guarda en este navegador.
           </p>
