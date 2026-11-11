@@ -19,7 +19,7 @@ Confirma en tu primer mensaje: "Leí DESIGN.md" y en una línea qué pantalla/ar
 
 | Pieza       | Elección                                                                 |
 | ----------- | ------------------------------------------------------------------------ |
-| Framework   | SvelteKit 2 + **Svelte 5 (Runes)**                                       |
+| Framework   | SvelteKit (versión de `package.json`) + **Svelte 5 (Runes)**             |
 | Lenguaje    | TypeScript estricto                                                      |
 | Estilos     | **Tailwind CSS v4** (configuración en CSS, sin `tailwind.config.js`)     |
 | Componentes | **shadcn-svelte** (sobre `bits-ui`) en `$lib/components/ui`              |
@@ -29,7 +29,12 @@ Confirma en tu primer mensaje: "Leí DESIGN.md" y en una línea qué pantalla/ar
 | Pruebas     | Vitest + `@testing-library/svelte`, Playwright para E2E                  |
 | Gestor      | pnpm workspaces                                                          |
 
-**Dependencias permitidas en `apps/web`:** las de arriba más las que instala shadcn-svelte (`bits-ui`, `tailwind-variants`, `clsx`, `tailwind-merge`, `tw-animate-css`). Cualquier otra dependencia necesita un ADR en `docs/adr/` aprobado antes de instalarla. Prohibido en particular: librerías de estado global, de formularios (superforms incluido, salvo ADR), de animación, de fechas pesadas, de CSS-in-JS, y kits de UI distintos a shadcn-svelte.
+**Dependencias:** se pueden agregar dependencias de frontend para lograr una interfaz moderna y cuidada (shadcn-svelte y todo lo que instala: `bits-ui`, `tailwind-variants`, `clsx`, `tailwind-merge`, `tw-animate-css`; además librerías de animación, gráficas, formularios, fechas, toasts, carruseles, etc.). Criterios para aceptar una:
+
+- Compatible con Svelte 5 y SSR, y funciona en Cloudflare Workers (sin APIs de Node).
+- Mantenida, tree-shakeable y sin pesar de más: justifica cualquier paquete que sume más de ~30 kB gzip al bundle del cliente.
+- Se menciona con una línea de motivo en la descripción del PR. Solo hace falta un ADR en `docs/adr/` si cambia la arquitectura (estado global, kit de UI alternativo a shadcn-svelte, CSS-in-JS).
+- Nunca en el storefront público si empeora su carga: el menú público debe seguir siendo ligero y legible sin JavaScript.
 
 ---
 
@@ -88,7 +93,7 @@ Reglas:
 
 - **No crees carpetas o archivos que la tarea no necesita.** Nada de `features/`, `services/`, `stores/`, `hooks/`, `constants/` "por si acaso".
 - Un componente nuevo en `$lib/components` solo existe si se usa en **dos o más rutas**. Si se usa en una, vive dentro de la ruta como snippet (`{#snippet}`) o inline.
-- No se crean wrappers encima de shadcn (`MyButton`, `AppInput`…). Se usa la primitiva con sus variantes.
+- Prefiere la primitiva de shadcn con sus variantes. Si un patrón se repite en 3 o más lugares, puedes componerlo en un componente propio, sin duplicar lo que ya hace la primitiva.
 
 ---
 
@@ -100,18 +105,23 @@ Resumen operativo de `DESIGN.md`. Si dudas, el documento manda.
 - **`cempasuchil`** solo para "pedido nuevo" y el contador del carrito en vista previa.
 - **Storefront** (`/m/[slug]`, `/pedido/[token]`) usa exclusivamente `var(--brand)`, `var(--brand-bg)`, `var(--brand-text)`. Nunca colores de MenusMax.
 - **Tipografía:** Onest, escala de `DESIGN.md §3.3`. Precios con `tabular-nums`.
-- **Sin:** gradientes, sombras (salvo `Phone`), mayúsculas decorativas, eyebrows, numeración decorativa, flechas en botones, tarjetas como decoración.
+- **Superficies:** se permiten sombras suaves con offset y desenfoque en elementos elevados (popover, dialog, sheet, dropdown, toast, `Phone`) y degradados sutiles de la paleta en fondos. Siguen prohibidos el texto con degradado, las sombras duras y el borde + sombra en tarjetas de contenido.
+- **Sin:** mayúsculas decorativas, eyebrows, numeración decorativa, flechas en botones, tarjetas idénticas como decoración.
 - **Radios:** `rounded-xl` contenedores, `rounded-lg` inputs/botones, `rounded-full` solo chips, botón `+` y pastillas.
-- **Sin modales** salvo `AlertDialog` para eliminar producto o categoría.
-- **Movimiento:** solo los eventos listados en `DESIGN.md §5`, siempre con `motion-safe:` o respetando `prefers-reduced-motion`.
+- **Modales:** `Dialog`, `Sheet` y `AlertDialog` están permitidos cuando aportan (confirmar eliminar, filtros, formularios cortos, carrito en móvil). No para productos simples ni para cosas que caben en la página.
+- **Movimiento:** los eventos de `DESIGN.md §5` y las transiciones de las primitivas; siempre con `motion-safe:` o respetando `prefers-reduced-motion`. Sin bucles ni parallax.
 - **Textos:** español de México, tú, sentence case, verbos concretos; vocabulario fijo de `DESIGN.md §6` (menú, producto, pedido, modalidad, panel).
+
+### Alias `#lib`
+
+SvelteKit 3 eliminó `$lib`. Importa con `#lib/...` (definido en `imports` de `package.json`). Donde este documento diga `$lib`, léelo como `#lib`.
 
 ### shadcn-svelte
 
-- Solo las primitivas de la tabla de `DESIGN.md §4.0`. Las de la lista "no se instalan" están prohibidas.
+- Instala las primitivas que necesites (catálogo completo de shadcn-svelte y bloques). `DESIGN.md §4.0` lista las base.
 - Tras cada `add`, **restila** el archivo generado en `$lib/components/ui/<nombre>`:
   - `h-12` en `Button` (tamaño `default`) e `Input`.
-  - Quita `shadow-xs` / `shadow-sm`.
+  - Conserva solo sombras suaves en superficies elevadas; quita las de controles planos (botones, inputs).
   - Foco: `focus-visible:ring-2 focus-visible:ring-ring/30`.
 - Los archivos de `ui/` son código nuestro: se editan para alinearlos al diseño, pero no se les agrega lógica de negocio.
 - Combina clases con `cn()` de `$lib/utils`. No concatenes strings de clases a mano.
@@ -217,11 +227,11 @@ Antes de reportar una tarea como terminada:
 
 - [ ] Leí `DESIGN.md` y la pantalla respeta tokens, tipografía, radios, movimiento y textos.
 - [ ] Cero hex sueltos y cero colores de la paleta por defecto de Tailwind en componentes.
-- [ ] Solo primitivas shadcn permitidas, restiladas; sin wrappers nuevos.
+- [ ] Primitivas shadcn restiladas a los tokens; sin duplicar lo que ya resuelve la primitiva.
 - [ ] Sin `export let`, `$:`, `on:`, stores ni estado mutable de módulo.
 - [ ] Las mutaciones son form actions con `use:enhance` y funcionan sin JS.
 - [ ] Ningún dato de la API se pide desde el navegador; todo pasa por `$lib/server/api.ts`.
-- [ ] Ninguna dependencia nueva fuera de la lista permitida.
+- [ ] Dependencias nuevas justificadas en el PR y compatibles con SSR y Workers.
 - [ ] `pnpm --filter web check`, `lint` y `test` pasan.
 - [ ] Revisé la pantalla a 360px y en desktop, con teclado.
 - [ ] Reporte final: archivos tocados, qué cambió y cualquier punto donde `DESIGN.md` no cubría el caso.
@@ -231,7 +241,7 @@ Antes de reportar una tarea como terminada:
 ## 10. Cuándo detenerte y preguntar
 
 - La tarea pide algo de la lista negra de `DESIGN.md §11`.
-- Necesitas una dependencia nueva o una primitiva shadcn no permitida.
+- Una dependencia exigiría cambiar la arquitectura (estado global, otro kit de UI, CSS-in-JS) o no funciona en Workers.
 - La pantalla no existe en el flujo de `DESIGN.md §7`.
 - Necesitas un endpoint o un contrato que no existe en `packages/contracts`. No lo inventes en el frontend.
 - Un cambio afectaría el backend, migraciones o `wrangler.jsonc`.
