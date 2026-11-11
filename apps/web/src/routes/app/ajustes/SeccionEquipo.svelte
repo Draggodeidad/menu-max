@@ -60,6 +60,9 @@
     }}
   >
     <p class="text-base font-semibold">Invitar nuevo colaborador</p>
+    <p class="text-sm text-piedra">
+      Esta es una demostración. El colaborador quedará pendiente y no recibirá ningún correo.
+    </p>
     <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_14rem_auto]">
       <div class="min-w-0">
         <Label for="correo-invitado" class="sr-only">Correo del colaborador</Label>
@@ -101,11 +104,11 @@
         class="bg-tinta hover:bg-tinta/90"
       >
         <Send aria-hidden="true" />
-        {invitando ? "Enviando…" : "Enviar invitación"}
+        {invitando ? "Simulando…" : "Simular invitación"}
       </Button>
     </div>
     <p role="status" aria-live="polite" class="text-sm font-medium text-nopal">
-      {#if propio?.ok && propio.mensaje?.startsWith("Invitación")}{propio.mensaje}{/if}
+      {#if propio?.ok && propio.accion === "invitar"}{propio.mensaje}{/if}
     </p>
   </form>
 
@@ -206,6 +209,6 @@
   {/if}
 
   <p role="status" aria-live="polite" class="text-sm font-medium text-nopal">
-    {#if propio?.ok && propio.mensaje && !propio.mensaje.startsWith("Invitación")}{propio.mensaje}{/if}
+    {#if propio?.ok && propio.mensaje && propio.accion !== "invitar"}{propio.mensaje}{/if}
   </p>
 </div>
