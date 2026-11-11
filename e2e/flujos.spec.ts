@@ -15,17 +15,21 @@ test("landing lleva el nombre a crear y conserva el borrador", async ({ page }) 
   await expect(page.getByLabel("Nombre del producto 1")).toHaveValue("Sopa de tortilla");
 });
 
-test("crear permite publicar el menú y abrirlo desde el QR", async ({ page }) => {
-  await ir(page, "/crear?nombre=Cocina%20de%20Ana");
-  await page.getByLabel("WhatsApp para recibir pedidos").fill("5512345678");
-  await page.getByLabel("Correo electrónico").fill("ana@example.com");
-  await page.getByLabel("Contraseña", { exact: true }).fill("12345678");
-  await page.getByRole("button", { name: "Publicar menú" }).scrollIntoViewIfNeeded();
-  await expect(page.getByRole("button", { name: "Publicar menú" })).toBeEnabled();
-  await page.getByRole("button", { name: "Publicar menú" }).click();
-  await expect(page).toHaveURL(/\/app\/listo$/);
-  await page.getByRole("link", { name: "Hacer un pedido de prueba" }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Cocina de Ana");
+test.describe("publicación sin sesión previa", () => {
+  test.use({ sesion: false });
+
+  test("crear permite publicar el menú y abrirlo desde el QR", async ({ page }) => {
+    await ir(page, "/crear?nombre=Cocina%20de%20Ana");
+    await page.getByLabel("WhatsApp para recibir pedidos").fill("5512345678");
+    await page.getByLabel("Correo electrónico").fill("ana@example.com");
+    await page.getByLabel("Contraseña", { exact: true }).fill("12345678");
+    await page.getByRole("button", { name: "Publicar menú" }).scrollIntoViewIfNeeded();
+    await expect(page.getByRole("button", { name: "Publicar menú" })).toBeEnabled();
+    await page.getByRole("button", { name: "Publicar menú" }).click();
+    await expect(page).toHaveURL(/\/app\/listo$/);
+    await page.getByRole("link", { name: "Hacer un pedido de prueba" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Cocina de Ana");
+  });
 });
 
 test("crear valida campos obligatorios antes de publicar", async ({ page }) => {
@@ -40,19 +44,24 @@ test("crear valida campos obligatorios antes de publicar", async ({ page }) => {
   );
 });
 
-test("login simulado redirige al panel", async ({ page }) => {
-  await ir(page, "/entrar");
-  await page.getByLabel("Correo electrónico").fill("ana@example.com");
-  await page.getByLabel("Contraseña", { exact: true }).fill("12345678");
-  await page.getByRole("button", { name: "Entrar", exact: true }).click();
-  await expect(page).toHaveURL(/\/app$/);
-  await expect(page.getByRole("heading", { name: "Pedidos", exact: true })).toBeVisible();
-});
+test.describe("sin sesión simulada", () => {
+  test.use({ sesion: false });
 
-// H08: falta una guardia de sesión simulada.
-test.fixme("el panel exige sesión simulada antes de entrar", async ({ page }) => {
-  await ir(page, "/app");
-  await expect(page).toHaveURL(/\/entrar$/);
+  test("login simulado redirige al panel", async ({ page }) => {
+    await ir(page, "/entrar");
+    await page.getByLabel("Correo electrónico").fill("ana@example.com");
+    await page.getByLabel("Contraseña", { exact: true }).fill("12345678");
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
+    await expect(page).toHaveURL(/\/app$/);
+    await expect(page.getByRole("heading", { name: "Pedidos", exact: true })).toBeVisible();
+  });
+
+  test("el panel exige sesión simulada antes de entrar", async ({ page }) => {
+    await ir(page, "/app");
+    await expect(page).toHaveURL(/\/entrar$/);
+    await ir(page, "/app/ajustes");
+    await expect(page).toHaveURL(/\/entrar$/);
+  });
 });
 
 test("pedido simulado llega al seguimiento con los datos capturados", async ({ page }) => {
