@@ -175,41 +175,6 @@ function catalogoPublico() {
   ];
 }
 
-/**
- * TEMPORAL: valida las líneas de un pedido contra el menú del negocio. El cliente solo manda
- * ids, opción y cantidad; la API recalculará esto y los montos. Devuelve un mensaje accionable
- * o `null` si todas las líneas son válidas.
- */
-export async function validarLineasPedido(
-  lineas: { id: string; opcion: string }[],
-  url: URL,
-): Promise<string | null> {
-  type Producto = {
-    id: string;
-    nombre: string;
-    disponible?: boolean;
-    opciones?: { valores: string[] };
-  };
-  const productos = new Map<string, Producto>();
-  for (const categoria of await getCategorias(url)) {
-    for (const p of categoria.productos as Producto[]) productos.set(p.id, p);
-  }
-  for (const { id, opcion } of lineas) {
-    const producto = productos.get(id);
-    if (!producto) {
-      return "Un producto de tu pedido ya no está en el menú. Quítalo para continuar.";
-    }
-    if (producto.disponible === false) {
-      return `${producto.nombre} ya no está disponible. Quítalo para continuar.`;
-    }
-    const valores = producto.opciones?.valores ?? [];
-    if (valores.length > 0 ? !valores.includes(opcion) : opcion !== "") {
-      return `Elige una opción válida para ${producto.nombre}.`;
-    }
-  }
-  return null;
-}
-
 // TEMPORAL: seguimiento de pedido. Lo entregará la API con el token público.
 export type EstadoPedido =
   | "pending"
@@ -507,8 +472,9 @@ export const COOKIE_PEDIDOS = "demo_pedidos";
 const MAX_PEDIDOS_CREADOS = 5;
 const PRIMER_CODIGO = 1047; // continúa tras los pedidos base (#1042-#1046)
 
-const MODALIDADES = new Set<string>(["mesa", "recoger", "domicilio"]);
 const esTexto = (v: unknown): v is string => typeof v === "string";
+const esModalidad = (v: unknown): v is Modalidad =>
+  esTexto(v) && MODALIDADES.some((modalidad) => modalidad === v);
 
 export function leerPedidosCreados(raw: string | undefined): PedidoCreado[] {
   if (!raw) return [];
@@ -520,8 +486,9 @@ export function leerPedidosCreados(raw: string | undefined): PedidoCreado[] {
       if (typeof item !== "object" || item === null) continue;
       const { token, codigo, estado, modalidad, cliente, lineas, creadoEn } = item;
       const c = cliente as Record<string, unknown> | null;
-      if (!esTexto(token) || !esTexto(codigo) || !esTexto(estado) || !esTexto(modalidad)) continue;
-      if (!ESTADOS_VALIDOS.has(estado) || !MODALIDADES.has(modalidad)) continue;
+      if (!esTexto(token) || !esTexto(codigo) || !esTexto(estado) || !esModalidad(modalidad))
+        continue;
+      if (!ESTADOS_VALIDOS.has(estado)) continue;
       if (typeof c !== "object" || c === null || !esTexto(c.nombre) || !esTexto(c.telefono))
         continue;
       if (!Array.isArray(lineas) || typeof creadoEn !== "number") continue;
@@ -532,7 +499,7 @@ export function leerPedidosCreados(raw: string | undefined): PedidoCreado[] {
         token,
         codigo,
         estado: estado as EstadoCreado,
-        modalidad: modalidad as Modalidad,
+        modalidad,
         mesa: esTexto(item.mesa) ? item.mesa : undefined,
         cliente: { nombre: c.nombre, telefono: c.telefono },
         direccion: esTexto(item.direccion) ? item.direccion : undefined,
@@ -588,11 +555,28 @@ export type NuevoPedido = {
   lineas: { id: string; cantidad: number }[];
 };
 
-/** Ids que no existen en el catálogo del servidor. */
-export const productosDesconocidos = (lineas: { id: string }[]) => {
-  const productos = productosPorId();
-  return lineas.filter((l) => !productos.has(l.id)).map((l) => l.id);
-};
+/** TEMPORAL: valida que cada producto y opción sigan disponibles en el menú del servidor. */
+export async function validarLineasPedido(
+  lineas: { id: string; opcion: string }[],
+  url: URL,
+): Promise<string | null> {
+  const menuPorId = new Map(
+    (await getCategorias(url)).flatMap(({ productos }) =>
+      productos.map((producto) => [producto.id, producto] as const),
+    ),
+  );
+  for (const { id, opcion } of lineas) {
+    const producto = menuPorId.get(id);
+    if (!producto) {
+      return "Un producto de tu pedido ya no está en el menú. Quítalo para continuar.";
+    }
+    const valores = producto.opciones?.valores;
+    if (valores?.length ? !valores.includes(opcion) : opcion !== "") {
+      return `Elige una opción válida para ${producto.nombre}.`;
+    }
+  }
+  return null;
+}
 
 /**
  * Registra un pedido nuevo en `pedidos` (idempotente por token) y devuelve la lista nueva.

@@ -5,9 +5,9 @@ import {
   getEntrega,
   getNegocio,
   leerPedidosCreados,
-  productosDesconocidos,
   serializarPedidosCreados,
   simulaError,
+  validarLineasPedido,
 } from "#lib/server/demo.js";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -52,15 +52,6 @@ export const actions: Actions = {
       notas: texto("notas"),
     };
 
-    // TEMPORAL: sin API todavía. Los ids y opciones deben existir en el menú del negocio.
-    const errorProductos = await validarLineasPedido(
-      ids.map((id, i) => ({ id, opcion: opciones[i] ?? "" })),
-      url,
-    );
-    if (errorProductos) {
-      return fail(409, { error: errorProductos, values });
-    }
-
     const fieldErrors: Partial<Record<Campo, string>> = {};
     if (values.nombre.length < 2) {
       fieldErrors.nombre = "Escribe tu nombre para que el negocio sepa a quién entregar.";
@@ -93,13 +84,13 @@ export const actions: Actions = {
       });
     }
 
-    const lineas = ids.map((id, i) => ({ id, cantidad: cantidades[i] }));
-    if (productosDesconocidos(lineas).length > 0) {
-      return fail(409, {
-        error: "Algún producto de tu pedido ya no está en el menú. Quítalo para continuar.",
-        values,
-      });
-    }
+    const lineas = ids.map((id, i) => ({
+      id,
+      cantidad: cantidades[i],
+      opcion: opciones[i] ?? "",
+    }));
+    const errorProductos = await validarLineasPedido(lineas, origen);
+    if (errorProductos) return fail(409, { error: errorProductos, values });
 
     // TEMPORAL: el token de seguimiento lo entregará la API; aquí es la clave de idempotencia.
     const clave = String(form.get("idempotencyKey") ?? "");
@@ -113,7 +104,7 @@ export const actions: Actions = {
       cliente: { nombre: values.nombre, telefono: values.telefono },
       direccion: modalidad === "domicilio" ? values.direccion : undefined,
       nota: values.notas || undefined,
-      lineas,
+      lineas: lineas.map(({ id, cantidad }) => ({ id, cantidad })),
     });
     cookies.set(COOKIE_PEDIDOS, serializarPedidosCreados(pedidos), {
       path: "/",

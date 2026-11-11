@@ -145,7 +145,6 @@ test.fixme("el tema guardado se aplica al menú público", async ({ page }) => {
   expect(color.toLowerCase()).toBe("#123456");
 });
 
-// H04: la action acepta IDs inexistentes.
 test("checkout rechaza un producto inexistente", async ({ page }) => {
   await abrirPedido(page);
   await page.getByLabel("Nombre completo").fill("Ana Prueba");
@@ -158,6 +157,19 @@ test("checkout rechaza un producto inexistente", async ({ page }) => {
     });
   await page.getByRole("button", { name: /Enviar pedido/ }).click();
   await expect(page.getByRole("alert")).toContainText(/producto|disponible/i);
+  await expect(page).toHaveURL(/\/m\/tacos-el-guero\/pedido/);
+});
+
+test("checkout rechaza una opción que el producto no ofrece", async ({ page }) => {
+  await abrirPedido(page);
+  await page.getByLabel("Nombre completo").fill("Ana Prueba");
+  await page.getByLabel("Teléfono (WhatsApp)").fill("5512345678");
+  await page.locator('input[name="opcion"]').evaluate((input: HTMLInputElement) => {
+    input.value = "opción inexistente";
+  });
+  await page.getByRole("button", { name: /Enviar pedido/ }).click();
+  await expect(page.getByRole("alert")).toContainText("Elige una opción válida");
+  await expect(page.getByLabel("Nombre completo")).toHaveValue("Ana Prueba");
   await expect(page).toHaveURL(/\/m\/tacos-el-guero\/pedido/);
 });
 
