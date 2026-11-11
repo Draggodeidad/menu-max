@@ -351,3 +351,154 @@ export function getResumenPanel(pedidos: PedidoPanel[]) {
     canal: top,
   };
 }
+
+// ---------------------------------------------------------------------------
+// TEMPORAL: ajustes del negocio (/app/ajustes). Los entregará la API; mientras,
+// los cambios se guardan en una cookie por usuario.
+// ---------------------------------------------------------------------------
+export type PresetTema = "minimal" | "dark" | "vibrant";
+export type FuenteTema = "sans" | "rounded" | "serif";
+export type RolEquipo = "admin" | "cocina" | "mesera";
+
+export type PresetInfo = {
+  id: PresetTema;
+  nombre: string;
+  descripcion: string;
+  brand: string;
+  bg: string;
+  text: string;
+};
+
+// DESIGN.md §3.2
+export const PRESETS_TEMA: PresetInfo[] = [
+  {
+    id: "minimal",
+    nombre: "Minimalista",
+    descripcion: "Fondo blanco, botón oscuro",
+    brand: "#1C1F1A",
+    bg: "#FFFFFF",
+    text: "#1C1F1A",
+  },
+  {
+    id: "dark",
+    nombre: "Nocturno",
+    descripcion: "Tinta negra y compasúchil",
+    brand: "#F5A300",
+    bg: "#17191A",
+    text: "#F2F2EE",
+  },
+  {
+    id: "vibrant",
+    nombre: "Vibrante",
+    descripcion: "Cálido con acento jamaica",
+    brand: "#C2185B",
+    bg: "#FFF8F2",
+    text: "#2A1A12",
+  },
+];
+
+export const FUENTES_TEMA: { id: FuenteTema; nombre: string; familia: string }[] = [
+  { id: "sans", nombre: "Onest Sans", familia: '"Onest", system-ui, sans-serif' },
+  { id: "rounded", nombre: "Redondeada", familia: '"Nunito", system-ui, sans-serif' },
+  { id: "serif", nombre: "Editorial Serif", familia: '"Source Serif 4", Georgia, serif' },
+];
+
+export const ROLES_EQUIPO: { id: RolEquipo; nombre: string }[] = [
+  { id: "admin", nombre: "Admin total" },
+  { id: "cocina", nombre: "Cocina / KDS" },
+  { id: "mesera", nombre: "Mesera" },
+];
+
+export type MiembroEquipo = {
+  id: string;
+  nombre: string;
+  correo: string;
+  rol: RolEquipo | "dueno";
+  pendiente?: boolean;
+};
+
+export type AjustesDemo = {
+  tema: { preset: PresetTema; primario: string; fuente: FuenteTema };
+  servicio: {
+    mesa: boolean;
+    recoger: boolean;
+    domicilio: boolean;
+    abre: string;
+    cierra: string;
+    tiempoMin: number;
+  };
+  zonas: { id: string; nombre: string; costoCents: number }[];
+  equipo: MiembroEquipo[];
+  mesas: number;
+  versionMenu: string;
+};
+
+export const COOKIE_AJUSTES = "demo_ajustes";
+export const MAX_MESAS = 30;
+
+const AJUSTES_BASE: AjustesDemo = {
+  tema: { preset: "minimal", primario: "#1F5C45", fuente: "sans" },
+  servicio: {
+    mesa: true,
+    recoger: true,
+    domicilio: true,
+    abre: "13:00",
+    cierra: "23:00",
+    tiempoMin: 25,
+  },
+  zonas: [
+    { id: "z1", nombre: "Centro / Roma / Condesa", costoCents: 3500 },
+    { id: "z2", nombre: "Del Valle / Narvarte", costoCents: 4500 },
+  ],
+  equipo: [
+    { id: "u1", nombre: "Juan González", correo: "juan@tacoselguero.mx", rol: "dueno" },
+    { id: "u2", nombre: "Mateo Trejo", correo: "cocina1@tacoselguero.mx", rol: "cocina" },
+    { id: "u3", nombre: "Sofía Ramírez", correo: "sofia@tacoselguero.mx", rol: "mesera" },
+  ],
+  mesas: 8,
+  versionMenu: "v2.4",
+};
+
+/** Lee los cambios simulados; ignora cualquier valor que no tenga la forma esperada. */
+export function leerAjustesDemo(raw: string | undefined): AjustesDemo {
+  const base = structuredClone(AJUSTES_BASE);
+  if (!raw) return base;
+  try {
+    const dato: unknown = JSON.parse(raw);
+    if (typeof dato !== "object" || dato === null) return base;
+    const d = dato as Partial<AjustesDemo>;
+    if (d.tema && typeof d.tema.primario === "string") base.tema = d.tema;
+    if (d.servicio && typeof d.servicio.tiempoMin === "number") base.servicio = d.servicio;
+    if (Array.isArray(d.zonas)) base.zonas = d.zonas;
+    if (Array.isArray(d.equipo)) base.equipo = d.equipo;
+    if (typeof d.mesas === "number") base.mesas = d.mesas;
+    return base;
+  } catch {
+    return base;
+  }
+}
+
+export async function getAjustes(url: URL, raw: string | undefined): Promise<AjustesDemo> {
+  if (flag(url, "lento", "1")) await new Promise((r) => setTimeout(r, 1500));
+  if (simulaError(url)) throw new PanelError("ajustes");
+  return leerAjustesDemo(raw);
+}
+
+/** Color `#RRGGBB` en mayúsculas, o `null` si no es válido. */
+export function normalizaHex(valor: string): string | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(valor.trim());
+  return m?.[1] ? `#${m[1].toUpperCase()}` : null;
+}
+
+function luminancia(hex: string): number {
+  const canal = (i: number) => {
+    const c = Number.parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * canal(1) + 0.7152 * canal(3) + 0.0722 * canal(5);
+}
+
+export function contraste(a: string, b: string): number {
+  const [la, lb] = [luminancia(a), luminancia(b)];
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
