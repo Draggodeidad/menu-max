@@ -1,4 +1,3 @@
-
 import { error } from "@sveltejs/kit";
 import {
   COOKIE_AJUSTES,
@@ -11,10 +10,7 @@ import {
 import type { LayoutServerLoad } from "./$types";
 
 export const load: LayoutServerLoad = ({ params, url, cookies }) => {
-  const publicado = publicadoPara(
-    params.slug,
-    cookies.get(COOKIE_PUBLICADO),
-  );
+  const publicado = publicadoPara(params.slug, cookies.get(COOKIE_PUBLICADO));
 
   // TEMPORAL: sin API todavía. Los ajustes viven en una cookie del navegador.
   const ajustes = leerAjustesDemo(cookies.get(COOKIE_AJUSTES));
