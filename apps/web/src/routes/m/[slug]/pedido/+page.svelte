@@ -87,11 +87,13 @@
   const enviar: SubmitFunction = () => {
     enviando = true;
     return async ({ result, update }) => {
-      await update({ reset: false });
-      if (result.type === "success") {
+      if (result.type === "redirect") {
         guardarDatos();
+        // El seguimiento vive fuera de este layout: se vacía y guarda antes de navegar.
         cart.clear();
+        cart.persist();
       }
+      await update({ reset: false });
       enviando = false;
       if (result.type === "failure") {
         await tick();
@@ -131,7 +133,7 @@
   </div>
 {/snippet}
 
-{#if !cart.ready && !form?.enviado}
+{#if !cart.ready}
   <!-- Mientras se lee el carrito guardado en el navegador. Sin JavaScript se oculta. -->
   <StorefrontSkeleton variant="pedido" />
   <noscript>
@@ -157,7 +159,7 @@
       </a>
       <div class="mt-2 flex items-start justify-between gap-3">
         <h1 class="text-3xl font-bold tracking-[-0.03em]">Tu pedido</h1>
-        {#if cart.count > 0 && !form?.enviado}
+        {#if cart.count > 0}
           <p
             class="mt-1.5 rounded-full bg-(color:--brand-tint) px-3 py-1 text-sm font-medium tabular-nums"
             aria-live="polite"
@@ -172,16 +174,7 @@
       </p>
     </header>
 
-    {#if form?.enviado}
-      <section class="border-t border-(color:--brand-line) px-5 py-10" aria-live="polite">
-        <CircleCheck aria-hidden="true" class="size-8" />
-        <h2 class="mt-3 {h2}">Pedido enviado</h2>
-        <p class="mt-2 max-w-[60ch] text-base leading-relaxed text-(color:--brand-muted)">
-          {data.negocio.nombre} ya lo recibió. Pagas en efectivo al recibir.
-        </p>
-        <Button href={menuHref} variant="outline" class="mt-6 {outlineBtn}">Volver al menú</Button>
-      </section>
-    {:else if cart.count === 0}
+    {#if cart.count === 0}
       <section class="border-t border-(color:--brand-line) px-5 py-10">
         <h2 class={h2}>Tu pedido está vacío</h2>
         <p class="mt-2 max-w-[60ch] text-base leading-relaxed text-(color:--brand-muted)">

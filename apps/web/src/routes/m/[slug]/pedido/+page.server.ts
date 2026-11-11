@@ -1,4 +1,4 @@
-import { fail } from "@sveltejs/kit";
+import { fail, redirect } from "@sveltejs/kit";
 import { getEntrega, getNegocio, simulaError } from "#lib/server/demo.js";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -73,6 +73,7 @@ export const actions: Actions = {
         values,
       });
     }
-    return { enviado: true };
+    // TEMPORAL: el token de seguimiento lo entregará la API; aquí es la clave de idempotencia.
+    redirect(303, `/pedido/${String(form.get("idempotencyKey") ?? crypto.randomUUID())}`);
   },
 };
