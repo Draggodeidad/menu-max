@@ -9,3 +9,7 @@ coverage/
 .DS_Store
 test-results/
 playwright-report/
+
+# Planeación local de agentes (apps/api)
+apps/api/docs/STATUS.md
+apps/api/docs/tasks/
