@@ -122,6 +122,22 @@ html {
 }
 ```
 
+### 3.6 Storefront: derivados del tema y sombra de la barra
+
+Del tema del negocio (§3.2) se derivan tres variables en `m/[slug]/+layout.svelte`. Son mezclas de `--brand-text` y `--brand-bg`, nunca colores nuevos ni de MenusMax:
+
+| Variable        | Valor                                              | Uso                                                    |
+| --------------- | -------------------------------------------------- | ------------------------------------------------------ |
+| `--brand-muted` | `color-mix(in srgb, --brand-text 70%, --brand-bg)` | Texto secundario (descripciones, horario, notas)       |
+| `--brand-line`  | `color-mix(in srgb, --brand-text 12%, --brand-bg)` | Bordes y separadores (equivalen a `linea` en el panel) |
+| `--brand-tint`  | `color-mix(in srgb, --brand-text 8%, --brand-bg)`  | Fondo de píldoras, miniaturas y estados hover          |
+
+- **Por qué 70%:** contraste de `--brand-muted` sobre `--brand-bg` medido en los tres presets: `minimal` 6.15, `dark` 8.19, `vibrant` 6.06 (AA exige 4.5). Sobre `--brand-tint` el mínimo es 5.18. Con 66% `vibrant` quedaba en 4.53 sobre el tinte, demasiado justo.
+- Un tema personalizado debe volver a verificar `--brand-muted` contra `--brand-bg`; la API ya valida `--brand` sobre `--brand-bg` (§3.2).
+- Solo texto ≥ 14px usa `--brand-muted`.
+
+**Sombra de la barra del carrito** (`MenuView`): `shadow-[0_12px_28px_-10px_color-mix(in_srgb,var(--brand-text)_45%,transparent)]`. Es la receta de las superficies elevadas (§3.1: offset y desenfoque, nunca dura), a escala de barra: offset 12px, blur 28px, spread -10px. Se tinta con `--brand-text`, no con `tinta`, para que el storefront no use colores de MenusMax. La barra del carrito se suma a la lista de superficies elevadas de §3.1.
+
 ---
 
 ## 4. Componentes y patrones
