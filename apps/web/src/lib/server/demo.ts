@@ -11,12 +11,15 @@ const flag = (url: URL, name: string, value: string) => dev && url.searchParams.
 export const slugNegocioDemo = "tacos-el-guero";
 const NOMBRE_NEGOCIO_DEMO = "Tacos El Güero";
 
+/** Devuelve `null` si el slug no es el negocio demo sembrado ni el publicado por este navegador. */
 export function getNegocio(
   slug: string,
   url: URL,
   publicado?: NegocioPublicado | null,
   servicio?: Pick<AjustesDemo["servicio"], "abre" | "cierra">,
 ) {
+  if (slug !== slugNegocioDemo && publicado?.slug !== slug) return null;
+
   return {
     slug,
     nombre: publicado?.nombre ?? NOMBRE_NEGOCIO_DEMO,
@@ -151,7 +154,13 @@ const ESTADOS: EstadoPedido[] = [
   "rejected",
 ];
 
-/** Solo desarrollo: ?estado=preparing, ?modalidad=domicilio|mesa, ?retraso=1 */
+// TEMPORAL: pedido de ejemplo sembrado para la demo; cualquier otro token debe haber sido creado.
+export const tokenPedidoDemo = "prueba-1234";
+
+/**
+ * Solo desarrollo: ?estado=preparing, ?modalidad=domicilio|mesa, ?retraso=1
+ * Devuelve `null` si el token no es el sembrado ni uno creado por este navegador.
+ */
 export function getPedido(token: string, url: URL, creados: PedidoCreado[] = []) {
   const creado = creados.find((p) => p.token === token);
   if (creado) {
@@ -176,6 +185,7 @@ export function getPedido(token: string, url: URL, creados: PedidoCreado[] = [])
       totalCents,
     };
   }
+  if (token !== tokenPedidoDemo) return null;
   const estado = dev ? url.searchParams.get("estado") : null;
   const modalidad = dev ? url.searchParams.get("modalidad") : null;
   return {

@@ -1,4 +1,4 @@
-import { fail, redirect } from "@sveltejs/kit";
+import { error, fail, redirect } from "@sveltejs/kit";
 import {
   COOKIE_AJUSTES,
   COOKIE_PEDIDOS,
@@ -34,6 +34,8 @@ type Campo = "nombre" | "telefono" | "direccion" | "notas";
 
 export const actions: Actions = {
   enviar: async ({ request, url, params, cookies }) => {
+    const publicado = publicadoPara(params.slug, cookies.get(COOKIE_PUBLICADO));
+    if (!getNegocio(params.slug, url, publicado)) error(404, "Este menú no existe.");
     const form = await request.formData();
     const ids = form.getAll("id").map(String);
     const opciones = form.getAll("opcion").map(String);
@@ -100,7 +102,13 @@ export const actions: Actions = {
     // recalculará precios, total y disponibilidad, y validará el horario.
     // Las banderas de desarrollo se leen del referer porque la action no conserva la query.
     const origen = new URL(request.headers.get("referer") ?? url);
-    const negocio = getNegocio(params.slug, origen, null, servicio);
+
+    const negocio = getNegocio(params.slug, origen, publicado, servicio);
+
+    if (!negocio) {
+      error(404, "Este menú no existe.");
+    }
+
     if (!negocio.abierto) {
       return fail(409, { error: `Estamos cerrados. Abrimos a las ${negocio.abre}.`, values });
     }

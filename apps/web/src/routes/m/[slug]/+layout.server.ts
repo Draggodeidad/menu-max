@@ -1,3 +1,4 @@
+import { error } from "@sveltejs/kit";
 import {
   COOKIE_AJUSTES,
   COOKIE_PUBLICADO,
@@ -17,8 +18,14 @@ export const load: LayoutServerLoad = ({ params, url, cookies }) => {
   const tema = resolverTema(ajustes);
   const { servicio } = ajustes;
 
+  const negocio = getNegocio(params.slug, url, publicado, servicio);
+
+  if (!negocio) {
+    error(404, "Este menú no existe o ya no está publicado.");
+  }
+
   return {
-    negocio: getNegocio(params.slug, url, publicado, servicio),
+    negocio,
     tema,
   };
 };
