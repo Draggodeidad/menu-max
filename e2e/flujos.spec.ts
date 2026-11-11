@@ -80,8 +80,7 @@ test.fixme("pedido simulado aparece en el panel del negocio", async ({ page }) =
   await expect(pedido).toContainText("Agua de horchata");
 });
 
-// H03: no hay salida a WhatsApp.
-test.fixme("el pedido ofrece salida a WhatsApp sin enviar mensajes durante la prueba", async ({
+test("el pedido ofrece salida a WhatsApp sin enviar mensajes durante la prueba", async ({
   page,
 }) => {
   await enviarPedido(page);
@@ -90,6 +89,9 @@ test.fixme("el pedido ofrece salida a WhatsApp sin enviar mensajes durante la pr
     "href",
     /^https:\/\/(wa\.me|api\.whatsapp\.com|web\.whatsapp\.com)\//,
   );
+  const href = (await enlace.getAttribute("href")) ?? "";
+  expect(href).toContain("wa.me/525512345678");
+  expect(decodeURIComponent(href)).toMatch(/Total: \$[\d,]+\.\d{2} MXN/);
 });
 
 test("acepta y avanza un pedido y conserva el cambio al recargar", async ({ page }) => {
