@@ -61,11 +61,16 @@ test("seguimiento muestra rechazo, retraso y detalle vacío", async ({ page }) =
   await expect(page.getByText(/No hay productos en el detalle/)).toBeVisible();
 });
 
-// H13: la lectura del menú no implementa el estado de error.
-test.fixme("el menú público ofrece reintento ante un error de carga simulado", async ({ page }) => {
+test("el menú público ofrece reintento ante un error de carga simulado", async ({ page }) => {
   await ir(page, "/m/tacos-el-guero?error=1");
   await expect(page.getByRole("alert")).toContainText(/no (pudimos|se pudo) cargar/i);
   await expect(page.getByRole("button", { name: /reintentar/i })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Aún no hay productos en este menú" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: /reintentar/i }).click();
+  await expect(page).toHaveURL(/\/m\/tacos-el-guero$/);
+  await expect(page.getByRole("heading", { name: "Suadero confitado" })).toBeVisible();
 });
 
 test("muestra carga al abrir un menú público lento", async ({ page }) => {
