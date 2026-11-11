@@ -78,8 +78,7 @@ test("pedido simulado aparece en el panel del negocio", async ({ page }) => {
   await expect(pedido).toContainText("Agua de horchata");
 });
 
-// H03: no hay salida a WhatsApp.
-test.fixme("el pedido ofrece salida a WhatsApp sin enviar mensajes durante la prueba", async ({
+test("el pedido ofrece salida a WhatsApp sin enviar mensajes durante la prueba", async ({
   page,
 }) => {
   await enviarPedido(page);
@@ -88,6 +87,13 @@ test.fixme("el pedido ofrece salida a WhatsApp sin enviar mensajes durante la pr
     "href",
     /^https:\/\/(wa\.me|api\.whatsapp\.com|web\.whatsapp\.com)\//,
   );
+  const href = (await enlace.getAttribute("href")) ?? "";
+  expect(href).toContain("wa.me/525512345678");
+  const mensaje = new URL(href).searchParams.get("text");
+  expect(mensaje).toContain("Ana Prueba");
+  expect(mensaje).toContain("1× Agua de horchata (1 L)");
+  expect(mensaje).toContain("Total: $35.00 MXN");
+  expect(mensaje).toContain(page.url());
 });
 
 test("acepta y avanza un pedido y conserva el cambio al recargar", async ({ page }) => {
