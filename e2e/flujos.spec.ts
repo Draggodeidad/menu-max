@@ -194,11 +194,16 @@ test("un pedido de mesa conserva el número y no pide modalidad", async ({ page 
   await expect(page.getByRole("radio", { name: /domicilio|recoger/i })).toHaveCount(0);
 });
 
-// H11: la confirmación afirma un envío que no ocurre.
-test.fixme("la invitación deja claro que el envío es simulado", async ({ page }) => {
+// H11: la demostración no promete un envío real.
+test("la invitación deja claro que el envío es simulado", async ({ page }) => {
   await ir(page, "/app/ajustes");
   const form = page.locator("form[action*='invitar']");
   await form.getByLabel("Correo del colaborador").fill("colaborador@example.com");
-  await form.getByRole("button", { name: "Enviar invitación" }).click();
+  await form.getByRole("button", { name: "Simular invitación" }).click();
   await expect(form.getByRole("status")).toContainText(/simulad|demostración/i);
+  await expect(form.getByRole("status")).toContainText("No se envió ningún correo.");
+  const miembro = page.locator("#equipo li").filter({ hasText: "colaborador@example.com" });
+  await expect(miembro).toContainText("Invitación pendiente");
+  await page.reload();
+  await expect(miembro).toContainText("Invitación pendiente");
 });

@@ -122,7 +122,7 @@ test("ajustes rechaza una invitación duplicada", async ({ page }) => {
   await ir(page, "/app/ajustes");
   const form = page.locator("form[action*='invitar']");
   await form.getByLabel("Correo del colaborador").fill("juan@tacoselguero.mx");
-  await form.getByRole("button", { name: "Enviar invitación" }).click();
+  await form.getByRole("button", { name: "Simular invitación" }).click();
   await expect(form.getByText("Ese correo ya tiene acceso al panel.")).toBeVisible();
   await expect(form.getByLabel("Correo del colaborador")).toHaveAttribute("aria-invalid", "true");
 });
