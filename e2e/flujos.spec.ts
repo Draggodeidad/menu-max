@@ -57,8 +57,7 @@ test.fixme("el panel exige sesión simulada antes de entrar", async ({ page }) =
   await expect(page).toHaveURL(/\/entrar$/);
 });
 
-// H02: el seguimiento usa datos fijos.
-test.fixme("pedido simulado llega al seguimiento con los datos capturados", async ({ page }) => {
+test("pedido simulado llega al seguimiento con los datos capturados", async ({ page }) => {
   await enviarPedido(page);
   await expect(page.getByText("Ana Prueba", { exact: true })).toBeVisible();
   await expect(page.getByText("1× Agua de horchata (1 L)")).toBeVisible();
@@ -67,12 +66,13 @@ test.fixme("pedido simulado llega al seguimiento con los datos capturados", asyn
   await ir(page, "/app");
   const pedido = page.getByRole("article").filter({ hasText: "Ana Prueba" });
   await pedido.getByRole("button", { name: "Aceptar", exact: true }).click();
+  // Espera a que la action termine; navegar antes cancela la petición y pierde la cookie.
+  await expect(pedido.getByRole("button", { name: "Empezar a preparar" })).toBeVisible();
   await ir(page, seguimiento);
   await expect(page.getByRole("heading", { name: "Aceptado", exact: true })).toBeVisible();
 });
 
-// H02: el panel no recibe el pedido.
-test.fixme("pedido simulado aparece en el panel del negocio", async ({ page }) => {
+test("pedido simulado aparece en el panel del negocio", async ({ page }) => {
   await enviarPedido(page);
   await ir(page, "/app");
   const pedido = page.getByRole("article").filter({ hasText: "Ana Prueba" });
