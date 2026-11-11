@@ -58,14 +58,12 @@ test("el menú público es legible sin JavaScript", async ({ browser }) => {
   await context.close();
 });
 
-// H09: el mock acepta identificadores desconocidos.
-test.fixme("un negocio desconocido responde 404", async ({ page }) => {
+test("un negocio desconocido responde 404", async ({ page }) => {
   const response = await page.goto("/m/negocio-que-no-existe");
   expect(response?.status()).toBe(404);
 });
 
-// H09: el mock acepta identificadores desconocidos.
-test.fixme("un token de pedido desconocido responde 404", async ({ page }) => {
+test("un token de pedido desconocido responde 404", async ({ page }) => {
   const response = await page.goto("/pedido/token-que-no-existe");
   expect(response?.status()).toBe(404);
 });

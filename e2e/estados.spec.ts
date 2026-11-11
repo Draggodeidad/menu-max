@@ -53,10 +53,10 @@ test("muestra indicador de carga al navegar a pedidos lentos", async ({ page }) 
 });
 
 test("seguimiento muestra rechazo, retraso y detalle vacío", async ({ page }) => {
-  await ir(page, "/pedido/prueba?estado=rejected");
+  await ir(page, "/pedido/prueba-1234?estado=rejected");
   await expect(page.getByRole("heading", { name: "Pedido rechazado" })).toBeVisible();
   await expect(page.getByText("El negocio no pudo aceptar tu pedido")).toBeVisible();
-  await ir(page, "/pedido/prueba?retraso=1&vacio=1");
+  await ir(page, "/pedido/prueba-1234?retraso=1&vacio=1");
   await expect(page.getByText(/Tu pedido tarda más de lo normal/)).toBeVisible();
   await expect(page.getByText(/No hay productos en el detalle/)).toBeVisible();
 });
