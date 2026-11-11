@@ -11,6 +11,7 @@ import {
   tema,
   type NegocioPublicado,
 } from "#lib/server/demo.js";
+import { abrirSesion } from "#lib/server/sesion.js";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = () => ({
@@ -101,6 +102,7 @@ export const actions: Actions = {
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 30,
     });
+    abrirSesion(cookies);
     redirect(303, "/app/listo");
   },
 };
