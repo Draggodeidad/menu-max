@@ -20,8 +20,8 @@ Toda pantalla, campo o clic que no empuje una de las dos se elimina.
 1. **Valor antes que cuenta.** El negocio arma su menú antes de registrarse. La cuenta se pide al pulsar "Publicar menú".
 2. **El comensal nunca crea cuenta.** Checkout como invitado. "Recordar mis datos" vía `localStorage`.
 3. **Una página, no un wizard.** Onboarding, ajustes y checkout son páginas únicas con secciones.
-4. **Cero modales.** Se usan `<details>`, rutas propias y edición en línea. La única excepción permitida es `<dialog>` nativo si una acción destructiva no tiene alternativa.
-5. **HTML primero.** Si un `<form>`, `<details>`, radio o `input type=color` lo resuelve, no hay componente ni librería.
+4. **Modales con criterio.** `Dialog`, `Sheet` y `AlertDialog` de shadcn-svelte están permitidos cuando aportan (confirmar eliminar, carrito en móvil, formularios cortos). Para lo que cabe en la página se usa la página.
+5. **Nativo cuando basta, componente cuando mejora.** Un `<form>`, `<details>` o `input type=color` se queda nativo si resuelve bien. Si un componente de shadcn-svelte da mejor accesibilidad o acabado, se usa.
 6. **Lo que ve el dueño es lo que ve el cliente.** La vista previa y el menú público usan el mismo componente (`MenuView`).
 7. **El servidor decide.** Precios, totales, permisos y estados se calculan en la API; la UI solo muestra.
 8. **Una sola audacia.** El momento memorable es el nombre del negocio apareciendo en vivo dentro del teléfono de la vista previa. Todo lo demás es sobrio.
@@ -46,7 +46,7 @@ Toda pantalla, campo o clic que no empuje una de las dos se elimina.
 Reglas:
 
 - `cempasuchil` es una alerta, no decoración. Si aparece en más de dos lugares por pantalla, sobra.
-- Sin gradientes. Sin sombras genéricas (`rgba(0,0,0,.1)`). La única sombra del sistema es la del marco `Phone`.
+- Se permiten degradados sutiles entre tokens de la paleta en fondos y sombras suaves (offset y desenfoque, tintadas con `tinta`) en superficies elevadas: popover, dialog, sheet, dropdown, toast y `Phone`. Siguen prohibidos el texto con degradado y las sombras duras o sin offset.
 - Contraste mínimo AA en todo texto. `piedra` sobre `cal` solo para texto ≥ 14px.
 
 ### 3.2 Color — storefront (menú público del negocio)
@@ -99,7 +99,7 @@ Prohibido:
   - `rounded-xl` → contenedores (tarjetas, paneles, barra de carrito)
   - `rounded-lg` → inputs y botones
   - `rounded-full` → solo botón `+` de producto, chips y pastillas de conteo
-- Bordes: `border border-linea`. Nada de borde + sombra a la vez.
+- Bordes: `border border-linea`. En tarjetas de contenido, borde o sombra, no ambos.
 
 ### 3.5 Tailwind v4 (`src/app.css`)
 
@@ -126,15 +126,33 @@ html {
 
 ## 4. Componentes y patrones
 
-Solo existen tres componentes Svelte. Todo lo demás son patrones de clases.
+La base es **shadcn-svelte** (sobre `bits-ui`) con Tailwind v4, restilado a los tokens de §3. Se pueden sumar librerías de UI y animación que sean compatibles con Svelte 5, SSR y Cloudflare Workers.
 
-### 4.1 Componentes
+### 4.0 Primitivas shadcn-svelte
+
+Base recomendada; se pueden instalar más del catálogo cuando hagan falta.
+
+| Primitiva                                     | Uso                                               |
+| --------------------------------------------- | ------------------------------------------------- |
+| `button`, `input`, `label`, `textarea`        | Formularios y acciones                            |
+| `select`, `checkbox`, `radio-group`, `switch` | Campos y modalidades                              |
+| `tabs`, `toggle-group`                        | Categorías, segmented control                     |
+| `dialog`, `sheet`, `alert-dialog`             | Confirmaciones, carrito móvil, formularios cortos |
+| `dropdown-menu`, `popover`, `tooltip`         | Acciones secundarias                              |
+| `badge`, `separator`, `skeleton`              | Estados y estructura                              |
+| `sonner` (toast)                              | Confirmaciones ("Guardado")                       |
+
+Tras instalar, se restilan a los tokens (`bg-nopal` como primary, `border-linea`, radios de §3.4). Los patrones de §4.2 describen la apariencia objetivo.
+
+### 4.1 Componentes propios
 
 | Componente         | Usado en                              | Responsabilidad                                                                                                                                                       |
 | ------------------ | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Phone.svelte`     | Landing, `/crear`, Ajustes            | Marco de teléfono en CSS puro. `w-[300px] h-[620px] rounded-[44px] border-[10px] border-tinta bg-white overflow-hidden shadow-[0_30px_60px_-20px_rgb(28_31_26/0.35)]` |
 | `MenuView.svelte`  | Storefront y todas las vistas previas | Renderiza el menú con `--brand*`. Prop `preview` deshabilita acciones                                                                                                 |
 | `OrderCard.svelte` | Panel de pedidos                      | Tarjeta de pedido con su acción principal según estado                                                                                                                |
+
+Se pueden crear más componentes propios cuando un patrón se repite en 3 o más lugares.
 
 ### 4.2 Patrones de clases
 
@@ -180,7 +198,7 @@ peer-focus-visible:ring-2 peer-focus-visible:ring-nopal/30
 
 ## 5. Movimiento
 
-Solo como respuesta a una acción del usuario o a un evento que exige atención. Siempre con `motion-safe:` o comprobando `prefers-reduced-motion`.
+El movimiento responde a una acción del usuario o a un evento que exige atención, y puede dar acabado: transiciones de las primitivas (`tw-animate-css`), hover y foco con feedback, entradas suaves de superficies elevadas. Siempre con `motion-safe:` o comprobando `prefers-reduced-motion`. Se pueden usar librerías de animación si hacen falta más allá de las transiciones de Svelte.
 
 | Evento                          | Movimiento                                                                             |
 | ------------------------------- | -------------------------------------------------------------------------------------- |
@@ -191,7 +209,7 @@ Solo como respuesta a una acción del usuario o a un evento que exige atención.
 | Cambio de estado en seguimiento | `transition:fade` en el estado actual                                                  |
 | Campos de domicilio             | `transition:slide`                                                                     |
 
-Prohibido: fade-up de entrada por sección, hover que eleva tarjetas, parallax, animaciones en bucle.
+Prohibido: animaciones en bucle, parallax y efectos que distraigan al comensal mientras elige o paga. Evita repetir la misma entrada en todas las secciones.
 
 ---
 
@@ -283,7 +301,7 @@ Transiciones de estado y nombre del botón principal:
 | `ready` (domicilio)    | Enviar a domicilio |
 | `out_for_delivery`     | Entregado          |
 
-"Rechazar" vive en un `<details>` con campo de motivo; no hay modal.
+"Rechazar" vive en un `<details>` con campo de motivo (o un `AlertDialog` si se prefiere confirmar).
 
 ### 7.2 Comensal
 
@@ -352,7 +370,8 @@ lib/
 - Polling con `depends()` + `invalidate()` dentro de un `$effect` que limpia su `setInterval`.
 - **Nunca estado mutable a nivel de módulo** (se compartiría entre usuarios en SSR). El carrito es `new Cart()` creado en `m/[slug]/+layout.svelte` y entregado con `setContext`.
 - Dinero siempre en centavos; formato con `Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' })` en `lib/money.ts`.
-- Cero dependencias de UI en el MVP (sin shadcn-svelte, sin stores, sin librerías de animación).
+- shadcn-svelte y librerías de UI/animación permitidas (compatibles con Svelte 5, SSR y Workers). Sin librerías de estado global: el estado compartido va en clases `.svelte.ts` con contexto.
+- Imports con `#lib/...` (SvelteKit 3 eliminó `$lib`).
 - `localStorage` / `sessionStorage` siempre dentro de `try/catch`.
 
 ---
@@ -373,9 +392,9 @@ lib/
 
 - Login de comensal.
 - Wizards de varios pasos.
-- Modales para productos simples, confirmaciones o edición.
+- Modales para productos simples o para lo que cabe en la página.
 - Analíticas como página de inicio del panel.
-- Gradientes, sombras genéricas, tarjetas idénticas en rejilla como decoración.
+- Texto con degradado, sombras duras, tarjetas idénticas en rejilla como decoración.
 - Etiquetas en mayúsculas, eyebrows, numeración decorativa, flechas en botones.
 - Color de marca MenusMax dentro del menú público.
-- Librerías para resolver lo que HTML ya hace.
+- Dependencias que no funcionan en SSR o en Cloudflare Workers, o que pesan mucho en el menú público.
