@@ -1,5 +1,7 @@
+
 import { getPedido, tema } from "#lib/server/demo.js";
 import { formatMoney } from "#lib/money.js";
+import { COOKIE_PEDIDOS, getPedido, leerPedidosCreados, tema } from "#lib/server/demo.js";
 import type { PageServerLoad } from "./$types";
 
 type Pedido = ReturnType<typeof getPedido>;
@@ -26,10 +28,13 @@ function enlaceWhatsApp(pedido: Pedido, seguimiento: string): string | null {
 }
 
 // DESIGN.md §6.4: el seguimiento nunca se cachea.
-export const load: PageServerLoad = ({ params, url, setHeaders, depends }) => {
+export const load: PageServerLoad = ({ params, url, cookies, setHeaders, depends }) => {
   setHeaders({ "cache-control": "no-store" });
   depends("app:pedido");
   const pedido = getPedido(params.token, url);
   // TEMPORAL: sin API todavía. El resumen sale del mismo pedido simulado que se muestra.
   return { pedido, tema, whatsappHref: enlaceWhatsApp(pedido, `${url.origin}${url.pathname}`) };
+  const creados = leerPedidosCreados(cookies.get(COOKIE_PEDIDOS));
+  return { pedido: getPedido(params.token, url, creados), tema };
+
 };
