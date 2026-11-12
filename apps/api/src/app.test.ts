@@ -124,7 +124,7 @@ describe("documentación de la API", () => {
 
   describe.each(["staging", "production"])("%s", (environment) => {
     it.each(["/docs", "/openapi.json"])("responde 404 en %s con y sin token", async (path) => {
-      const bindings = { ENVIRONMENT: environment, DB: env.DB, INTERNAL_TOKEN: env.INTERNAL_TOKEN };
+      const bindings = { ...env, ENVIRONMENT: environment };
       const url = `http://api.internal${path}`;
       const [response, authenticated] = await Promise.all([
         worker.default.fetch(new Request(url), bindings, createExecutionContext()),
@@ -258,12 +258,19 @@ describe("manejo de errores", () => {
 });
 
 describe("getEnv", () => {
+  const authVars = {
+    BETTER_AUTH_SECRET: "test".repeat(12),
+    WEB_ORIGIN: "https://menusmax.example",
+  };
+
   it("acepta una configuración válida", () => {
-    expect(getEnv({ ENVIRONMENT: "production", INTERNAL_TOKEN: validToken, DB: fakeDb })).toEqual({
+    const bindings = {
       ENVIRONMENT: "production",
       INTERNAL_TOKEN: validToken,
       DB: fakeDb,
-    });
+      ...authVars,
+    };
+    expect(getEnv(bindings)).toEqual(bindings);
   });
 
   it("lanza un error claro si falta INTERNAL_TOKEN", () => {
@@ -283,7 +290,21 @@ describe("getEnv", () => {
   });
 
   it("lanza un error claro si falta el binding DB", () => {
-    expect(() => getEnv({ ENVIRONMENT: "development", INTERNAL_TOKEN: validToken })).toThrow(/DB/);
+    expect(() =>
+      getEnv({ ENVIRONMENT: "development", INTERNAL_TOKEN: validToken, ...authVars }),
+    ).toThrow(/DB/);
+  });
+
+  it("valida el origen de WEB y la longitud del secreto de autenticación", () => {
+    expect(() =>
+      getEnv({
+        ENVIRONMENT: "development",
+        INTERNAL_TOKEN: validToken,
+        DB: fakeDb,
+        BETTER_AUTH_SECRET: "corto",
+        WEB_ORIGIN: "https://menusmax.example/entrar",
+      }),
+    ).toThrow(/BETTER_AUTH_SECRET.*WEB_ORIGIN/);
   });
 
   it("rechaza un ENVIRONMENT desconocido", () => {

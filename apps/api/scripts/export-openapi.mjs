@@ -5,9 +5,12 @@ const server = createTestHarness({
   workers: [
     {
       configPath: new URL("../wrangler.jsonc", import.meta.url),
-      vars: { ENVIRONMENT: "development" },
+      vars: { ENVIRONMENT: "development", WEB_ORIGIN: "http://localhost:5173" },
       // Valor ficticio para validar los bindings del Worker local.
-      secrets: { INTERNAL_TOKEN: "openapi-export-local-placeholder" },
+      secrets: {
+        INTERNAL_TOKEN: "openapi-export-local-placeholder",
+        BETTER_AUTH_SECRET: "openapi-export-local-placeholder".repeat(2),
+      },
     },
   ],
 });
