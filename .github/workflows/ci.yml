@@ -50,8 +50,8 @@ jobs:
             --log-opts="--diff-merges=first-parent $revision" .
       - name: Verificar el empaquetado de los Workers
         run: |
-          pnpm --filter api exec wrangler deploy --dry-run
-          pnpm --filter web exec wrangler deploy --dry-run
+          pnpm --filter api exec wrangler deploy --dry-run --env=""
+          pnpm --filter web exec wrangler deploy --dry-run --env=""
       - name: Validate pull request commits
         if: github.event_name == 'pull_request'
         env:
