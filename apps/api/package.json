@@ -13,6 +13,7 @@
   "dependencies": {
     "@menu-max/contracts": "workspace:*",
     "@menu-max/database": "workspace:*",
+    "better-auth": "1.7.21",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.17",
     "hono-openapi": "^1.5.0",

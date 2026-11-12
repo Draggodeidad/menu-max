@@ -6,6 +6,7 @@
   "name": "menusmax-api-dev",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-15",
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "observability": { "enabled": true },
   "vars": { "ENVIRONMENT": "development" },

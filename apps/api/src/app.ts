@@ -9,6 +9,9 @@ import { createDb, pingDb } from "./infrastructure/db";
 import { clientContext } from "./middleware/client-context";
 import { internal } from "./middleware/internal";
 import { requestId } from "./middleware/request-id";
+import { session } from "./middleware/session";
+import { AUTH_BASE_PATH } from "./modules/auth/auth";
+import { authRoutes, meRoutes } from "./modules/auth/auth.routes";
 import { AppError, notFound, onError } from "./shared/errors";
 import type { AppEnv } from "./types";
 
@@ -32,6 +35,11 @@ export function createApp(environment?: Env["ENVIRONMENT"]) {
     }),
     secureHeaders(),
   );
+
+  // Better Auth resuelve su propia sesión y emite las cookies de estas rutas.
+  app.route(AUTH_BASE_PATH, authRoutes);
+  app.use("*", session);
+  app.route("/v1", meRoutes);
 
   app.get(
     "/v1/health",

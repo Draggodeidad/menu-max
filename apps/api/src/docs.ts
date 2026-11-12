@@ -16,6 +16,7 @@ export function registerDocs(app: Hono<AppEnv>) {
         components: {
           securitySchemes: {
             InternalToken: { type: "apiKey", in: "header", name: "x-mm-internal" },
+            SessionCookie: { type: "apiKey", in: "cookie", name: "better-auth.session_token" },
           },
         },
       },

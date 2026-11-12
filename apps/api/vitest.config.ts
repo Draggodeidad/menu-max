@@ -14,6 +14,8 @@ export default defineConfig({
         // Valor ficticio solo para pruebas; no es un secreto real.
         bindings: {
           INTERNAL_TOKEN: "test-internal-token-0000000000000000",
+          BETTER_AUTH_SECRET: "vitest-local-placeholder".repeat(3),
+          WEB_ORIGIN: "http://localhost:5173",
           TEST_MIGRATIONS: migrations,
         },
       },
