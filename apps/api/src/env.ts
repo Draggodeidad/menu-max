@@ -1,8 +1,17 @@
 import { z } from "zod";
 
+const D1Binding = z.custom<D1Database>(
+  (value) =>
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { prepare?: unknown }).prepare === "function",
+  { message: "Falta el binding D1 o no es una base D1" },
+);
+
 export const EnvSchema = z.object({
   ENVIRONMENT: z.enum(["development", "staging", "production"]),
   INTERNAL_TOKEN: z.string().min(32),
+  DB: D1Binding,
 });
 
 export type Env = z.infer<typeof EnvSchema>;

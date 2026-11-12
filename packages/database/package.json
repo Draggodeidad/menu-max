@@ -1,0 +1,19 @@
+{
+  "name": "@menu-max/database",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/schema/index.ts",
+    "./columns": "./src/schema/columns.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.4"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.11"
+  }
+}

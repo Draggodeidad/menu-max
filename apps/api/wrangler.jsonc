@@ -1,5 +1,6 @@
 // Worker privado (ADR-002): solo se llama por Service Binding desde apps/web.
 // Nunca agregues `routes`, dominio propio ni `workers_dev: true` en ningún entorno.
+// Los `database_id` de staging y production son de ejemplo: los reales los pone un humano.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "menusmax-api-dev",
@@ -8,16 +9,40 @@
   "workers_dev": false,
   "observability": { "enabled": true },
   "vars": { "ENVIRONMENT": "development" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "menusmax-dev",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../../packages/database/migrations",
+    },
+  ],
   "env": {
     "staging": {
       "name": "menusmax-api-staging",
       "workers_dev": false,
       "vars": { "ENVIRONMENT": "staging" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "menusmax-staging",
+          "database_id": "00000000-0000-0000-0000-000000000001",
+          "migrations_dir": "../../packages/database/migrations",
+        },
+      ],
     },
     "production": {
       "name": "menusmax-api",
       "workers_dev": false,
       "vars": { "ENVIRONMENT": "production" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "menusmax-production",
+          "database_id": "00000000-0000-0000-0000-000000000002",
+          "migrations_dir": "../../packages/database/migrations",
+        },
+      ],
     },
   },
 }
