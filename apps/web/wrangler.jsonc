@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "menusmax-web-dev",
+  "main": ".svelte-kit/cloudflare/_worker.js",
+  "compatibility_date": "2026-11-12",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "binding": "ASSETS", "directory": ".svelte-kit/cloudflare" },
+  "services": [{ "binding": "API", "service": "menusmax-api-dev" }],
+  "env": {
+    "staging": {
+      "name": "menusmax-web-staging",
+      "services": [{ "binding": "API", "service": "menusmax-api-staging" }],
+    },
+    "production": {
+      "name": "menusmax-web",
+      "services": [{ "binding": "API", "service": "menusmax-api" }],
+    },
+  },
+}

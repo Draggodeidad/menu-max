@@ -1,0 +1,3 @@
+# Copia este archivo a .dev.vars. Nunca commitees .dev.vars.
+# Usa el mismo valor que en apps/api/.dev.vars (mínimo 32 caracteres).
+INTERNAL_TOKEN=cambia-esto-por-un-valor-de-32-caracteres-o-mas
