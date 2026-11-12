@@ -36,10 +36,12 @@ export const ERROR_HTTP_STATUS = {
   INTERNAL: 500,
 } as const satisfies Record<ErrorCode, number>;
 
-export const ErrorResponse = z.strictObject({
-  code: ErrorCode,
-  message: z.string(),
-  requestId: z.string(),
-  fieldErrors: z.record(z.string(), z.array(z.string())).optional(),
-});
+export const ErrorResponse = z
+  .strictObject({
+    code: ErrorCode,
+    message: z.string(),
+    requestId: z.string(),
+    fieldErrors: z.record(z.string(), z.array(z.string())).optional(),
+  })
+  .meta({ id: "ErrorResponse" });
 export type ErrorResponse = z.infer<typeof ErrorResponse>;

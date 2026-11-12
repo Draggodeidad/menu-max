@@ -1,0 +1,117 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "API de MenusMax",
+    "description": "Referencia de la API privada de MenusMax para desarrollo local.",
+    "version": "1.0.0"
+  },
+  "components": {
+    "securitySchemes": {
+      "InternalToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-mm-internal"
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "VALIDATION_FAILED",
+              "AUTH_REQUIRED",
+              "EMAIL_NOT_VERIFIED",
+              "FORBIDDEN",
+              "NOT_FOUND",
+              "CONFLICT",
+              "IDEMPOTENCY_CONFLICT",
+              "PAYLOAD_TOO_LARGE",
+              "INVALID_TRANSITION",
+              "BUSINESS_RULE",
+              "PLAN_LIMIT_REACHED",
+              "RATE_LIMITED",
+              "INTERNAL"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "fieldErrors": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": ["code", "message", "requestId"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "paths": {
+    "/v1/health": {
+      "get": {
+        "operationId": "getV1Health",
+        "tags": ["Sistema"],
+        "summary": "Consultar el estado de la API",
+        "security": [
+          {
+            "InternalToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "La API y la base de datos responden correctamente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "ok"
+                    },
+                    "environment": {
+                      "type": "string",
+                      "enum": ["development", "staging", "production"]
+                    },
+                    "db": {
+                      "type": "string",
+                      "const": "ok"
+                    }
+                  },
+                  "required": ["status", "environment", "db"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
+          },
+          "500": {
+            "description": "Ocurrió un error interno.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

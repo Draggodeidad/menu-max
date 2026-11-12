@@ -1,10 +1,11 @@
-import { ErrorResponse } from "@menu-max/contracts";
+import { ErrorResponse, HealthResponse } from "@menu-max/contracts";
+import { createExecutionContext } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createApp } from "./app";
 import { getEnv, type Env as ApiEnv } from "./env";
-import type * as worker from "./index";
+import * as worker from "./index";
 import { AppError } from "./shared/errors";
 
 declare global {
@@ -43,7 +44,7 @@ describe("GET /v1/health", () => {
     expect(response.headers.get("x-request-id")).toBe(forwardedId);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
-    expect(await response.json()).toEqual({
+    expect(HealthResponse.parse(await response.json())).toEqual({
       status: "ok",
       environment: env.ENVIRONMENT,
       db: "ok",
@@ -69,6 +70,75 @@ describe("GET /v1/health", () => {
 
     expect(response.status).toBe(404);
     expect(await response.text()).toBe("");
+  });
+});
+
+describe("documentación de la API", () => {
+  it("sirve Scalar sin token en desarrollo", async () => {
+    const response = await exports.default.fetch("http://api.internal/docs");
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(await response.text()).toContain("/openapi.json");
+  });
+
+  it("genera OpenAPI 3.1 con el esquema de salud y el error reutilizable", async () => {
+    const response = await exports.default.fetch("http://api.internal/openapi.json");
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    const document: unknown = await response.json();
+    expect(document).toMatchObject({
+      openapi: expect.stringMatching(/^3\.1\.\d+$/),
+      paths: {
+        "/v1/health": {
+          get: {
+            security: [{ InternalToken: [] }],
+            responses: {
+              200: {
+                content: {
+                  "application/json": {
+                    schema: { type: "object", required: ["status", "environment", "db"] },
+                  },
+                },
+              },
+              500: {
+                content: {
+                  "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } },
+                },
+              },
+            },
+          },
+        },
+      },
+      components: {
+        schemas: { ErrorResponse: { required: ["code", "message", "requestId"] } },
+        securitySchemes: {
+          InternalToken: { type: "apiKey", in: "header", name: "x-mm-internal" },
+        },
+      },
+    });
+    expect(document).not.toHaveProperty(["paths", "/docs"]);
+    expect(document).not.toHaveProperty(["paths", "/openapi.json"]);
+  });
+
+  describe.each(["staging", "production"])("%s", (environment) => {
+    it.each(["/docs", "/openapi.json"])("responde 404 en %s con y sin token", async (path) => {
+      const bindings = { ENVIRONMENT: environment, DB: env.DB, INTERNAL_TOKEN: env.INTERNAL_TOKEN };
+      const url = `http://api.internal${path}`;
+      const [response, authenticated] = await Promise.all([
+        worker.default.fetch(new Request(url), bindings, createExecutionContext()),
+        worker.default.fetch(
+          new Request(url, { headers: internalHeaders() }),
+          bindings,
+          createExecutionContext(),
+        ),
+      ]);
+
+      expect(response.status).toBe(404);
+      expect(await response.text()).toBe("");
+      await expectApiError(authenticated, 404, "NOT_FOUND");
+    });
   });
 });
 
