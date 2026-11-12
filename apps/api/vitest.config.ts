@@ -1,5 +1,10 @@
-import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
+import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
+
+// Migraciones de packages/database; se aplican desde cero sobre la D1 local en el setup.
+const migrations = await readD1Migrations(
+  new URL("../../packages/database/migrations", import.meta.url).pathname,
+);
 
 export default defineConfig({
   plugins: [
@@ -7,8 +12,14 @@ export default defineConfig({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
         // Valor ficticio solo para pruebas; no es un secreto real.
-        bindings: { INTERNAL_TOKEN: "test-internal-token-0000000000000000" },
+        bindings: {
+          INTERNAL_TOKEN: "test-internal-token-0000000000000000",
+          TEST_MIGRATIONS: migrations,
+        },
       },
     }),
   ],
+  test: {
+    setupFiles: ["./test/apply-migrations.ts"],
+  },
 });
