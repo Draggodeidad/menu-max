@@ -13,7 +13,7 @@ export const EnvSchema = z.object({
   ENVIRONMENT: Environment,
   INTERNAL_TOKEN: z.string().min(32),
   BETTER_AUTH_SECRET: z.string().min(32),
-  WEB_ORIGIN: z.url({ protocol: /^https?$/ }).refine((url) => new URL(url).origin === url, {
+  WEB_ORIGIN: z.url({ protocol: /^https?$/ }).refine((url) => URL.parse(url)?.origin === url, {
     message: "Usa el origen de WEB, sin ruta, parámetros ni diagonal final.",
   }),
   DB: D1Binding,

@@ -295,17 +295,20 @@ describe("getEnv", () => {
     ).toThrow(/DB/);
   });
 
-  it("valida el origen de WEB y la longitud del secreto de autenticación", () => {
-    expect(() =>
-      getEnv({
-        ENVIRONMENT: "development",
-        INTERNAL_TOKEN: validToken,
-        DB: fakeDb,
-        BETTER_AUTH_SECRET: "corto",
-        WEB_ORIGIN: "https://menusmax.example/entrar",
-      }),
-    ).toThrow(/BETTER_AUTH_SECRET.*WEB_ORIGIN/);
-  });
+  it.each(["https://menusmax.example/entrar", "origen-invalido", ""])(
+    "valida el origen de WEB y la longitud del secreto de autenticación (caso %#)",
+    (origin) => {
+      expect(() =>
+        getEnv({
+          ENVIRONMENT: "development",
+          INTERNAL_TOKEN: validToken,
+          DB: fakeDb,
+          BETTER_AUTH_SECRET: "corto",
+          WEB_ORIGIN: origin,
+        }),
+      ).toThrow(/BETTER_AUTH_SECRET.*WEB_ORIGIN/);
+    },
+  );
 
   it("rechaza un ENVIRONMENT desconocido", () => {
     expect(() => getEnv({ ENVIRONMENT: "local", INTERNAL_TOKEN: validToken, DB: fakeDb })).toThrow(
