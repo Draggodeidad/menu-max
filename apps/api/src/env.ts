@@ -1,3 +1,4 @@
+import { Environment } from "@menu-max/contracts";
 import { z } from "zod";
 
 const D1Binding = z.custom<D1Database>(
@@ -9,7 +10,7 @@ const D1Binding = z.custom<D1Database>(
 );
 
 export const EnvSchema = z.object({
-  ENVIRONMENT: z.enum(["development", "staging", "production"]),
+  ENVIRONMENT: Environment,
   INTERNAL_TOKEN: z.string().min(32),
   DB: D1Binding,
 });

@@ -5,6 +5,8 @@ const app = createApp();
 
 export default {
   fetch(request, env, ctx) {
-    return app.fetch(request, getEnv(env), ctx);
+    const bindings = getEnv(env);
+    const router = bindings.ENVIRONMENT === "development" ? createApp(bindings.ENVIRONMENT) : app;
+    return router.fetch(request, bindings, ctx);
   },
 } satisfies ExportedHandler<Record<string, unknown>>;

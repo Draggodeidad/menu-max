@@ -7,6 +7,7 @@
     "check": "tsc --noEmit",
     "lint": "oxlint --deny-warnings . && oxfmt --check .",
     "test": "vitest run",
+    "openapi:export": "node scripts/export-openapi.mjs && pnpm -w exec oxfmt docs/api/openapi.json",
     "db:migrate:local": "wrangler d1 migrations apply DB --local"
   },
   "dependencies": {
@@ -14,11 +15,13 @@
     "@menu-max/database": "workspace:*",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.17",
+    "hono-openapi": "^1.5.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.23.0",
     "@cloudflare/workers-types": "^5.20261110.1",
+    "@scalar/hono-api-reference": "^0.12.19",
     "vitest": "^4.1.12",
     "wrangler": "^4.159.0"
   }
