@@ -4,6 +4,6 @@
 # Secreto compartido con apps/web para el header x-mm-internal (mínimo 32 caracteres).
 INTERNAL_TOKEN=cambia-esto-por-un-valor-de-32-caracteres-o-mas
 
-# Firma cookies y tokens de autenticación. Usa un valor distinto de INTERNAL_TOKEN.
-BETTER_AUTH_SECRET=cambia-esto-por-otro-valor-de-32-caracteres-o-mas
+# Firma cookies y tokens. Usa un valor distinto de INTERNAL_TOKEN, de al menos 32 caracteres.
+BETTER_AUTH_SECRET=
 WEB_ORIGIN=http://localhost:5173
