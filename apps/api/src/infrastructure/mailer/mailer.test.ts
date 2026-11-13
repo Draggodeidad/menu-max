@@ -2,7 +2,6 @@ import { EMAIL_TEMPLATES, type EmailTemplate } from "@menu-max/contracts";
 import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getEnv, type Env } from "../../env";
-import { classifyEmailError, createCloudflareMailer } from "./cloudflare";
 import { createMailer, MailerError, type Mail } from "./mailer";
 import { classifyResendStatus, createResendMailer } from "./resend";
 import { renderEmail } from "./templates";
@@ -19,11 +18,6 @@ const mails = {
   },
   "password-changed": { to: "ana@example.com", template: "password-changed", data: { url } },
 } satisfies { [Template in EmailTemplate]: Extract<Mail, { template: Template }> };
-
-function fakeEmail(send: (message: EmailMessageBuilder) => Promise<EmailSendResult>) {
-  const spy = vi.fn(send);
-  return { binding: { send: spy } as unknown as SendEmail, spy };
-}
 
 function fakeFetch(respond: (init: RequestInit) => Promise<Response>) {
   return vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => respond(init ?? {}));
@@ -155,48 +149,6 @@ describe("createResendMailer", () => {
     );
 
     const sending = createResendMailer(resendEnv, 10).send(mails["verify-email"]);
-
-    await expect(sending).rejects.toMatchObject({ name: "MailerError", kind: "transient" });
-  });
-});
-
-describe("createCloudflareMailer", () => {
-  it("acepta EMAIL_FROM sin nombre", async () => {
-    const { binding, spy } = fakeEmail(() => Promise.resolve({ messageId: "m-1" }));
-
-    await createCloudflareMailer({ EMAIL: binding, EMAIL_FROM: "avisos@example.com" }).send(
-      mails["verify-email"],
-    );
-
-    expect(spy.mock.calls[0]?.[0].from).toBe("avisos@example.com");
-  });
-
-  it.each([
-    ["sender address not verified", "permanent"],
-    ["Invalid recipient address", "permanent"],
-    ["recipient is suppressed", "permanent"],
-    ["internal error, try again", "transient"],
-    ["rate limit exceeded", "transient"],
-  ] as const)("clasifica «%s» como %s", async (message, kind) => {
-    const { binding } = fakeEmail(() => Promise.reject(new Error(message)));
-
-    const sending = createCloudflareMailer({
-      EMAIL: binding,
-      EMAIL_FROM: "avisos@example.com",
-    }).send(mails["verify-email"]);
-
-    await expect(sending).rejects.toBeInstanceOf(MailerError);
-    await expect(sending).rejects.toMatchObject({ kind });
-    expect(classifyEmailError(new Error(message))).toBe(kind);
-  });
-
-  it("un envío que no responde a tiempo es transitorio", async () => {
-    const { binding } = fakeEmail(() => new Promise<never>(() => undefined));
-
-    const sending = createCloudflareMailer(
-      { EMAIL: binding, EMAIL_FROM: "avisos@example.com" },
-      10,
-    ).send(mails["verify-email"]);
 
     await expect(sending).rejects.toMatchObject({ name: "MailerError", kind: "transient" });
   });

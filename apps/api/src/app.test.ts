@@ -34,7 +34,6 @@ async function expectApiError(response: Response, status: number, code: ErrorRes
 // Dobles mínimos de bindings: getEnv solo verifica la forma.
 const fakeDb = { prepare: () => null };
 const fakeQueue = { send: () => null, sendBatch: () => null };
-const fakeEmail = { send: () => null };
 
 describe("GET /v1/health", () => {
   it("responde 200 con el entorno", async () => {
@@ -273,7 +272,6 @@ describe("getEnv", () => {
     RESEND_API_KEY: "resend-test-placeholder",
     JOBS: fakeQueue,
     JOBS_DLQ: fakeQueue,
-    EMAIL: fakeEmail,
   };
 
   it("acepta una configuración válida", () => {
@@ -298,7 +296,7 @@ describe("getEnv", () => {
     },
   );
 
-  it.each(["JOBS", "JOBS_DLQ", "EMAIL"])("lanza un error claro si falta el binding %s", (name) => {
+  it.each(["JOBS", "JOBS_DLQ"])("lanza un error claro si falta el binding %s", (name) => {
     const { [name as "JOBS"]: _missing, ...rest } = validBindings;
     expect(() => getEnv(rest)).toThrow(new RegExp(`${name}:`));
   });

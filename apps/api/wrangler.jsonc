@@ -35,7 +35,6 @@
       },
     ],
   },
-  "send_email": [{ "name": "EMAIL" }],
   "env": {
     "staging": {
       "name": "menusmax-api-staging",
@@ -63,7 +62,6 @@
           },
         ],
       },
-      "send_email": [{ "name": "EMAIL" }],
     },
     "production": {
       "name": "menusmax-api",
@@ -91,7 +89,6 @@
           },
         ],
       },
-      "send_email": [{ "name": "EMAIL" }],
     },
   },
 }

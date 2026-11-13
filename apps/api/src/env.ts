@@ -20,24 +20,14 @@ function queueBinding<Body>(name: string) {
   );
 }
 
-const SendEmailBinding = z.custom<SendEmail>(
-  (value) =>
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as { send?: unknown }).send === "function",
-  { message: "Falta el binding send_email EMAIL" },
-);
-
 // «MenusMax <no-responder@dominio>» o solo «no-responder@dominio».
 const EMAIL_FROM_FORMAT = /^(?:([^<>\p{Cc}]+?)\s*<([^<>\s]+)>|([^<>\s]+))$/u;
 
-/** Remitente para Email Service; `undefined` si `EMAIL_FROM` no tiene un formato válido. */
-export function parseEmailFrom(value: string): string | EmailAddress | undefined {
+/** Resend recibe `EMAIL_FROM` tal cual (ADR-020); aquí solo se valida su formato. */
+function isEmailFrom(value: string): boolean {
   const match = EMAIL_FROM_FORMAT.exec(value.trim());
   const email = match?.[2] ?? match?.[3];
-  if (!email || !z.email().safeParse(email).success) return undefined;
-  const name = match?.[1]?.trim();
-  return name ? { name, email } : email;
+  return email !== undefined && z.email().safeParse(email).success;
 }
 
 export const EnvSchema = z.object({
@@ -47,7 +37,7 @@ export const EnvSchema = z.object({
   WEB_ORIGIN: z.url({ protocol: /^https?$/ }).refine((url) => URL.parse(url)?.origin === url, {
     message: "Usa el origen de WEB, sin ruta, parámetros ni diagonal final.",
   }),
-  EMAIL_FROM: z.string().refine((value) => parseEmailFrom(value) !== undefined, {
+  EMAIL_FROM: z.string().refine(isEmailFrom, {
     message: "Usa el formato «MenusMax <no-responder@tu-dominio>».",
   }),
   // Secreto de Resend (ADR-020). Solo lo lee `infrastructure/mailer/resend.ts`.
@@ -55,7 +45,6 @@ export const EnvSchema = z.object({
   DB: D1Binding,
   JOBS: queueBinding<JobMessage>("JOBS"),
   JOBS_DLQ: queueBinding<unknown>("JOBS_DLQ"),
-  EMAIL: SendEmailBinding,
 });
 
 export type Env = z.infer<typeof EnvSchema>;
