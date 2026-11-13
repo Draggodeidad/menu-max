@@ -1,14 +1,14 @@
 import type { EmailSendJob } from "@menu-max/contracts";
 import type { Env } from "../../env";
-import { createCloudflareMailer } from "./cloudflare";
 import { createConsoleMailer } from "./console";
+import { createResendMailer } from "./resend";
 
 type WithoutEnvelope<T> = T extends unknown ? Omit<T, "type" | "id"> : never;
 
 /** Correo por enviar: destinatario, plantilla y los datos que esa plantilla necesita. */
 export type Mail = WithoutEnvelope<EmailSendJob>;
 
-/** Puerto de correo (ADR-009). Ningún archivo fuera de `infrastructure/mailer` usa `env.EMAIL`. */
+/** Puerto de correo (ADR-020). Ningún archivo fuera de `infrastructure/mailer` llama al proveedor. */
 export interface Mailer {
   send(mail: Mail): Promise<void>;
 }
@@ -28,5 +28,5 @@ export class MailerError extends Error {
 }
 
 export function createMailer(env: Env): Mailer {
-  return env.ENVIRONMENT === "development" ? createConsoleMailer() : createCloudflareMailer(env);
+  return env.ENVIRONMENT === "development" ? createConsoleMailer() : createResendMailer(env);
 }
