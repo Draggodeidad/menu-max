@@ -18,7 +18,7 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 | [006](#adr-006--multi-tenancy-por-organización-con-tenant-en-la-ruta) | Multi-tenancy por organización con tenant en la ruta     | Aceptado                     | 2026-11-11 |
 | [007](#adr-007--autorización-rbac--abac-con-código-propio)            | Autorización RBAC + ABAC con código propio               | Aceptado                     | 2026-11-11 |
 | [008](#adr-008--verificación-de-correo-no-bloqueante)                 | Verificación de correo no bloqueante                     | Aceptado (gracia: Propuesto) | 2026-11-11 |
-| [009](#adr-009--correo-transaccional-con-cloudflare-email-service)    | Correo con Cloudflare Email Service tras puerto `Mailer` | Propuesto                    | 2026-11-11 |
+| [009](#adr-009--correo-transaccional-con-cloudflare-email-service)    | Correo con Cloudflare Email Service tras puerto `Mailer` | Reemplazado por ADR-020      | 2026-11-11 |
 | [010](#adr-010--anti-abuso-en-capas)                                  | Anti-abuso en capas                                      | Aceptado (login: Propuesto)  | 2026-11-11 |
 | [011](#adr-011--una-cola-con-dlq-y-outbox-solo-para-pedidos)          | Una cola con DLQ; outbox solo para pedidos               | Aceptado                     | 2026-11-11 |
 | [012](#adr-012--documentación-openapi-solo-en-desarrollo)             | Documentación OpenAPI solo en desarrollo                 | Aceptado                     | 2026-11-11 |
@@ -26,6 +26,7 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 | [014](#adr-014--caché-del-menú-público-en-web-con-versión)            | Caché del menú público en WEB con versión                | Aceptado (TTL: Propuesto)    | 2026-11-11 |
 | [015](#adr-015--retención-de-datos-del-comensal)                      | Retención de datos del comensal                          | Propuesto                    | 2026-11-11 |
 | [016](#adr-016--modelo-de-datos-reducido-para-el-mvp)                 | Modelo de datos reducido para el MVP                     | Aceptado                     | 2026-11-11 |
+| [020](#adr-020--correo-transaccional-con-resend)                      | Correo con Resend tras puerto `Mailer`                   | Aceptado                     | 2026-11-13 |
 
 ---
 
@@ -235,7 +236,7 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 
 ## ADR-009 — Correo transaccional con Cloudflare Email Service
 
-**Estado:** Propuesto · **Fecha:** 2026-11-11
+**Estado:** Reemplazado por ADR-020 · **Fecha:** 2026-11-11
 
 **Contexto.** Necesitamos enviar verificación, reset e invitaciones. Cloudflare Email Service permite enviar desde un Worker con el binding `send_email` sin API keys, pero está en **beta**, requiere Workers Paid y onboarding del dominio emisor. Aún no está claro cómo reporta rebotes.
 
@@ -387,6 +388,37 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 | Operación               | `audit_logs`, `rate_counters`, `email_domain_checks`                                                                  |
 
 **Consecuencias.** Compartir productos entre menús o sucursales requerirá un ADR y una migración _expand/contract_ cuando un negocio real lo pida.
+
+---
+
+## ADR-020 — Correo transaccional con Resend
+
+**Estado:** Aceptado · **Fecha:** 2026-11-13 · Reemplaza ADR-009
+
+**Contexto.** ADR-009 proponía Cloudflare Email Service, que exige Workers Paid, sigue en beta y no deja claro cómo reporta rebotes. Queremos que el correo no sea motivo para pagar ese plan ni quedar atados a un solo proveedor. El puerto `Mailer` de T08 ya aísla al resto del código del proveedor, así que cambiarlo solo toca un adaptador.
+
+**Decisión.**
+
+- El puerto `Mailer` no cambia: `send({ to, template, data })` y `MailerError` con `kind` `transient` o `permanent`. El consumidor de la cola sigue decidiendo reintentos y DLQ (ADR-011).
+- Adaptador principal: Resend, con `fetch` a `POST https://api.resend.com/emails` y `AbortSignal.timeout(10_000)`. No se instala el SDK `resend`: es una sola llamada HTTP y la lista de dependencias permitidas no cambia.
+- Adaptador de desarrollo: imprime destinatario, asunto y enlace en la terminal de `wrangler dev`. En `development` nunca se llama a Resend.
+- `RESEND_API_KEY` es un secreto: llega por `env` validado en `env.ts` y solo lo lee `infrastructure/mailer/resend.ts`.
+- Remitente en el subdominio `mail.imanolantonio.dev` (`MenusMax <no-reply@mail.imanolantonio.dev>`), configurado en `EMAIL_FROM`, con SPF, DKIM y DMARC; texto plano + HTML simple; sin tracking de aperturas ni de clics.
+- Errores: `400` y `422` de Resend son permanentes (el mensaje no es válido y reintentar no lo arregla). Todo lo demás es transitorio: `401` y `403` (API key o dominio mal configurados), `429`, `5xx`, timeout y fallas de red. Así un problema de configuración agota los reintentos y el mensaje queda en la DLQ en lugar de perderse.
+- Plantillas en código, en español de México.
+
+**Consecuencias.**
+
+- Se elimina el binding `send_email` (`EMAIL`) de `wrangler.jsonc` y el adaptador de Email Service.
+- Secreto nuevo `RESEND_API_KEY` en `env.ts`, `.dev.vars.example`, `.env.example`, `scripts/deploy.mjs` y los secretos de cada entorno en GitHub Actions.
+- Un humano da de alta `mail.imanolantonio.dev` en Resend, publica sus registros DNS y crea una API key por entorno con permiso solo de envío.
+- El correo sale de Cloudflare hacia un tercero: Resend ve destinatarios y contenido de los correos de auth.
+- El correo deja de exigir Workers Paid. Bajar de plan sigue pendiente de medir el tiempo de CPU del hashing de contraseñas y los límites de D1; este ADR no lo decide.
+- Rebotes y quejas (`users.email_status`, ADR-008) siguen pendientes: Resend los reporta por webhook, y recibirlo requiere una ruta pública en WEB (ADR-002) y su propio ADR.
+
+**Pendiente.** Prueba de entregabilidad a Gmail, Outlook y Yahoo antes del piloto.
+
+**Alternativas descartadas.** Cloudflare Email Service (costo, beta y rebotes sin definir); SDK oficial `resend` (dependencia extra para una llamada HTTP); Amazon SES (más configuración y firma de peticiones propia para el mismo resultado).
 
 ---
 
