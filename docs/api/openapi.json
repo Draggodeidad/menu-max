@@ -98,6 +98,17 @@
         "required": ["code", "message", "requestId"],
         "additionalProperties": false
       },
+      "LinkSentDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "const": "Si el correo existe, te enviamos un enlace."
+          }
+        },
+        "required": ["message"],
+        "additionalProperties": false
+      },
       "MeDto": {
         "type": "object",
         "properties": {
@@ -503,7 +514,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Correo verificado.",
+            "description": "Correo verificado y sesión iniciada con su cookie.",
             "content": {
               "application/json": {
                 "schema": {
@@ -530,11 +541,8 @@
               }
             }
           },
-          "302": {
-            "description": "Redirección al origen de WEB."
-          },
           "400": {
-            "description": "Datos inválidos.",
+            "description": "El enlace no es válido o ya venció.",
             "content": {
               "application/json": {
                 "schema": {
@@ -555,6 +563,16 @@
           },
           "404": {
             "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
+          },
+          "409": {
+            "description": "El enlace ya se usó.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "429": {
             "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
@@ -586,14 +604,6 @@
               "minLength": 1
             },
             "required": true
-          },
-          {
-            "in": "query",
-            "name": "callbackURL",
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
           }
         ]
       }
@@ -614,26 +624,35 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {
-                  "email": {
-                    "type": "string",
-                    "format": "email",
-                    "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
-                  },
-                  "callbackURL": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": ["email"],
+                "properties": {},
                 "additionalProperties": false
               }
             }
           }
         },
         "responses": {
+          "202": {
+            "description": "Solicitud recibida. La respuesta es la misma exista o no el correo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkSentDto"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Datos inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La sesión falta o ya no es válida.",
             "content": {
               "application/json": {
                 "schema": {
@@ -655,18 +674,8 @@
           "404": {
             "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
           },
-          "422": {
-            "description": "El envío de correos aún no está disponible.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
           "429": {
-            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "description": "Se excedió la cuota de 1 cada 60 s o 5 por día (UTC). Espera los segundos del header Retry-After.",
             "content": {
               "application/json": {
                 "schema": {
@@ -698,6 +707,17 @@
             "InternalToken": []
           }
         ],
+        "parameters": [
+          {
+            "name": "x-turnstile-token",
+            "in": "header",
+            "required": true,
+            "description": "Token de Turnstile de un solo uso.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -709,10 +729,6 @@
                     "type": "string",
                     "format": "email",
                     "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
-                  },
-                  "redirectTo": {
-                    "type": "string",
-                    "minLength": 1
                   }
                 },
                 "required": ["email"],
@@ -722,8 +738,18 @@
           }
         },
         "responses": {
+          "202": {
+            "description": "Solicitud recibida. La respuesta es la misma exista o no el correo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkSentDto"
+                }
+              }
+            }
+          },
           "400": {
-            "description": "Datos inválidos.",
+            "description": "Datos inválidos o verificación de Turnstile fallida o reutilizada.",
             "content": {
               "application/json": {
                 "schema": {
@@ -745,18 +771,8 @@
           "404": {
             "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
           },
-          "422": {
-            "description": "El envío de correos aún no está disponible.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
           "429": {
-            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "description": "Se excedió la cuota de 3 por hora para este correo, exista o no. Espera los segundos del header Retry-After.",
             "content": {
               "application/json": {
                 "schema": {
@@ -776,86 +792,6 @@
             }
           }
         }
-      }
-    },
-    "/v1/auth/reset-password/{token}": {
-      "get": {
-        "operationId": "getV1AuthResetPasswordByToken",
-        "summary": "Abrir el enlace de restablecimiento",
-        "tags": ["Autenticación"],
-        "security": [
-          {
-            "InternalToken": []
-          }
-        ],
-        "responses": {
-          "302": {
-            "description": "Redirección al origen de WEB."
-          },
-          "400": {
-            "description": "Datos inválidos.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Origen o destino de redirección rechazado.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
-          },
-          "429": {
-            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Ocurrió un error interno.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "in": "path",
-            "name": "token",
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": true
-          },
-          {
-            "in": "query",
-            "name": "callbackURL",
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": true
-          }
-        ]
       }
     },
     "/v1/auth/reset-password": {
