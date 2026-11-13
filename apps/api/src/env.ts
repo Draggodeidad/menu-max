@@ -20,6 +20,16 @@ function queueBinding<Body>(name: string) {
   );
 }
 
+function rateLimitBinding(name: string) {
+  return z.custom<RateLimit>(
+    (value) =>
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as { limit?: unknown }).limit === "function",
+    { message: `Falta el binding de rate limit ${name}` },
+  );
+}
+
 // «MenusMax <no-responder@dominio>» o solo «no-responder@dominio».
 const EMAIL_FROM_FORMAT = /^(?:([^<>\p{Cc}]+?)\s*<([^<>\s]+)>|([^<>\s]+))$/u;
 
@@ -42,9 +52,15 @@ export const EnvSchema = z.object({
   }),
   // Secreto de Resend (ADR-020). Solo lo lee `infrastructure/mailer/resend.ts`.
   RESEND_API_KEY: z.string().min(1),
+  // Secreto de Turnstile (ADR-010). En development y pruebas, la clave de prueba de Cloudflare.
+  TURNSTILE_SECRET_KEY: z.string().min(1),
   DB: D1Binding,
   JOBS: queueBinding<JobMessage>("JOBS"),
   JOBS_DLQ: queueBinding<unknown>("JOBS_DLQ"),
+  // Filtro grueso por IP y grupo de rutas (ADR-010); las cuotas exactas viven en D1.
+  RL_AUTH: rateLimitBinding("RL_AUTH"),
+  RL_PUBLIC: rateLimitBinding("RL_PUBLIC"),
+  RL_PRIVATE: rateLimitBinding("RL_PRIVATE"),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
