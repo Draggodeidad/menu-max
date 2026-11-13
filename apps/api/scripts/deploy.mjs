@@ -15,6 +15,7 @@ const {
   EMAIL_FROM: emailFrom,
   BETTER_AUTH_SECRET: authSecret,
   INTERNAL_TOKEN: internalToken,
+  RESEND_API_KEY: resendApiKey,
   ...childEnv
 } = process.env;
 
@@ -44,7 +45,7 @@ if (
   !/^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$/.test(sender) ||
   /@example\.(com|org|net)$/i.test(sender)
 ) {
-  throw new Error("Configura EMAIL_FROM con el remitente real dado de alta en Email Service.");
+  throw new Error("Configura EMAIL_FROM con el remitente real dado de alta en Resend.");
 }
 if (
   !authSecret ||
@@ -56,6 +57,9 @@ if (
   throw new Error(
     "Configura BETTER_AUTH_SECRET e INTERNAL_TOKEN con valores distintos de al menos 32 caracteres.",
   );
+}
+if (!resendApiKey?.startsWith("re_") || /\s/.test(resendApiKey)) {
+  throw new Error("Configura RESEND_API_KEY con la API key de Resend del entorno.");
 }
 
 function readConfig(app) {
@@ -127,7 +131,11 @@ const webSecrets = join(secretDirectory, "web.json");
 try {
   await writeJson(apiConfig, api);
   await writeJson(webConfig, web);
-  await writeJson(apiSecrets, { BETTER_AUTH_SECRET: authSecret, INTERNAL_TOKEN: internalToken });
+  await writeJson(apiSecrets, {
+    BETTER_AUTH_SECRET: authSecret,
+    INTERNAL_TOKEN: internalToken,
+    RESEND_API_KEY: resendApiKey,
+  });
   await writeJson(webSecrets, { INTERNAL_TOKEN: internalToken });
 
   const databases = JSON.parse(wrangler("api", apiConfig, ["d1", "list", "--json"], "pipe"));
