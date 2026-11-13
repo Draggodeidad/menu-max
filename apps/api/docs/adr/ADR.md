@@ -281,6 +281,7 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 | Pedido público         | 30 por hora                  | IP                  |
 | Invitaciones           | 20 por día                   | Organización        |
 
+- Las ventanas de `rate_counters` son fijas y alineadas a UTC: "por día" se reinicia a las 00:00 UTC (18:00 en Ciudad de México) y "por hora" al inicio de cada hora UTC. Al exceder una cuota, `Retry-After` indica cuánto falta para que cierre esa ventana.
 - Pedido: máximo 50 líneas, 99 unidades por línea; sucursal abierta, modalidad activa y zona atendida.
 - `rate_counters` se limpia con un Cron diario.
 
