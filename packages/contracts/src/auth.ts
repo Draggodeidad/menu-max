@@ -15,11 +15,12 @@ export const SignInInput = z.strictObject({
   rememberMe: z.boolean().optional(),
 });
 export const SignOutInput = z.strictObject({}).optional();
-export const VerifyEmailQuery = z.strictObject({ token: Token, callbackURL: Callback });
-export const SendVerificationEmailInput = z.strictObject({ email: Email, callbackURL: Callback });
-export const RequestPasswordResetInput = z.strictObject({ email: Email, redirectTo: Callback });
-export const PasswordResetLinkParams = z.strictObject({ token: Token });
-export const PasswordResetLinkQuery = z.strictObject({ callbackURL: z.string().min(1) });
+// Los enlaces de los correos apuntan a WEB, que resuelve el token llamando a la API: no hay
+// redirecciones desde la API.
+export const VerifyEmailQuery = z.strictObject({ token: Token });
+// El correo sale de la sesión; el cliente no lo elige.
+export const SendVerificationEmailInput = z.strictObject({});
+export const RequestPasswordResetInput = z.strictObject({ email: Email });
 export const ResetPasswordQuery = z.strictObject({ token: Token.optional() });
 export const ResetPasswordInput = z.strictObject({
   newPassword: NewPassword,
@@ -62,6 +63,12 @@ export const VerifyEmailDto = z.strictObject({
   status: z.literal(true),
   user: AuthUserDto.nullable(),
 });
+/** Respuesta única de reenvío y reset: no revela si el correo existe (ADR-008). */
+export const LINK_SENT_MESSAGE = "Si el correo existe, te enviamos un enlace.";
+export const LinkSentDto = z
+  .strictObject({ message: z.literal(LINK_SENT_MESSAGE) })
+  .meta({ id: "LinkSentDto" });
+export type LinkSentDto = z.infer<typeof LinkSentDto>;
 export const ResetPasswordDto = z.strictObject({ status: z.literal(true) });
 export const ChangePasswordDto = z.strictObject({ token: Token, user: AuthUserDto });
 export const GetSessionDto = z

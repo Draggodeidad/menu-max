@@ -4,9 +4,9 @@ import {
   ErrorResponse,
   GetSessionDto,
   GetSessionQuery,
+  LINK_SENT_MESSAGE,
+  LinkSentDto,
   MeDto,
-  PasswordResetLinkParams,
-  PasswordResetLinkQuery,
   RequestPasswordResetInput,
   ResetPasswordDto,
   ResetPasswordInput,
@@ -23,10 +23,21 @@ import { Hono, type Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import type { ZodType } from "zod";
+import { TURNSTILE_HEADER } from "../../infrastructure/turnstile";
 import { requireAuth } from "../../middleware/require-auth";
+import { session } from "../../middleware/session";
 import { AppError } from "../../shared/errors";
 import type { AppEnv } from "../../types";
-import { forwardAuth, signIn, toMeDto } from "./auth.service";
+import {
+  changePassword,
+  forwardAuth,
+  requestPasswordReset,
+  resendVerification,
+  signIn,
+  toMeDto,
+  verifyEmail,
+  type AuthDeps,
+} from "./auth.service";
 
 function jsonResponse(description: string, schema: ZodType) {
   return { description, content: { "application/json": { schema: resolver(schema) } } };
@@ -41,11 +52,13 @@ function describeAuthRoute(
   summary: string,
   responses: NonNullable<Parameters<typeof describeRoute>[0]["responses"]>,
   input?: ZodType,
+  parameters?: Parameters<typeof describeRoute>[0]["parameters"],
 ) {
   return describeRoute({
     summary,
     tags: ["Autenticación"],
     security: [{ InternalToken: [] }],
+    ...(parameters && { parameters }),
     ...(input && {
       requestBody: {
         required: !input.isOptional(),
@@ -104,10 +117,22 @@ function forwardJson<T>(
   });
 }
 
+function deps(c: Context<AppEnv>): AuthDeps {
+  return {
+    env: c.env,
+    requestId: c.var.requestId,
+    clientIp: c.var.clientIp,
+    waitUntil: (promise) => c.executionCtx.waitUntil(promise),
+  };
+}
+
+const linkSent: LinkSentDto = { message: LINK_SENT_MESSAGE };
 const forward = createMiddleware<AppEnv>((c) => forwardAuth(c.env, c.req.raw));
-const noEmail = jsonResponse("El envío de correos aún no está disponible.", ErrorResponse);
 const sessionRequired = jsonResponse("La sesión falta o ya no es válida.", ErrorResponse);
-const redirected = { description: "Redirección al origen de WEB." };
+const linkAccepted = jsonResponse(
+  "Solicitud recibida. La respuesta es la misma exista o no el correo.",
+  LinkSentDto,
+);
 
 export const authRoutes = new Hono<AppEnv>()
   .post(
@@ -154,36 +179,67 @@ export const authRoutes = new Hono<AppEnv>()
   .get(
     "/verify-email",
     describeAuthRoute("Verificar el correo", {
-      200: jsonResponse("Correo verificado.", VerifyEmailDto),
-      302: redirected,
+      200: jsonResponse("Correo verificado y sesión iniciada con su cookie.", VerifyEmailDto),
+      400: jsonResponse("El enlace no es válido o ya venció.", ErrorResponse),
+      409: jsonResponse("El enlace ya se usó.", ErrorResponse),
     }),
     validator("query", VerifyEmailQuery, rejectInvalid),
-    forward,
+    (c) => verifyEmail(deps(c), c.req.raw),
   )
   .post(
     "/send-verification-email",
     describeAuthRoute(
       "Solicitar otro correo de verificación",
-      { 422: noEmail },
+      {
+        202: linkAccepted,
+        401: sessionRequired,
+        429: jsonResponse(
+          "Se excedió la cuota de 1 cada 60 s o 5 por día (UTC). Espera los segundos del header Retry-After.",
+          ErrorResponse,
+        ),
+      },
       SendVerificationEmailInput,
     ),
-    forwardJson(SendVerificationEmailInput),
+    session,
+    requireAuth,
+    forwardJson(SendVerificationEmailInput, undefined, async (c, request) => {
+      // `requireAuth` garantiza la sesión; el correo sale de ella, no del cliente.
+      const userId = c.var.user?.id;
+      if (!userId) throw new AppError("AUTH_REQUIRED");
+      await resendVerification(deps(c), request, userId);
+      return c.json(linkSent, 202);
+    }),
   )
   .post(
     "/request-password-reset",
     describeAuthRoute(
       "Solicitar el restablecimiento de contraseña",
-      { 422: noEmail },
+      {
+        202: linkAccepted,
+        400: jsonResponse(
+          "Datos inválidos o verificación de Turnstile fallida o reutilizada.",
+          ErrorResponse,
+        ),
+        429: jsonResponse(
+          "Se excedió la cuota de 3 por hora para este correo, exista o no. Espera los segundos del header Retry-After.",
+          ErrorResponse,
+        ),
+      },
       RequestPasswordResetInput,
+      [
+        {
+          name: TURNSTILE_HEADER,
+          in: "header",
+          required: true,
+          description: "Token de Turnstile de un solo uso.",
+          schema: { type: "string" },
+        },
+      ],
     ),
-    forwardJson(RequestPasswordResetInput),
-  )
-  .get(
-    "/reset-password/:token",
-    describeAuthRoute("Abrir el enlace de restablecimiento", { 302: redirected }),
-    validator("param", PasswordResetLinkParams, rejectInvalid),
-    validator("query", PasswordResetLinkQuery, rejectInvalid),
-    forward,
+    forwardJson(RequestPasswordResetInput, undefined, async (c, request, data) => {
+      await requestPasswordReset(deps(c), request, data.email);
+      return c.json(linkSent, 202);
+    }),
   )
   .post(
     "/reset-password",
@@ -195,7 +251,9 @@ export const authRoutes = new Hono<AppEnv>()
       ResetPasswordInput,
     ),
     validator("query", ResetPasswordQuery, rejectInvalid),
-    forwardJson(ResetPasswordInput),
+    forwardJson(ResetPasswordInput, undefined, (c, request) =>
+      forwardAuth(c.env, request, deps(c)),
+    ),
   )
   .post(
     "/change-password",
@@ -207,7 +265,11 @@ export const authRoutes = new Hono<AppEnv>()
       },
       ChangePasswordInput,
     ),
-    forwardJson(ChangePasswordInput, (data) => ({ ...data, revokeOtherSessions: true })),
+    forwardJson(
+      ChangePasswordInput,
+      (data) => ({ ...data, revokeOtherSessions: true }),
+      (c, request) => changePassword(deps(c), request),
+    ),
   );
 
 export const meRoutes = new Hono<AppEnv>().get(
