@@ -16,6 +16,7 @@ const {
   BETTER_AUTH_SECRET: authSecret,
   INTERNAL_TOKEN: internalToken,
   RESEND_API_KEY: resendApiKey,
+  TURNSTILE_SECRET_KEY: turnstileSecret,
   ...childEnv
 } = process.env;
 
@@ -60,6 +61,15 @@ if (
 }
 if (!resendApiKey?.startsWith("re_") || /\s/.test(resendApiKey)) {
   throw new Error("Configura RESEND_API_KEY con la API key de Resend del entorno.");
+}
+// Las claves de prueba de Cloudflare (`1x000…AA`, `2x000…AA`, …) no protegen nada en producción.
+const isTurnstileTestKey = /^\dx0+AA$/.test(turnstileSecret ?? "");
+if (
+  !turnstileSecret?.trim() ||
+  /\s/.test(turnstileSecret) ||
+  (environment === "production" && isTurnstileTestKey)
+) {
+  throw new Error("Configura TURNSTILE_SECRET_KEY con la clave secreta de Turnstile del entorno.");
 }
 
 function readConfig(app) {
@@ -135,6 +145,7 @@ try {
     BETTER_AUTH_SECRET: authSecret,
     INTERNAL_TOKEN: internalToken,
     RESEND_API_KEY: resendApiKey,
+    TURNSTILE_SECRET_KEY: turnstileSecret,
   });
   await writeJson(webSecrets, { INTERNAL_TOKEN: internalToken });
 

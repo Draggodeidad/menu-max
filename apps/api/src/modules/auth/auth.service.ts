@@ -1,6 +1,9 @@
 import type { MeDto } from "@menu-max/contracts";
 import type { Env } from "../../env";
+import { createDb } from "../../infrastructure/db";
 import { AppError } from "../../shared/errors";
+import { log } from "../../shared/log";
+import { hit, peek } from "../../shared/rate-counters";
 import { createAuth, type AuthUser } from "./auth";
 
 export function readSession(env: Env, headers: Headers) {
@@ -56,5 +59,54 @@ export async function forwardAuth(env: Env, request: Request): Promise<Response>
       throw new AppError("NOT_FOUND");
     default:
       throw new AppError("VALIDATION_FAILED");
+  }
+}
+
+// Bloqueo de login (ADR-010): 5 fallos en 15 min por correo + IP. Turnstile tras 3 fallos
+// sigue Propuesto y no se implementa.
+const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILURES = 5;
+
+async function loginFailureKey(email: string, clientIp: string | undefined) {
+  // `rate_counters` no guarda el correo en claro: solo su SHA-256.
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(email.trim().toLowerCase()),
+  );
+  const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0"));
+  return `login-fail:${hash.join("")}:${clientIp ?? "unknown"}`;
+}
+
+type SignInDeps = { env: Env; requestId: string; clientIp: string | undefined };
+
+/**
+ * Inicia sesión con el bloqueo de fallos. Antes de reenviar solo se consulta la cuota; solo un
+ * rechazo de credenciales la incrementa. Con 5 fallos en la ventana se responde `RATE_LIMITED`
+ * aunque la contraseña sea correcta. Un login exitoso no reinicia el contador.
+ */
+export async function signIn(deps: SignInDeps, request: Request, email: string) {
+  const db = createDb(deps.env);
+  const key = await loginFailureKey(email, deps.clientIp);
+
+  const quota = await peek(db, key, LOGIN_FAILURE_WINDOW_MS, LOGIN_MAX_FAILURES);
+  if (!quota.allowed) {
+    log.warn("auth.login_locked", { requestId: deps.requestId });
+    throw new AppError(
+      "RATE_LIMITED",
+      "Hiciste demasiados intentos para entrar. Espera unos minutos o restablece tu contraseña.",
+      undefined,
+      quota.retryAfterMs / 1000,
+    );
+  }
+
+  try {
+    return await forwardAuth(deps.env, request);
+  } catch (error) {
+    // En inicio de sesión, `AUTH_REQUIRED` solo sale de credenciales incorrectas.
+    if (error instanceof AppError && error.code === "AUTH_REQUIRED") {
+      await hit(db, key, LOGIN_FAILURE_WINDOW_MS, LOGIN_MAX_FAILURES);
+      log.warn("auth.login_failed", { requestId: deps.requestId });
+    }
+    throw error;
   }
 }

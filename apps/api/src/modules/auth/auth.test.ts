@@ -7,11 +7,11 @@ import {
   SignOutDto,
   VerifyEmailDto,
 } from "@menu-max/contracts";
-import { sessions, users } from "@menu-max/database";
+import { rateCounters, sessions, users } from "@menu-max/database";
 import { createEmailVerificationToken } from "better-auth/api";
 import { createExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { eq } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getEnv, type Env } from "../../env";
 import worker from "../../index";
@@ -41,6 +41,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function randomIp() {
+  const [a, b] = crypto.randomUUID().split("-");
+  return `2001:db8::${a?.slice(0, 4)}:${b}`;
+}
+
 function request(
   path: string,
   init: RequestInit<IncomingRequestCfProperties> = {},
@@ -48,6 +53,8 @@ function request(
 ) {
   const headers = new Headers(init.headers);
   headers.set("x-mm-internal", bindings.INTERNAL_TOKEN);
+  // IP distinta por petición para no chocar con RL_AUTH (10/60 s) salvo que la prueba fije una.
+  if (!headers.has("x-client-ip")) headers.set("x-client-ip", randomIp());
   return worker.fetch(
     new Request(`https://api.internal/v1/${path}`, { ...init, headers }),
     bindings,
@@ -303,5 +310,74 @@ describe("Autenticación con D1", () => {
     await expect(
       env.DB.prepare("UPDATE users SET email_status = ? WHERE id = ?").bind("invalido", id).run(),
     ).rejects.toThrow();
+  });
+});
+
+const wrongPassword = "Contraseña equivocada 0000";
+
+function signInFrom(ip: string, email: string, attempt: string) {
+  return post("sign-in/email", { email, password: attempt }, { "x-client-ip": ip });
+}
+
+async function statuses(count: number, call: (i: number) => Response | Promise<Response>) {
+  const responses = await Promise.all(Array.from({ length: count }, (_, i) => call(i)));
+  return responses.map((response) => response.status);
+}
+
+describe("Bloqueo de inicio de sesión (5 fallos en 15 min por correo + IP)", () => {
+  it("responde 429 al sexto intento aunque la contraseña sea correcta", async () => {
+    const { email } = await register();
+    const ip = randomIp();
+    // Mayúsculas y minúsculas cuentan para la misma llave.
+    const failures = await statuses(5, (i) =>
+      signInFrom(ip, i % 2 === 0 ? email : email.toUpperCase(), wrongPassword),
+    );
+    expect(failures).toEqual(Array(5).fill(401));
+
+    const locked = await signInFrom(ip, email, password);
+    expect(locked.status).toBe(429);
+    const error = ErrorResponse.parse(await locked.json());
+    expect(error.code).toBe("RATE_LIMITED");
+    expect(error.message).toMatch(/restablece tu contraseña/);
+    const retryAfter = Number(locked.headers.get("retry-after"));
+    expect(retryAfter).toBeGreaterThan(0);
+    expect(retryAfter).toBeLessThanOrEqual(15 * 60);
+    expect(locked.headers.getSetCookie()).toEqual([]);
+
+    // La llave es correo + IP: desde otra IP la cuenta sigue funcionando.
+    expect((await signInFrom(randomIp(), email, password)).status).toBe(200);
+  });
+
+  it("no guarda el correo en claro en rate_counters", async () => {
+    const { email } = await register();
+    const ip = randomIp();
+    await signInFrom(ip, email, wrongPassword);
+
+    const rows = await createDb(getEnv(env))
+      .select({ key: rateCounters.key, count: rateCounters.count })
+      .from(rateCounters)
+      .where(like(rateCounters.key, `login-fail:%:${ip}`));
+    expect(rows).toEqual([{ key: expect.stringMatching(/^login-fail:[\da-f]{64}:/), count: 1 }]);
+    expect(rows[0]?.key).not.toContain(email.split("@")[0]);
+  });
+
+  it("no cuenta los inicios de sesión correctos", async () => {
+    const { email } = await register();
+    const ip = randomIp();
+    expect(await statuses(4, () => signInFrom(ip, email, wrongPassword))).toEqual(
+      Array(4).fill(401),
+    );
+    expect(await statuses(3, () => signInFrom(ip, email, password))).toEqual(Array(3).fill(200));
+    expect((await signInFrom(ip, email, wrongPassword)).status).toBe(401);
+    expect((await signInFrom(ip, email, password)).status).toBe(429);
+  });
+
+  it("bloquea igual un correo sin cuenta, sin revelar si existe", async () => {
+    const email = `nadie-${crypto.randomUUID()}@example.com`;
+    const ip = randomIp();
+    expect(await statuses(5, () => signInFrom(ip, email, wrongPassword))).toEqual(
+      Array(5).fill(401),
+    );
+    expect((await signInFrom(ip, email, wrongPassword)).status).toBe(429);
   });
 });

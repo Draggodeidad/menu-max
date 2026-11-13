@@ -233,6 +233,16 @@
           "404": {
             "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
           },
+          "429": {
+            "description": "Cinco intentos fallidos con este correo desde esta IP en 15 minutos, o demasiadas peticiones. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Ocurrió un error interno.",
             "content": {
@@ -309,6 +319,16 @@
           },
           "404": {
             "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
+          },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "description": "Ocurrió un error interno.",
@@ -430,6 +450,16 @@
           "404": {
             "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
           },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Ocurrió un error interno.",
             "content": {
@@ -525,6 +555,16 @@
           },
           "404": {
             "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
+          },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "description": "Ocurrió un error interno.",
@@ -625,6 +665,16 @@
               }
             }
           },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Ocurrió un error interno.",
             "content": {
@@ -705,6 +755,16 @@
               }
             }
           },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Ocurrió un error interno.",
             "content": {
@@ -754,6 +814,16 @@
           },
           "404": {
             "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
+          },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "description": "Ocurrió un error interno.",
@@ -862,6 +932,16 @@
           },
           "404": {
             "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
+          },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "description": "Ocurrió un error interno.",
@@ -978,6 +1058,16 @@
           "404": {
             "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
           },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Ocurrió un error interno.",
             "content": {
@@ -1025,6 +1115,16 @@
           },
           "404": {
             "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
+          },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "description": "Ocurrió un error interno.",
@@ -1078,6 +1178,16 @@
           },
           "404": {
             "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
+          },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "description": "Ocurrió un error interno.",

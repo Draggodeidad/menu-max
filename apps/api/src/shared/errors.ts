@@ -25,6 +25,8 @@ export class AppError extends Error {
     readonly code: ErrorCode,
     message = messages[code],
     readonly fieldErrors?: ErrorResponse["fieldErrors"],
+    /** Segundos para el header `Retry-After` (solo `RATE_LIMITED`). */
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = "AppError";
@@ -38,6 +40,9 @@ function respond(c: Context<AppEnv>, error: AppError) {
     requestId: c.var.requestId,
     fieldErrors: error.fieldErrors,
   };
+  if (error.retryAfterSeconds !== undefined) {
+    c.header("Retry-After", String(Math.max(1, Math.ceil(error.retryAfterSeconds))));
+  }
   return c.json(response, ERROR_HTTP_STATUS[error.code]);
 }
 
