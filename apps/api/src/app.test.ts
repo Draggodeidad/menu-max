@@ -34,6 +34,7 @@ async function expectApiError(response: Response, status: number, code: ErrorRes
 // Dobles mínimos de bindings: getEnv solo verifica la forma.
 const fakeDb = { prepare: () => null };
 const fakeQueue = { send: () => null, sendBatch: () => null };
+const fakeRateLimit = { limit: () => null };
 
 describe("GET /v1/health", () => {
   it("responde 200 con el entorno", async () => {
@@ -258,6 +259,39 @@ describe("manejo de errores", () => {
   });
 });
 
+// IP única por prueba: el binding de miniflare conserva sus contadores durante la corrida.
+const randomIp = () =>
+  `2001:db8::${crypto.randomUUID().slice(0, 4)}:${crypto.randomUUID().slice(0, 4)}`;
+const fromIp = (ip: string, path: string) =>
+  exports.default.fetch(`http://api.internal${path}`, {
+    headers: { ...internalHeaders(), "x-client-ip": ip },
+  });
+const repeat = <T>(count: number, call: () => Promise<T>) =>
+  Promise.all(Array.from({ length: count }, call));
+
+describe("rate limit por grupo", () => {
+  it("responde 429 con Retry-After al pasar el límite de auth, solo para esa IP y ese grupo", async () => {
+    const ip = randomIp();
+    const allowed = await repeat(10, () => fromIp(ip, "/v1/auth/get-session"));
+    expect(allowed.map((response) => response.status)).toEqual(Array(10).fill(200));
+
+    const limited = await fromIp(ip, "/v1/auth/get-session");
+    const error = await expectApiError(limited, 429, "RATE_LIMITED");
+    expect(limited.headers.get("retry-after")).toBe("60");
+    expect(error.message).toMatch(/Espera/);
+
+    expect((await fromIp(randomIp(), "/v1/auth/get-session")).status).toBe(200);
+    expect((await fromIp(ip, "/v1/health")).status).toBe(200);
+  });
+
+  it("usa el grupo público para /v1/public y el privado para lo demás", async () => {
+    const ip = randomIp();
+    await repeat(60, () => fromIp(ip, "/v1/public/no-existe"));
+    await expectApiError(await fromIp(ip, "/v1/public/no-existe"), 429, "RATE_LIMITED");
+    await expectApiError(await fromIp(ip, "/v1/no-existe"), 404, "NOT_FOUND");
+  });
+});
+
 describe("getEnv", () => {
   const authVars = {
     BETTER_AUTH_SECRET: "test".repeat(12),
@@ -272,6 +306,10 @@ describe("getEnv", () => {
     RESEND_API_KEY: "resend-test-placeholder",
     JOBS: fakeQueue,
     JOBS_DLQ: fakeQueue,
+    TURNSTILE_SECRET_KEY: "turnstile-test-placeholder",
+    RL_AUTH: fakeRateLimit,
+    RL_PUBLIC: fakeRateLimit,
+    RL_PRIVATE: fakeRateLimit,
   };
 
   it("acepta una configuración válida", () => {
@@ -296,10 +334,22 @@ describe("getEnv", () => {
     },
   );
 
-  it.each(["JOBS", "JOBS_DLQ"])("lanza un error claro si falta el binding %s", (name) => {
-    const { [name as "JOBS"]: _missing, ...rest } = validBindings;
-    expect(() => getEnv(rest)).toThrow(new RegExp(`${name}:`));
-  });
+  it.each(["JOBS", "JOBS_DLQ", "RL_AUTH", "RL_PUBLIC", "RL_PRIVATE"])(
+    "lanza un error claro si falta el binding %s",
+    (name) => {
+      const { [name as "JOBS"]: _missing, ...rest } = validBindings;
+      expect(() => getEnv(rest)).toThrow(new RegExp(`${name}:`));
+    },
+  );
+
+  it.each([undefined, ""])(
+    "lanza un error claro si falta TURNSTILE_SECRET_KEY (caso %#)",
+    (key) => {
+      expect(() => getEnv({ ...validBindings, TURNSTILE_SECRET_KEY: key })).toThrow(
+        /TURNSTILE_SECRET_KEY/,
+      );
+    },
+  );
 
   it.each([undefined, ""])("lanza un error claro si falta RESEND_API_KEY (caso %#)", (key) => {
     expect(() => getEnv({ ...validBindings, RESEND_API_KEY: key })).toThrow(/RESEND_API_KEY/);
