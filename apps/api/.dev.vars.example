@@ -7,3 +7,7 @@ INTERNAL_TOKEN=cambia-esto-por-un-valor-de-32-caracteres-o-mas
 # Firma cookies y tokens. Usa un valor distinto de INTERNAL_TOKEN, de al menos 32 caracteres.
 BETTER_AUTH_SECRET=
 WEB_ORIGIN=http://localhost:5173
+
+# Remitente de los correos transaccionales. En development los correos solo se imprimen
+# en la terminal de `wrangler dev`; el dominio real lo da de alta un humano en Email Service.
+EMAIL_FROM="MenusMax <no-responder@example.com>"

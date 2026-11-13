@@ -1,6 +1,7 @@
 // Worker privado (ADR-002): solo se llama por Service Binding desde apps/web.
 // Nunca agregues `routes`, dominio propio ni `workers_dev: true` en ningún entorno.
 // Los `database_id` de staging y production son de ejemplo: los reales los pone un humano.
+// Las colas `menusmax-jobs*` y sus DLQ las crea un humano en cada entorno antes de publicar.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "menusmax-api-dev",
@@ -18,6 +19,21 @@
       "migrations_dir": "../../packages/database/migrations",
     },
   ],
+  "queues": {
+    "producers": [
+      { "binding": "JOBS", "queue": "menusmax-jobs-dev" },
+      { "binding": "JOBS_DLQ", "queue": "menusmax-jobs-dev-dlq" },
+    ],
+    "consumers": [
+      {
+        "queue": "menusmax-jobs-dev",
+        "max_batch_size": 10,
+        "max_retries": 5,
+        "dead_letter_queue": "menusmax-jobs-dev-dlq",
+      },
+    ],
+  },
+  "send_email": [{ "name": "EMAIL" }],
   "env": {
     "staging": {
       "name": "menusmax-api-staging",
@@ -31,6 +47,21 @@
           "migrations_dir": "../../packages/database/migrations",
         },
       ],
+      "queues": {
+        "producers": [
+          { "binding": "JOBS", "queue": "menusmax-jobs-staging" },
+          { "binding": "JOBS_DLQ", "queue": "menusmax-jobs-staging-dlq" },
+        ],
+        "consumers": [
+          {
+            "queue": "menusmax-jobs-staging",
+            "max_batch_size": 10,
+            "max_retries": 5,
+            "dead_letter_queue": "menusmax-jobs-staging-dlq",
+          },
+        ],
+      },
+      "send_email": [{ "name": "EMAIL" }],
     },
     "production": {
       "name": "menusmax-api",
@@ -44,6 +75,21 @@
           "migrations_dir": "../../packages/database/migrations",
         },
       ],
+      "queues": {
+        "producers": [
+          { "binding": "JOBS", "queue": "menusmax-jobs" },
+          { "binding": "JOBS_DLQ", "queue": "menusmax-jobs-dlq" },
+        ],
+        "consumers": [
+          {
+            "queue": "menusmax-jobs",
+            "max_batch_size": 10,
+            "max_retries": 5,
+            "dead_letter_queue": "menusmax-jobs-dlq",
+          },
+        ],
+      },
+      "send_email": [{ "name": "EMAIL" }],
     },
   },
 }
