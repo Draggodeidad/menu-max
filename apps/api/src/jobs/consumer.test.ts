@@ -19,10 +19,16 @@ const job = (): JobMessage => ({
   data: { url: link },
 });
 
-function fakeEmail(send: () => Promise<EmailSendResult>) {
-  const spy = vi.fn(send);
-  return { EMAIL: { send: spy } as unknown as SendEmail, spy };
+// Simula la respuesta de Resend; ninguna prueba sale a la red.
+function fakeResend(respond: () => Promise<Response>) {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(respond);
 }
+
+const accepted = () => Promise.resolve(Response.json({ id: "re-1" }));
+const rejected =
+  (status: number, message = "error") =>
+  () =>
+    Promise.resolve(Response.json({ message }, { status }));
 
 function fakeDlq() {
   const send = vi.fn((_body: unknown) => Promise.resolve());
@@ -67,10 +73,10 @@ describe("consumidor de jobs", () => {
     ["sin destinatario", { ...job(), to: undefined }],
   ])("manda a JOBS_DLQ un mensaje inválido (%s) sin reintentar", async (_case, body) => {
     const { JOBS_DLQ, send } = fakeDlq();
-    const { EMAIL, spy } = fakeEmail(() => Promise.resolve({ messageId: "m-1" }));
+    const spy = fakeResend(accepted);
     const logs = captureLogs();
 
-    const result = await runQueue(body, { ENVIRONMENT: "production", JOBS_DLQ, EMAIL });
+    const result = await runQueue(body, { ENVIRONMENT: "production", JOBS_DLQ });
 
     expect(send).toHaveBeenCalledWith(body);
     expect(spy).not.toHaveBeenCalled();
@@ -94,10 +100,10 @@ describe("consumidor de jobs", () => {
   it.each([1, 2, 3, 4, 5, 6])(
     "un error transitorio del mailer reintenta con backoff (intento %i)",
     async (attempts) => {
-      const { EMAIL } = fakeEmail(() => Promise.reject(new Error("internal error")));
+      fakeResend(rejected(500));
       captureLogs();
 
-      const result = await runQueue(job(), { ENVIRONMENT: "production", EMAIL }, attempts);
+      const result = await runQueue(job(), { ENVIRONMENT: "production" }, attempts);
 
       expect(result.explicitAcks).toEqual([]);
       expect(result.retryMessages).toEqual([{ msgId: "msg-1" }]);
@@ -111,11 +117,11 @@ describe("consumidor de jobs", () => {
   });
 
   it("un error permanente del mailer se confirma sin reintento ni DLQ", async () => {
-    const { EMAIL } = fakeEmail(() => Promise.reject(new Error("sender address not verified")));
+    fakeResend(rejected(422));
     const { JOBS_DLQ, send } = fakeDlq();
     const logs = captureLogs();
 
-    const result = await runQueue(job(), { ENVIRONMENT: "production", EMAIL, JOBS_DLQ });
+    const result = await runQueue(job(), { ENVIRONMENT: "production", JOBS_DLQ });
 
     expect(result.explicitAcks).toEqual(["msg-1"]);
     expect(result.retryMessages).toEqual([]);
@@ -124,10 +130,10 @@ describe("consumidor de jobs", () => {
   });
 
   it("los logs no incluyen el destinatario ni el enlace", async () => {
-    const { EMAIL } = fakeEmail(() => Promise.reject(new Error(`internal error for ${email}`)));
+    fakeResend(rejected(500, `internal error for ${email}`));
     const logs = captureLogs();
 
-    await runQueue(job(), { ENVIRONMENT: "production", EMAIL });
+    await runQueue(job(), { ENVIRONMENT: "production" });
 
     expect(logs.length).toBeGreaterThan(0);
     for (const line of logs) {
@@ -145,12 +151,12 @@ describe("consumidor de jobs", () => {
       },
       sendBatch: () => Promise.resolve(),
     } as unknown as Queue<JobMessage>;
-    const { EMAIL, spy } = fakeEmail(() => Promise.resolve({ messageId: "m-1" }));
+    const spy = fakeResend(accepted);
     const logs = captureLogs();
 
     await enqueue({ JOBS }, job());
     expect(sent).toHaveLength(1);
-    const result = await runQueue(sent[0], { ENVIRONMENT: "development", EMAIL });
+    const result = await runQueue(sent[0], { ENVIRONMENT: "development" });
 
     expect(spy).not.toHaveBeenCalled();
     expect(result.explicitAcks).toEqual(["msg-1"]);
