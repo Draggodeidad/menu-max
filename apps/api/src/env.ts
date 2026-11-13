@@ -50,6 +50,8 @@ export const EnvSchema = z.object({
   EMAIL_FROM: z.string().refine((value) => parseEmailFrom(value) !== undefined, {
     message: "Usa el formato «MenusMax <no-responder@tu-dominio>».",
   }),
+  // Secreto de Resend (ADR-020). Solo lo lee `infrastructure/mailer/resend.ts`.
+  RESEND_API_KEY: z.string().min(1),
   DB: D1Binding,
   JOBS: queueBinding<JobMessage>("JOBS"),
   JOBS_DLQ: queueBinding<unknown>("JOBS_DLQ"),

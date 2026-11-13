@@ -270,6 +270,7 @@ describe("getEnv", () => {
     DB: fakeDb,
     ...authVars,
     EMAIL_FROM: "MenusMax <no-responder@menusmax.example>",
+    RESEND_API_KEY: "resend-test-placeholder",
     JOBS: fakeQueue,
     JOBS_DLQ: fakeQueue,
     EMAIL: fakeEmail,
@@ -300,6 +301,10 @@ describe("getEnv", () => {
   it.each(["JOBS", "JOBS_DLQ", "EMAIL"])("lanza un error claro si falta el binding %s", (name) => {
     const { [name as "JOBS"]: _missing, ...rest } = validBindings;
     expect(() => getEnv(rest)).toThrow(new RegExp(`${name}:`));
+  });
+
+  it.each([undefined, ""])("lanza un error claro si falta RESEND_API_KEY (caso %#)", (key) => {
+    expect(() => getEnv({ ...validBindings, RESEND_API_KEY: key })).toThrow(/RESEND_API_KEY/);
   });
 
   it("lanza un error claro si falta INTERNAL_TOKEN", () => {

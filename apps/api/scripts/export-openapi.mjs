@@ -14,6 +14,7 @@ const server = createTestHarness({
       secrets: {
         INTERNAL_TOKEN: "openapi-export-local-placeholder",
         BETTER_AUTH_SECRET: "openapi-export-local-placeholder".repeat(2),
+        RESEND_API_KEY: "openapi-export-local-placeholder",
       },
     },
   ],

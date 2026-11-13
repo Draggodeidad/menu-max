@@ -2,6 +2,8 @@
 // Nunca agregues `routes`, dominio propio ni `workers_dev: true` en ningún entorno.
 // Los `database_id` de staging y production son de ejemplo: los reales los pone un humano.
 // Las colas `menusmax-jobs*` y sus DLQ las crea un humano en cada entorno antes de publicar.
+// `RESEND_API_KEY` (ADR-020) es un secreto: va en `.dev.vars` y en los secretos de cada entorno,
+// nunca en `vars`.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "menusmax-api-dev",

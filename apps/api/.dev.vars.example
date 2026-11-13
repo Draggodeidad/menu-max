@@ -8,6 +8,10 @@ INTERNAL_TOKEN=cambia-esto-por-un-valor-de-32-caracteres-o-mas
 BETTER_AUTH_SECRET=
 WEB_ORIGIN=http://localhost:5173
 
-# Remitente de los correos transaccionales. En development los correos solo se imprimen
-# en la terminal de `wrangler dev`; el dominio real lo da de alta un humano en Email Service.
-EMAIL_FROM="MenusMax <no-responder@example.com>"
+# Remitente de los correos transaccionales (ADR-020). El subdominio lo da de alta un humano
+# en Resend (SPF, DKIM y DMARC).
+EMAIL_FROM="MenusMax <no-reply@mail.imanolantonio.dev>"
+
+# API key de Resend. En development los correos solo se imprimen en la terminal de
+# `wrangler dev` y nunca se llama a Resend, así que basta cualquier valor no vacío.
+RESEND_API_KEY=cambia-esto-por-tu-api-key-de-resend
