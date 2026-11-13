@@ -42,5 +42,6 @@ jobs:
           CLOUDFLARE_DATABASE_ID: ${{ vars.CLOUDFLARE_DATABASE_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           WEB_ORIGIN: ${{ vars.WEB_ORIGIN }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
           INTERNAL_TOKEN: ${{ secrets.INTERNAL_TOKEN }}
