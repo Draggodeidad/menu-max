@@ -12,8 +12,10 @@ const {
   CLOUDFLARE_DATABASE_ID: databaseId,
   CLOUDFLARE_API_TOKEN: apiToken,
   WEB_ORIGIN: webOrigin,
+  EMAIL_FROM: emailFrom,
   BETTER_AUTH_SECRET: authSecret,
   INTERNAL_TOKEN: internalToken,
+  RESEND_API_KEY: resendApiKey,
   ...childEnv
 } = process.env;
 
@@ -37,6 +39,14 @@ const origin = webOrigin && URL.parse(webOrigin);
 if (!origin || origin.protocol !== "https:" || origin.origin !== webOrigin || origin.port) {
   throw new Error("Configura WEB_ORIGIN con el origen HTTPS de WEB, sin ruta ni puerto.");
 }
+const sender = emailFrom?.trim().match(/<([^<>\s]+)>$/)?.[1] ?? emailFrom?.trim();
+if (
+  !sender ||
+  !/^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$/.test(sender) ||
+  /@example\.(com|org|net)$/i.test(sender)
+) {
+  throw new Error("Configura EMAIL_FROM con el remitente real dado de alta en Resend.");
+}
 if (
   !authSecret ||
   authSecret.length < 32 ||
@@ -47,6 +57,9 @@ if (
   throw new Error(
     "Configura BETTER_AUTH_SECRET e INTERNAL_TOKEN con valores distintos de al menos 32 caracteres.",
   );
+}
+if (!resendApiKey?.startsWith("re_") || /\s/.test(resendApiKey)) {
+  throw new Error("Configura RESEND_API_KEY con la API key de Resend del entorno.");
 }
 
 function readConfig(app) {
@@ -103,6 +116,7 @@ if (
 await access(new URL(`apps/web/${web.main}`, root));
 
 apiEnvironment.vars.WEB_ORIGIN = origin.origin;
+apiEnvironment.vars.EMAIL_FROM = emailFrom.trim();
 apiEnvironment.preview_urls = false;
 database.database_id = databaseId.toLowerCase();
 webEnvironment.workers_dev = usesWorkersDev;
@@ -117,7 +131,11 @@ const webSecrets = join(secretDirectory, "web.json");
 try {
   await writeJson(apiConfig, api);
   await writeJson(webConfig, web);
-  await writeJson(apiSecrets, { BETTER_AUTH_SECRET: authSecret, INTERNAL_TOKEN: internalToken });
+  await writeJson(apiSecrets, {
+    BETTER_AUTH_SECRET: authSecret,
+    INTERNAL_TOKEN: internalToken,
+    RESEND_API_KEY: resendApiKey,
+  });
   await writeJson(webSecrets, { INTERNAL_TOKEN: internalToken });
 
   const databases = JSON.parse(wrangler("api", apiConfig, ["d1", "list", "--json"], "pipe"));

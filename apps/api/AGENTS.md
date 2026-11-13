@@ -27,7 +27,7 @@ Confirma en tu primer mensaje: **"Leí AGENTS.md y ADR.md"** y, en una línea, q
 | Identidad      | Better Auth (email + contraseña, verificación, reset, sesiones en D1)                   |
 | Archivos       | Cloudflare R2 (binding `MEDIA`)                                                         |
 | Asíncrono      | Una cola `jobs` + DLQ `jobs-dlq` + Cron Triggers                                        |
-| Correo         | Cloudflare Email Service (binding `EMAIL`) detrás del puerto `Mailer`                   |
+| Correo         | Resend por `fetch` (secreto `RESEND_API_KEY`) detrás del puerto `Mailer` (ADR-020)      |
 | Anti-bots      | Turnstile + binding `ratelimits` + cuotas en D1                                         |
 | Docs API       | `hono-openapi` + `@scalar/hono-api-reference`, **solo en desarrollo**                   |
 | Pruebas        | Vitest + `@cloudflare/vitest-pool-workers`                                              |
@@ -72,7 +72,7 @@ pnpm --filter api db:migrate:local  # wrangler d1 migrations apply DB --local
 apps/api/
 ├── AGENTS.md
 ├── CLAUDE.md
-├── wrangler.jsonc            # DB, MEDIA, JOBS, EMAIL, ratelimits, crons; workers_dev: false
+├── wrangler.jsonc            # DB, MEDIA, JOBS, ratelimits, crons; workers_dev: false
 ├── .dev.vars.example
 └── src/
     ├── index.ts              # export default { fetch, queue, scheduled }
@@ -273,7 +273,7 @@ export function findProduct(db: DB, tenant: TenantContext, id: string) {
 
 ## 8. Correo, colas y anti-abuso
 
-- **Correo:** solo a través de `infrastructure/mailer` (`send({ to, template, data })`). Nunca uses `env.EMAIL` fuera de ese adaptador. En desarrollo el adaptador imprime destinatario, asunto y enlace en la terminal de `wrangler dev` (un Worker no puede escribir archivos).
+- **Correo:** solo a través de `infrastructure/mailer` (`send({ to, template, data })`). Nunca uses `env.RESEND_API_KEY` ni llames a Resend fuera de ese adaptador (ADR-020). En desarrollo el adaptador imprime destinatario, asunto y enlace en la terminal de `wrangler dev` (un Worker no puede escribir archivos).
 - **Antes de crear una cuenta:** Zod + normalización, lista de dominios desechables y chequeo MX (`email_domain_checks`, 24 h). Nunca sondeo SMTP.
 - **Cola:** un solo productor (`infrastructure/jobs.ts`) y un solo consumidor. Los mensajes son una unión discriminada de Zod en `contracts` (`type: 'email.send' | 'notification.whatsapp' | …`). Un mensaje inválido va a la DLQ sin reintento.
 - **Consumidores idempotentes:** cada efecto externo tiene una llave de deduplicación única en D1. Asume entrega _at least once_.
@@ -282,7 +282,7 @@ export function findProduct(db: DB, tenant: TenantContext, id: string) {
   - `verifyTurnstile(token, clientIp)` en registro, reset, aceptación de invitación sin sesión y pedido público; en login tras 3 fallos solo cuando ADR-010 lo acepte. El token viaja en el header `x-turnstile-token` y es de un solo uso.
   - `rateCounters.hit(key, windowMs, limit)` para cuotas exactas (ver ADR-010).
   - El binding `ratelimits` es filtro grueso; no lo uses como cuota de negocio.
-- **Proveedores externos** (Meta, Turnstile, DNS): siempre con timeout (`AbortSignal.timeout(10_000)`), errores clasificados en transitorios y permanentes, y simulados en pruebas.
+- **Proveedores externos** (Meta, Resend, Turnstile, DNS): siempre con timeout (`AbortSignal.timeout(10_000)`), errores clasificados en transitorios y permanentes, y simulados en pruebas.
 
 ---
 
@@ -334,7 +334,7 @@ export function findProduct(db: DB, tenant: TenantContext, id: string) {
   - caso feliz con el DTO validado contra su esquema.
 - **Abuso** donde aplique: cuota excedida, Turnstile inválido o reutilizado, llave de idempotencia repetida, `version` vieja.
 - **Turnstile en pruebas:** usa las claves de prueba de Cloudflare (`1x0000000000000000000000000000000AA` siempre pasa, `2x0000000000000000000000000000000AA` siempre falla).
-- Meta, Email Service y DNS se simulan. **Ninguna prueba apunta a recursos remotos.**
+- Meta, Resend y DNS se simulan. **Ninguna prueba apunta a recursos remotos.**
 
 ---
 

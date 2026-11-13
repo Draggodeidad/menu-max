@@ -16,6 +16,8 @@ export default defineConfig({
           INTERNAL_TOKEN: "test-internal-token-0000000000000000",
           BETTER_AUTH_SECRET: "vitest-local-placeholder".repeat(3),
           WEB_ORIGIN: "http://localhost:5173",
+          EMAIL_FROM: "MenusMax <no-responder@example.com>",
+          RESEND_API_KEY: "vitest-resend-placeholder",
           TEST_MIGRATIONS: migrations,
         },
       },

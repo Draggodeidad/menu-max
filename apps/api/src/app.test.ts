@@ -31,8 +31,9 @@ async function expectApiError(response: Response, status: number, code: ErrorRes
   return error;
 }
 
-// Doble mínimo de un binding D1: getEnv solo verifica la forma.
+// Dobles mínimos de bindings: getEnv solo verifica la forma.
 const fakeDb = { prepare: () => null };
+const fakeQueue = { send: () => null, sendBatch: () => null };
 
 describe("GET /v1/health", () => {
   it("responde 200 con el entorno", async () => {
@@ -262,15 +263,46 @@ describe("getEnv", () => {
     BETTER_AUTH_SECRET: "test".repeat(12),
     WEB_ORIGIN: "https://menusmax.example",
   };
+  const validBindings = {
+    ENVIRONMENT: "production",
+    INTERNAL_TOKEN: validToken,
+    DB: fakeDb,
+    ...authVars,
+    EMAIL_FROM: "MenusMax <no-responder@menusmax.example>",
+    RESEND_API_KEY: "resend-test-placeholder",
+    JOBS: fakeQueue,
+    JOBS_DLQ: fakeQueue,
+  };
 
   it("acepta una configuración válida", () => {
-    const bindings = {
-      ENVIRONMENT: "production",
-      INTERNAL_TOKEN: validToken,
-      DB: fakeDb,
-      ...authVars,
-    };
-    expect(getEnv(bindings)).toEqual(bindings);
+    expect(getEnv(validBindings)).toEqual(validBindings);
+  });
+
+  it("vuelve a aceptar su propia salida", () => {
+    expect(getEnv({ ...getEnv(validBindings) })).toEqual(validBindings);
+  });
+
+  it.each(["no-responder@menusmax.example", "MenusMax <no-responder@menusmax.example>"])(
+    "acepta EMAIL_FROM con o sin nombre (%s)",
+    (emailFrom) => {
+      expect(getEnv({ ...validBindings, EMAIL_FROM: emailFrom }).EMAIL_FROM).toBe(emailFrom);
+    },
+  );
+
+  it.each(["", "MenusMax", "MenusMax <no-responder>", "a <b@c.mx> <d@e.mx>"])(
+    "rechaza EMAIL_FROM mal formado (caso %#)",
+    (emailFrom) => {
+      expect(() => getEnv({ ...validBindings, EMAIL_FROM: emailFrom })).toThrow(/EMAIL_FROM/);
+    },
+  );
+
+  it.each(["JOBS", "JOBS_DLQ"])("lanza un error claro si falta el binding %s", (name) => {
+    const { [name as "JOBS"]: _missing, ...rest } = validBindings;
+    expect(() => getEnv(rest)).toThrow(new RegExp(`${name}:`));
+  });
+
+  it.each([undefined, ""])("lanza un error claro si falta RESEND_API_KEY (caso %#)", (key) => {
+    expect(() => getEnv({ ...validBindings, RESEND_API_KEY: key })).toThrow(/RESEND_API_KEY/);
   });
 
   it("lanza un error claro si falta INTERNAL_TOKEN", () => {

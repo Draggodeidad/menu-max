@@ -28,20 +28,20 @@ Reglas anti-sobreingeniería (si una tarea las rompe, necesita ADR):
 
 Cada fila es un ADR corto para `docs/adr/`; las marcadas como _beta_ llevan un adaptador para poder cambiar de proveedor sin tocar dominios.
 
-| Pieza              | Elección                                                                       | Por qué                                                                                                                                                       | Alternativa descartada                                                     |
-| ------------------ | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| HTTP               | Hono 4 en Workers                                                              | Ligero, tipado, middlewares oficiales (`secure-headers`, `body-limit`, `request-id`)                                                                          | Itty, NestJS (no corre bien en Workers)                                    |
-| Datos              | D1 + Drizzle (`drizzle-orm/d1`)                                                | SQL tipado, migraciones con `drizzle-kit`, `db.batch()` para atomicidad                                                                                       | Prisma (bundle y cold start)                                               |
-| Validación         | Zod v4 en `packages/contracts`                                                 | Un esquema = validación + tipos + OpenAPI; v4 es Standard Schema                                                                                              | Valibot (menos ecosistema en el equipo)                                    |
-| Identidad          | Better Auth (email + contraseña, verificación, reset, sesiones en D1)          | Funciona con Drizzle sobre D1 en Workers ([ver guía](https://www.answeroverflow.com/m/1315488348118454282)); evita escribir hashing, tokens y sesiones a mano | Auth propio (más superficie de error), Lucia (ya no es librería mantenida) |
-| Tenancy y permisos | Código propio (`modules/organizations`, `shared/authz`)                        | Necesitamos ABAC por sucursal y límites de plan; el plugin de organizaciones de Better Auth duplicaría la fuente de verdad                                    | Plugin `organization` de Better Auth                                       |
-| Correo             | Cloudflare Email Service con binding `send_email` detrás de un puerto `Mailer` | Sin API keys, mismo proveedor; requiere Workers Paid y está en **beta** ([docs](https://developers.cloudflare.com/email-service/))                            | Resend o Amazon SES como respaldo si la beta limita                        |
-| Anti-bots          | Turnstile + binding `ratelimits` + cuotas en D1                                | Nativo y sin costo extra                                                                                                                                      | Durable Objects para rate limit exacto (posterior)                         |
-| Asíncrono          | Una cola `jobs` + DLQ + Cron para el relay del outbox                          | Reintentos y desacople de Meta y del correo                                                                                                                   | Una cola por tipo de mensaje                                               |
-| Docs API           | `hono-openapi` + `@scalar/hono-api-reference`, solo en dev                     | Genera OpenAPI desde Zod v4 sin reescribir rutas ([hono.dev](https://hono.dev/examples/hono-openapi))                                                         | `@hono/zod-openapi` (obliga a reescribir cada ruta con `createRoute`)      |
-| Pruebas            | Vitest + `@cloudflare/vitest-pool-workers`                                     | D1, Queues y R2 reales en Miniflare                                                                                                                           | Mocks de D1 a mano                                                         |
+| Pieza              | Elección                                                              | Por qué                                                                                                                                                       | Alternativa descartada                                                     |
+| ------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| HTTP               | Hono 4 en Workers                                                     | Ligero, tipado, middlewares oficiales (`secure-headers`, `body-limit`, `request-id`)                                                                          | Itty, NestJS (no corre bien en Workers)                                    |
+| Datos              | D1 + Drizzle (`drizzle-orm/d1`)                                       | SQL tipado, migraciones con `drizzle-kit`, `db.batch()` para atomicidad                                                                                       | Prisma (bundle y cold start)                                               |
+| Validación         | Zod v4 en `packages/contracts`                                        | Un esquema = validación + tipos + OpenAPI; v4 es Standard Schema                                                                                              | Valibot (menos ecosistema en el equipo)                                    |
+| Identidad          | Better Auth (email + contraseña, verificación, reset, sesiones en D1) | Funciona con Drizzle sobre D1 en Workers ([ver guía](https://www.answeroverflow.com/m/1315488348118454282)); evita escribir hashing, tokens y sesiones a mano | Auth propio (más superficie de error), Lucia (ya no es librería mantenida) |
+| Tenancy y permisos | Código propio (`modules/organizations`, `shared/authz`)               | Necesitamos ABAC por sucursal y límites de plan; el plugin de organizaciones de Better Auth duplicaría la fuente de verdad                                    | Plugin `organization` de Better Auth                                       |
+| Correo             | Resend por `fetch` detrás de un puerto `Mailer` (ADR-020)             | No exige Workers Paid ni depende de una beta; una sola llamada HTTP sin SDK ([docs](https://resend.com/docs/api-reference/emails/send-email))                 | Cloudflare Email Service (Workers Paid, beta), Amazon SES                  |
+| Anti-bots          | Turnstile + binding `ratelimits` + cuotas en D1                       | Nativo y sin costo extra                                                                                                                                      | Durable Objects para rate limit exacto (posterior)                         |
+| Asíncrono          | Una cola `jobs` + DLQ + Cron para el relay del outbox                 | Reintentos y desacople de Meta y del correo                                                                                                                   | Una cola por tipo de mensaje                                               |
+| Docs API           | `hono-openapi` + `@scalar/hono-api-reference`, solo en dev            | Genera OpenAPI desde Zod v4 sin reescribir rutas ([hono.dev](https://hono.dev/examples/hono-openapi))                                                         | `@hono/zod-openapi` (obliga a reescribir cada ruta con `createRoute`)      |
+| Pruebas            | Vitest + `@cloudflare/vitest-pool-workers`                            | D1, Queues y R2 reales en Miniflare                                                                                                                           | Mocks de D1 a mano                                                         |
 
-Plan de Cloudflare: **Workers Paid** desde el día uno. Lo exigen Email Service, el tiempo de CPU del hashing de contraseñas y el límite de 10 GB por base D1 (500 MB en Free) según los [límites de D1](https://developers.cloudflare.com/d1/platform/limits/).
+Plan de Cloudflare: **Workers Paid** desde el día uno. Lo exigen el tiempo de CPU del hashing de contraseñas y el límite de 10 GB por base D1 (500 MB en Free) según los [límites de D1](https://developers.cloudflare.com/d1/platform/limits/).
 
 Dependencias de `apps/api` en producción: `hono`, `drizzle-orm`, `zod`, `better-auth`, `hono-openapi`. Desarrollo: `wrangler`, `drizzle-kit`, `vitest`, `@cloudflare/vitest-pool-workers`, `@scalar/hono-api-reference`. Cualquier otra requiere ADR, igual que en el frontend.
 
@@ -51,7 +51,7 @@ Cada módulo tiene tres archivos obligatorios (`routes`, `service`, `repository`
 
 ```text
 apps/api/
-├── wrangler.jsonc            # DB, MEDIA, JOBS, EMAIL, ratelimits, crons; workers_dev: false
+├── wrangler.jsonc            # DB, MEDIA, JOBS, ratelimits, crons; workers_dev: false
 ├── .dev.vars.example         # espejo de .env.example (secretos locales)
 └── src/
     ├── index.ts              # export default { fetch, queue, scheduled }
@@ -71,7 +71,7 @@ apps/api/
     │   └── money.ts
     ├── infrastructure/
     │   ├── db.ts             # drizzle(env.DB, { schema })
-    │   ├── mailer/           # puerto Mailer + adaptador Cloudflare Email Service
+    │   ├── mailer/           # puerto Mailer + adaptadores de Resend y consola
     │   ├── turnstile.ts
     │   ├── storage.ts        # R2
     │   └── jobs.ts           # productor y consumidor de la cola
@@ -152,13 +152,13 @@ Así se respeta "valor antes que cuenta" de DESIGN.md: publicar y probar no espe
 2. **Dominios desechables**: lista estática en el bundle (p. ej. `mailinator.com`), actualizada por script mensual. Respuesta: "Usa un correo que revises seguido."
 3. **MX del dominio**: consulta DNS-over-HTTPS a `cloudflare-dns.com`, con el resultado guardado 24 h en la tabla `email_domain_checks` de D1. Dominio sin MX ni A → rechazo antes de crear la cuenta.
 4. **No se hace sondeo SMTP** (`RCPT TO`): no es confiable y daña la reputación del dominio emisor.
-5. **Rebotes**: si el proveedor reporta rebote duro o queja, se marca `email_status = 'undeliverable'` y se deja de enviar a esa dirección. _Pendiente confirmar qué eventos expone Email Service en beta._
+5. **Rebotes**: si el proveedor reporta rebote duro o queja, se marca `email_status = 'undeliverable'` y se deja de enviar a esa dirección. _Pendiente: Resend los reporta por webhook, que requiere su propio ADR (ADR-020)._
 
 ### Protecciones del flujo
 
 - **Sin enumeración:** "olvidé mi contraseña" y "reenviar verificación" siempre responden "Si el correo existe, te enviamos un enlace". El registro con correo ya existente manda un aviso a ese correo en vez de revelar que existe.
 - **Reenvío de verificación:** 1 cada 60 s y 5 al día por cuenta (cuota exacta en D1).
-- **Correos transaccionales** desde `no-responder@<dominio>`, con SPF, DKIM y DMARC del dominio onboardeado en Email Service; texto plano + HTML; sin tracking de aperturas.
+- **Correos transaccionales** desde `no-reply@mail.imanolantonio.dev`, con SPF, DKIM y DMARC del dominio dado de alta en Resend; texto plano + HTML; sin tracking de aperturas.
 
 ### Onboarding en un solo envío (`POST /v1/onboarding`)
 
@@ -419,7 +419,7 @@ Consumidor:
 - `max_retries: 5`; después, DLQ. Una ruta privada de plataforma permite reprocesar la DLQ a mano.
 - Timeout después de que el proveedor ya aceptó: se marca `ambiguous` y no se reintenta automáticamente, para no duplicar el WhatsApp.
 
-El puerto `Mailer` tiene una sola función, `send({ to, template, data })`. Las plantillas viven en código (texto plano + HTML simple), con asunto y textos en español de México. En desarrollo, el adaptador escribe el correo en consola y en `.wrangler/emails/` en vez de enviarlo.
+El puerto `Mailer` tiene una sola función, `send({ to, template, data })`. Las plantillas viven en código (texto plano + HTML simple), con asunto y textos en español de México. En desarrollo, el adaptador imprime el correo en la terminal de `wrangler dev` en vez de enviarlo.
 
 ## Seguridad transversal
 
@@ -505,7 +505,7 @@ Siete fases y 27 tasks; cada fase cierra con un criterio de aceptación verifica
 | T05  | CI: lint, typecheck, Vitest con pool de Workers, `gitleaks`, dry-run                                                              | B1 Fundación          |
 | T06  | `$lib/server/api.ts` en WEB: Service Binding, reenvío de cookie y `set-cookie`, `x-client-ip`, `x-mm-internal`                    | B1 Fundación          |
 | T07  | Better Auth con Drizzle sobre D1, tablas de identidad, sesiones                                                                   | B2 Identidad y correo |
-| T08  | Cola `jobs` + DLQ + consumidor + puerto `Mailer` (Email Service y adaptador de consola)                                           | B2 Identidad y correo |
+| T08  | Cola `jobs` + DLQ + consumidor + puerto `Mailer` (Resend y adaptador de consola)                                                  | B2 Identidad y correo |
 | T09  | Verificación de correo, reenvío con cuota, reset de contraseña, plantillas                                                        | B2 Identidad y correo |
 | T10  | Filtros de correo (desechables, MX), Turnstile, binding `ratelimits`, `rate_counters`                                             | B2 Identidad y correo |
 | T11  | Tablas de tenancy, `requireMembership`, `TenantContext`                                                                           | B3 Tenancy y permisos |
@@ -532,19 +532,18 @@ Las fases van en serie porque cada una usa lo que la anterior probó: sin aislam
 
 ## Decisiones pendientes y riesgos
 
-Cinco decisiones bloquean tasks concretas y conviene cerrarlas como ADR antes de que su fase empiece.
+Cuatro decisiones bloquean tasks concretas y conviene cerrarlas como ADR antes de que su fase empiece.
 
-| Decisión                                                | Opciones                                     | Recomendación                                       | Bloquea  |
-| ------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------- | -------- |
-| Proveedor de correo mientras Email Service esté en beta | Email Service solo; Email Service + respaldo | Email Service con adaptador listo para Resend o SES | T08      |
-| Gracia para cuentas sin verificar                       | 3, 7 o 14 días                               | 7 días y menú inactivo después                      | T09, T19 |
-| Login tras fallos                                       | Turnstile siempre; tras 3 fallos             | Tras 3 fallos, para no frenar al dueño diario       | T10      |
-| Retención de datos del comensal                         | 6, 12 o 24 meses                             | 12 meses y anonimización                            | T26      |
-| TTL de la caché del menú en WEB                         | 60 s; 300 s con versión en la llave          | 300 s, porque la versión invalida al publicar       | T19      |
+| Decisión                          | Opciones                            | Recomendación                                 | Bloquea  |
+| --------------------------------- | ----------------------------------- | --------------------------------------------- | -------- |
+| Gracia para cuentas sin verificar | 3, 7 o 14 días                      | 7 días y menú inactivo después                | T09, T19 |
+| Login tras fallos                 | Turnstile siempre; tras 3 fallos    | Tras 3 fallos, para no frenar al dueño diario | T10      |
+| Retención de datos del comensal   | 6, 12 o 24 meses                    | 12 meses y anonimización                      | T26      |
+| TTL de la caché del menú en WEB   | 60 s; 300 s con versión en la llave | 300 s, porque la versión invalida al publicar | T19      |
 
 Riesgos:
 
-- **Email Service en beta:** sus APIs y límites pueden cambiar y aún no está claro cómo reporta rebotes. Mitigación: el puerto `Mailer` y pruebas de entregabilidad a Gmail, Outlook y Yahoo antes del piloto.
+- **Correo con un tercero (Resend):** una caída o un cambio de precios afecta verificación y reset. Mitigación: el puerto `Mailer` permite cambiar de adaptador, y hay pruebas de entregabilidad a Gmail, Outlook y Yahoo antes del piloto.
 - **Confianza en `x-client-ip`:** si la API llegara a tener ruta pública, cualquiera podría falsear la IP y saltarse cuotas. Mitigación: `INTERNAL_TOKEN` + revisión de `wrangler.jsonc` en cada PR.
 - **Dos escrituras en el onboarding:** puede quedar un usuario sin organización. Mitigación: reanudación idempotente desde `/app`.
 - **D1 como único punto de escritura:** un pico de pedidos (promoción en redes) se nota primero ahí. Mitigación: presupuestos de consultas y prueba de carga en B7.
@@ -554,8 +553,7 @@ Riesgos:
 
 Consultadas el 2026-11-11.
 
-- [Cloudflare Email Service](https://developers.cloudflare.com/email-service/) — beta, Workers Paid, binding `send_email`.
-- [Email Service: Workers API](https://developers.cloudflare.com/email-service/api/send-emails/workers-api/)
+- [Resend: enviar un correo](https://resend.com/docs/api-reference/emails/send-email) — `POST /emails` con API key (consultada el 2026-11-13).
 - [Workers Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) — ventanas de 10 o 60 s, límite por ubicación.
 - [Límites de D1](https://developers.cloudflare.com/d1/platform/limits/) — 10 GB por base en Paid, 1000 consultas por invocación, Time Travel de 30 días.
 - [Hono OpenAPI](https://hono.dev/examples/hono-openapi) y [Scalar para Hono](https://hono.dev/examples/scalar)
