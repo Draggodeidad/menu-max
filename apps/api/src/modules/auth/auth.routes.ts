@@ -34,7 +34,7 @@ import {
   requestPasswordReset,
   resendVerification,
   signIn,
-  toMeDto,
+  getMe,
   verifyEmail,
   type AuthDeps,
 } from "./auth.service";
@@ -276,10 +276,10 @@ export const meRoutes = new Hono<AppEnv>().get(
   "/me",
   describeRoute({
     tags: ["Autenticación"],
-    summary: "Consultar mi usuario",
+    summary: "Consultar mi usuario y mis organizaciones",
     security: [{ InternalToken: [], SessionCookie: [] }],
     responses: {
-      200: jsonResponse("Usuario de la sesión.", MeDto),
+      200: jsonResponse("Usuario de la sesión y sus membresías activas.", MeDto),
       401: sessionRequired,
       404: { description: "El token interno falta o es inválido. La respuesta no tiene cuerpo." },
       429: tooManyRequests,
@@ -287,5 +287,5 @@ export const meRoutes = new Hono<AppEnv>().get(
     },
   }),
   requireAuth,
-  (c) => c.json(toMeDto(c.var.user)),
+  async (c) => c.json(await getMe(c.env, c.var.user)),
 );

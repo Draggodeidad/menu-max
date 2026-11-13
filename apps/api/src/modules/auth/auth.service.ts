@@ -6,6 +6,7 @@ import { log } from "../../shared/log";
 import { verifyTurnstile, TURNSTILE_HEADER } from "../../infrastructure/turnstile";
 import { normalizeEmail } from "../../shared/email-checks";
 import { hit, peek } from "../../shared/rate-counters";
+import { listMemberships } from "../organizations/organizations.service";
 import { createAuth, sendAuthEmail, type AuthRequestOptions, type AuthUser } from "./auth";
 import { findEmailState } from "./auth.repository";
 import { resetPasswordLink } from "./web-links";
@@ -21,7 +22,8 @@ export function readSession(env: Env, headers: Headers) {
   return createAuth(env).api.getSession({ headers, returnHeaders: true });
 }
 
-export function toMeDto(user: AuthUser): MeDto {
+/** Usuario de la sesión y sus membresías activas (ADR-006). */
+export async function getMe(env: Env, user: AuthUser): Promise<MeDto> {
   return {
     user: {
       id: user.id,
@@ -29,6 +31,7 @@ export function toMeDto(user: AuthUser): MeDto {
       name: user.name,
       emailVerified: user.emailVerified,
     },
+    memberships: await listMemberships(createDb(env), user.id),
   };
 }
 

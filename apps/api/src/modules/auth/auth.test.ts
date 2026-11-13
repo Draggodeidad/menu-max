@@ -157,6 +157,7 @@ describe("Autenticación con D1", () => {
     expect(me.status).toBe(200);
     expect(MeDto.parse(await me.json())).toEqual({
       user: { id, email, name, emailVerified: false },
+      memberships: [],
     });
 
     const session = await request("auth/get-session", { headers });
@@ -460,6 +461,7 @@ describe("Verificación de correo (T10)", () => {
     const me = await request("me", { headers });
     expect(MeDto.parse(await me.json())).toEqual({
       user: { id, email, name, emailVerified: true },
+      memberships: [],
     });
 
     const reused = await request(`auth/verify-email?${new URLSearchParams({ token })}`);
