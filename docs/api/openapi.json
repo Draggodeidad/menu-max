@@ -385,11 +385,14 @@
           "limits": {
             "$ref": "#/components/schemas/PlanLimits"
           },
+          "features": {
+            "$ref": "#/components/schemas/PlanFeatures"
+          },
           "usage": {
             "$ref": "#/components/schemas/PlanUsage"
           }
         },
-        "required": ["plan", "status", "currentPeriodEnd", "limits", "usage"],
+        "required": ["plan", "status", "currentPeriodEnd", "limits", "features", "usage"],
         "additionalProperties": false
       },
       "PlanLimits": {
@@ -412,6 +415,19 @@
           }
         },
         "required": ["maxBranches", "maxProducts", "maxMembers"],
+        "additionalProperties": false
+      },
+      "PlanFeatures": {
+        "type": "object",
+        "properties": {
+          "customTheme": {
+            "type": "boolean"
+          },
+          "removeBranding": {
+            "type": "boolean"
+          }
+        },
+        "required": ["customTheme", "removeBranding"],
         "additionalProperties": false
       },
       "PlanUsage": {

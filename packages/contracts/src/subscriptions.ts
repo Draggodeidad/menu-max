@@ -16,6 +16,15 @@ export const PlanLimits = z
   .meta({ id: "PlanLimits" });
 export type PlanLimits = z.infer<typeof PlanLimits>;
 
+/** Capacidades sí o no del plan (T14b). Se leen de `plans`; ninguna vive en código. */
+export const PlanFeatures = z
+  .strictObject({
+    customTheme: z.boolean(),
+    removeBranding: z.boolean(),
+  })
+  .meta({ id: "PlanFeatures" });
+export type PlanFeatures = z.infer<typeof PlanFeatures>;
+
 /** Uso actual de lo que limita el plan. `products` llega con el catálogo (T16). */
 export const PlanUsage = z
   .strictObject({
@@ -32,6 +41,7 @@ export const SubscriptionDto = z
     /** Fin del periodo actual (ISO 8601); `null` mientras no haya cobro. */
     currentPeriodEnd: z.iso.datetime().nullable(),
     limits: PlanLimits,
+    features: PlanFeatures,
     usage: PlanUsage,
   })
   .meta({ id: "SubscriptionDto" });
