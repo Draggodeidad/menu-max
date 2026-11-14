@@ -2,7 +2,7 @@
 
 > Planeación del backend (versionada en git).
 > **Criterio para cerrar la fase:** roles, invitaciones y límites del plan funcionan; la suite de aislamiento confirma que una organización no lee ni modifica otra.
-> **Orden de ejecución:** T11 → T14, en orden numérico.
+> **Orden de ejecución:** T11 → T14b, en orden numérico.
 > **Nota:** en esta fase las organizaciones de prueba se crean con factories. El alta real (`/crear`) llega en T20.
 
 ---
@@ -244,3 +244,38 @@ Cada organización tiene un plan con límites que la API hace cumplir, y su esta
 ### Criterios de aceptación
 
 - [ ] Los límites se leen de la tabla `plans`, no de constantes en código.
+
+---
+
+## T14b — Capacidades del plan para la marca del menú
+
+**Fase:** B3 · **Depende de:** T14 · **ADR:** 007 · **Rama sugerida:** `feat/t14b-capacidades-plan` · **Bloquea:** T18
+
+> Solo las capacidades que usa T18. Cuotas de zonas, historial ampliado, consulta de auditoría y analíticas se quedan para Release 2.
+
+### Objetivo
+
+El plan dice, además de sus límites numéricos, si la organización puede personalizar la marca de su menú y quitar el sello de MenusMax, y los servicios lo pueden preguntar igual que un límite.
+
+### Alcance
+
+- Migración (_expand_): columnas `custom_theme` y `remove_branding` en `plans` (`integer` booleano, `not null default false`); la migración las pone en `true` para `pro`.
+- `TenantContext.plan` agrega `features: { customTheme, removeBranding }`, leídas en el mismo join de `requireMembership` (sin consulta extra).
+- `modules/subscriptions/limits.ts`: `assertFeature(deps, 'customTheme' | 'removeBranding')` → `PLAN_LIMIT_REACHED` con mensaje accionable ("La personalización de marca está disponible en Pro. Cambia de plan para usarla.").
+- `SubscriptionDto` agrega `features` (cambio aditivo, compatible con web).
+- Actualizar `docs/runbooks/cambiar-plan.md` con las dos columnas.
+
+### Fuera de alcance
+
+- Aplicar las capacidades en el tema y el menú público (T18).
+- Cualquier otra capacidad o cuota por plan (Release 2).
+
+### Pruebas requeridas
+
+- [ ] `free` → ambas en `false`; `pro` → ambas en `true`, leídas de la tabla (un plan de prueba con valores distintos lo confirma).
+- [ ] `assertFeature` permite con la capacidad y lanza 402 sin ella.
+- [ ] `GET /subscription` incluye `features` y sigue validando contra su esquema.
+
+### Criterios de aceptación
+
+- [ ] Las capacidades se leen de `plans`, no de constantes en código.
