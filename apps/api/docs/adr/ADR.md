@@ -26,6 +26,7 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 | [014](#adr-014--caché-del-menú-público-en-web-con-versión)            | Caché del menú público en WEB con versión                | Aceptado (TTL: Propuesto)    | 2026-11-11 |
 | [015](#adr-015--retención-de-datos-del-comensal)                      | Retención de datos del comensal                          | Propuesto                    | 2026-11-11 |
 | [016](#adr-016--modelo-de-datos-reducido-para-el-mvp)                 | Modelo de datos reducido para el MVP                     | Aceptado                     | 2026-11-11 |
+| [018](#adr-018--zonas-de-entrega-por-código-postal-con-tarifa-fija)   | Zonas de entrega por código postal con tarifa fija       | Aceptado                     | 2026-11-14 |
 | [020](#adr-020--correo-transaccional-con-resend)                      | Correo con Resend tras puerto `Mailer`                   | Aceptado                     | 2026-11-13 |
 
 ---
@@ -396,6 +397,61 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 | Operación               | `audit_logs`, `rate_counters`, `email_domain_checks`                                                                  |
 
 **Consecuencias.** Compartir productos entre menús o sucursales requerirá un ADR y una migración _expand/contract_ cuando un negocio real lo pida.
+
+---
+
+## ADR-018 — Zonas de entrega por código postal con tarifa fija
+
+**Estado:** Aceptado · **Fecha:** 2026-11-14
+
+**Contexto.** Para aceptar un pedido a domicilio, la API debe saber si la sucursal entrega en la dirección del comensal y cuánto cobra por el envío (ADR-010: "zona atendida"). Los negocios del piloto son pequeños y definen su reparto por colonias. Calcular por distancia exige geocodificar direcciones con un proveedor externo: tiene costo, requiere un secreto nuevo y envía datos del comensal a un tercero. El esquema de `DATABASE.md` (supuesto S5) ya anticipaba códigos postales en JSON.
+
+**Decisión.**
+
+- **Qué es una zona.** Pertenece a una sucursal y tiene nombre visible, una lista de códigos postales mexicanos (5 dígitos, `^\d{5}$`) y una tarifa fija en centavos (`0` = envío gratis). No se valida que el código exista en el catálogo de SEPOMEX: solo su formato.
+- **Tabla `delivery_zones`** (ADR-016):
+
+  ```
+  delivery_zones (
+    id, organization_id, branch_id,
+    name, postal_codes, fee_cents,
+    active, version,
+    created_at, updated_at, deleted_at
+  )
+  ```
+
+  - `postal_codes` es `text` con `CHECK (json_valid(...) and json_type(...) = 'array')`, porque ADR-016 no incluye una tabla hija;
+  - `fee_cents` lleva `CHECK >= 0`;
+  - `active` vale `true` por defecto;
+  - FK compuesta `(organization_id, branch_id)` hacia `branches`;
+  - índice `(organization_id, branch_id)`.
+
+- **Pausar y borrar.** `active = false` pausa la zona sin perderla. Borrar es lógico (`deleted_at`), porque los pedidos conservan `delivery_zone_id`. Una zona borrada no se puede reactivar.
+- **Un código postal, una zona.** Un código postal no puede estar en dos zonas activas y no borradas de la misma sucursal → `CONFLICT`, con el código repetido en `fieldErrors`. Lo valida el servicio antes de escribir, porque la base no puede imponer unicidad dentro de un JSON. Dos sucursales distintas sí pueden atender el mismo código.
+- **Topes técnicos.** Hasta 20 zonas no borradas por sucursal y 100 códigos postales por zona; un código repetido dentro de la misma zona → `VALIDATION_FAILED`. No son límites del plan: durante el piloto, las zonas no dependen del plan (las cuotas por plan son Release 2).
+- **Rutas privadas** (T15), bajo `/v1/orgs/:orgId/branches/:branchId/zones`, con `requireBranch()` y `canAccessBranch`:
+  - `GET /` (`settings:read`) lista las zonas no borradas;
+  - `POST /`, `PATCH /:zoneId` (con `version` obligatorio) y `DELETE /:zoneId` (lógico) usan `settings:write`.
+- **Checkout** (T21). El comensal indica su código postal y el servicio busca la zona activa y no borrada de la sucursal que lo contiene.
+  - Si no hay zona → `BUSINESS_RULE` "No entregamos en ese código postal.".
+  - Si hay zona, se copian `delivery_zone_id` y `fee_cents` al pedido, y el total es subtotal + tarifa.
+  - La tarifa se lee siempre de D1, nunca de la caché (ADR-014).
+- **Lectura pública** (T18). Muestra nombre y tarifa de las zonas activas, nunca los códigos postales. A domicilio queda disponible para el comensal solo si `mode_delivery` está activo y hay al menos una zona activa.
+- **Versión del menú.** Crear, editar, pausar o borrar una zona incrementa `menu_version`, porque cambia el menú público. Hasta que exista `menus` (T16), no aplica.
+
+**Consecuencias.**
+
+- El código postal es una frontera gruesa: un código grande queda dentro o fuera completo. No hay exclusión por calle ni tarifa por distancia.
+- La base no impide que un código esté en dos zonas. Lo cubren el servicio y la consulta 8 de la auditoría de `DATABASE.md`.
+- El código postal del comensal es dato personal y vive solo en el pedido (`delivery_postal_code`, ADR-015).
+- Cambiar a polígonos o distancia en el futuro requiere un ADR nuevo y una migración _expand/contract_. Los pedidos existentes conservan su zona y su tarifa copiadas.
+
+**Alternativas descartadas.**
+
+- Tarifa por distancia con geocodificación: proveedor externo, costo, secreto nuevo y datos del comensal a un tercero.
+- Polígonos dibujados en un mapa: requieren UI de mapas y geocodificar cada dirección.
+- Colonia como texto libre: ambigua y fácil de escribir mal.
+- Tabla hija `delivery_zone_postal_codes` con índice único: la base impondría la unicidad, pero ADR-016 no la incluye. Se revisa si un negocio real necesita más de 100 códigos por zona.
 
 ---
 
