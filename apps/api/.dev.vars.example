@@ -19,3 +19,8 @@ RESEND_API_KEY=cambia-esto-por-tu-api-key-de-resend
 # Clave secreta de Turnstile (ADR-010). En development usa la clave de prueba de Cloudflare
 # que siempre pasa; en staging y production, la del widget real (la configura un humano).
 TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+
+# Dominio público del bucket R2 MEDIA (T17), sin diagonal final. En staging y production es el
+# dominio propio conectado al bucket (nunca r2.dev); lo configura un humano. En development el
+# bucket es local de wrangler y no tiene dominio público: las URLs solo sirven como referencia.
+MEDIA_PUBLIC_BASE_URL=http://localhost:8787/media-local

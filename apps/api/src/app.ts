@@ -1,4 +1,4 @@
-import { ErrorResponse, HealthResponse } from "@menu-max/contracts";
+import { ErrorResponse, HealthResponse, MAX_MEDIA_BYTES } from "@menu-max/contracts";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
@@ -18,6 +18,7 @@ import { AUTH_BASE_PATH } from "./modules/auth/auth";
 import { authRoutes, meRoutes } from "./modules/auth/auth.routes";
 import { branchRoutes, businessRoutes } from "./modules/businesses/businesses.routes";
 import { catalogRoutes } from "./modules/catalog/catalog.routes";
+import { mediaRoutes } from "./modules/catalog/media.routes";
 import {
   organizationRoutes,
   publicInvitationRoutes,
@@ -25,6 +26,26 @@ import {
 import { subscriptionRoutes } from "./modules/subscriptions/subscriptions.routes";
 import { AppError, notFound, onError } from "./shared/errors";
 import type { AppEnv, TenantEnv } from "./types";
+
+const DEFAULT_BODY_LIMIT = bodyLimit({
+  maxSize: 64 * 1024,
+  onError: () => {
+    throw new AppError("PAYLOAD_TOO_LARGE");
+  },
+});
+
+// Subida de imágenes (T17): el único cuerpo que puede pasar de 64 KB.
+const MEDIA_BODY_LIMIT = bodyLimit({
+  maxSize: MAX_MEDIA_BYTES,
+  onError: () => {
+    throw new AppError(
+      "PAYLOAD_TOO_LARGE",
+      "La imagen pesa más de 5 MB. Redúcela o comprímela e inténtalo de nuevo.",
+    );
+  },
+});
+
+const MEDIA_UPLOAD_PATH = /^\/v1\/orgs\/[^/]+\/media\/?$/;
 
 function routeGroup(path: string): RateLimitGroup {
   const under = (prefix: string) => path === prefix || path.startsWith(`${prefix}/`);
@@ -45,12 +66,10 @@ export function createApp(environment?: Env["ENVIRONMENT"]) {
     "*",
     internal,
     clientContext,
-    bodyLimit({
-      maxSize: 64 * 1024,
-      onError: () => {
-        throw new AppError("PAYLOAD_TOO_LARGE");
-      },
-    }),
+    (c, next) =>
+      c.req.method === "POST" && MEDIA_UPLOAD_PATH.test(c.req.path)
+        ? MEDIA_BODY_LIMIT(c, next)
+        : DEFAULT_BODY_LIMIT(c, next),
     secureHeaders(),
   );
 
@@ -76,6 +95,7 @@ export function createApp(environment?: Env["ENVIRONMENT"]) {
   orgScoped.route("/business", businessRoutes);
   orgScoped.route("/branches", branchRoutes);
   orgScoped.route("/branches/:branchId/menu", catalogRoutes);
+  orgScoped.route("/media", mediaRoutes);
   app.route("/v1/orgs/:orgId", orgScoped);
 
   app.get(

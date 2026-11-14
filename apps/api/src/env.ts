@@ -30,6 +30,21 @@ function rateLimitBinding(name: string) {
   );
 }
 
+const R2Binding = z.custom<R2Bucket>(
+  (value) =>
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { put?: unknown }).put === "function" &&
+    typeof (value as { delete?: unknown }).delete === "function",
+  { message: "Falta el binding R2 o no es un bucket" },
+);
+
+/** Base de las URLs públicas: sin diagonal final, parámetros ni fragmento. */
+function isBaseUrl(value: string): boolean {
+  const url = URL.parse(value);
+  return url !== null && !value.endsWith("/") && url.search === "" && url.hash === "";
+}
+
 // «MenusMax <no-responder@dominio>» o solo «no-responder@dominio».
 const EMAIL_FROM_FORMAT = /^(?:([^<>\p{Cc}]+?)\s*<([^<>\s]+)>|([^<>\s]+))$/u;
 
@@ -54,7 +69,14 @@ export const EnvSchema = z.object({
   RESEND_API_KEY: z.string().min(1),
   // Secreto de Turnstile (ADR-010). En development y pruebas, la clave de prueba de Cloudflare.
   TURNSTILE_SECRET_KEY: z.string().min(1),
+  // Dominio público del bucket MEDIA (T17), configurado por un humano. Los DTO arman con él las
+  // URLs de las imágenes; el frontend nunca construye rutas de R2.
+  MEDIA_PUBLIC_BASE_URL: z.url({ protocol: /^https?$/ }).refine(isBaseUrl, {
+    message: "Usa el dominio público del bucket, sin diagonal final, parámetros ni fragmento.",
+  }),
   DB: D1Binding,
+  // Imágenes del panel (T17).
+  MEDIA: R2Binding,
   JOBS: queueBinding<JobMessage>("JOBS"),
   JOBS_DLQ: queueBinding<unknown>("JOBS_DLQ"),
   // Filtro grueso por IP y grupo de rutas (ADR-010); las cuotas exactas viven en D1.

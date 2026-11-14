@@ -48,7 +48,7 @@ import {
 } from "./catalog.service";
 
 function deps(c: Context<TenantEnv>): CatalogDeps {
-  return { db: createDb(c.env), tenant: c.var.tenant, requestId: c.var.requestId };
+  return { db: createDb(c.env), env: c.env, tenant: c.var.tenant, requestId: c.var.requestId };
 }
 
 function branchId(c: Context<TenantEnv>) {
@@ -273,7 +273,7 @@ export const catalogRoutes = new Hono<TenantEnv>()
       tags,
       summary: "Editar un producto",
       description:
-        "Cambios parciales con `version` obligatorio. `variants` y `optionGroups`, si se envían, reemplazan la lista completa (sus ids cambian). Otra `categoryId` mueve el producto al final de esa categoría.",
+        "Cambios parciales con `version` obligatorio. `variants` y `optionGroups`, si se envían, reemplazan la lista completa (sus ids cambian). Otra `categoryId` mueve el producto al final de esa categoría. `imageAssetId` liga una imagen subida con `POST /v1/orgs/{orgId}/media`; `null` la quita.",
       security: privateSecurity,
       parameters: [...branchParameters, productIdParameter],
       responses: {
@@ -281,7 +281,10 @@ export const catalogRoutes = new Hono<TenantEnv>()
         400: invalidInput,
         403: forbidden,
         ...orgScopedResponses,
-        404: productNotFound,
+        404: jsonResponse(
+          "La organización, la sucursal, el producto, la categoría destino o la imagen no existen (o ya se borraron).",
+          ErrorResponse,
+        ),
         409: productConflict,
       },
     }),
