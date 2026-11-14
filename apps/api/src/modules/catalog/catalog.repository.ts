@@ -8,7 +8,7 @@ import {
 } from "@menu-max/database";
 import { and, asc, eq, getTableColumns, isNull, sql, type SQL } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
-import type { SQLiteTable } from "drizzle-orm/sqlite-core";
+import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import type { Db } from "../../infrastructure/db";
 import type { TenantContext } from "../../types";
 
@@ -181,6 +181,59 @@ const optionFields = {
   position: options.position,
 };
 
+export type VariantView = {
+  [K in keyof typeof variantFields]: (typeof productVariants.$inferSelect)[K];
+};
+export type GroupView = { [K in keyof typeof groupFields]: (typeof optionGroups.$inferSelect)[K] };
+export type OptionView = { [K in keyof typeof optionFields]: (typeof options.$inferSelect)[K] };
+
+// En `db.batch`, Drizzle (d1) recibe cada fila como objeto y la convierte a arreglo: dos columnas
+// con el mismo nombre (`id`, `name`, `position`) en un join se pisan y recorren los valores. Las
+// columnas de la tabla del `left join` llevan alias únicos y llegan como `null` sin fila.
+function aliased<T>(column: SQL | SQLiteColumn, alias: string) {
+  return sql<T | null>`${column}`.as(alias);
+}
+
+const joinedVariantFields = {
+  id: aliased<string>(productVariants.id, "variant_id"),
+  name: aliased<string>(productVariants.name, "variant_name"),
+  priceCents: aliased<number>(productVariants.priceCents, "variant_price_cents"),
+  position: aliased<number>(productVariants.position, "variant_position"),
+};
+
+const joinedOptionFields = {
+  id: aliased<string>(options.id, "option_id"),
+  name: aliased<string>(options.name, "option_name"),
+  priceDeltaCents: aliased<number>(options.priceDeltaCents, "option_price_delta_cents"),
+  position: aliased<number>(options.position, "option_position"),
+};
+
+type Joined<T> = { [K in keyof T]: T[K] | null };
+
+/** Fila del `left join` → vista, o `undefined` si no hubo fila a la derecha. */
+function present<T extends { id: string }>(row: Joined<T>): T | undefined {
+  return row.id === null ? undefined : (row as T);
+}
+
+/** Grupo con su opción (o sin ella) por fila, en el orden de la consulta. */
+export type GroupRowWithOption = { group: GroupView; option: OptionView | undefined };
+
+function groupsWithOptions(db: Db, tenant: TenantContext) {
+  return db
+    .select({ group: groupFields, option: joinedOptionFields })
+    .from(optionGroups)
+    .leftJoin(
+      options,
+      and(eq(options.organizationId, tenant.orgId), eq(options.optionGroupId, optionGroups.id)),
+    );
+}
+
+function toGroupRows(
+  rows: readonly { group: GroupView; option: Joined<OptionView> }[],
+): GroupRowWithOption[] {
+  return rows.map(({ group, option }) => ({ group, option: present(option) }));
+}
+
 function activeCategories(tenant: TenantContext, menuId: string) {
   return and(
     eq(categories.organizationId, tenant.orgId),
@@ -207,7 +260,7 @@ export async function readMenuTree(db: Db, tenant: TenantContext, branchId: stri
       .where(and(eq(categories.organizationId, tenant.orgId), isNull(categories.deletedAt)))
       .orderBy(asc(categories.position), asc(categories.id)),
     db
-      .select({ product: productFields, variant: variantFields })
+      .select({ product: productFields, variant: joinedVariantFields })
       .from(products)
       .innerJoin(menus, and(eq(menus.id, products.menuId), menuOfBranch(tenant, branchId)))
       .leftJoin(
@@ -219,23 +272,22 @@ export async function readMenuTree(db: Db, tenant: TenantContext, branchId: stri
       )
       .where(activeProducts(tenant))
       .orderBy(asc(products.position), asc(products.id), asc(productVariants.position)),
-    db
-      .select({ group: groupFields, option: optionFields })
-      .from(optionGroups)
+    groupsWithOptions(db, tenant)
       .innerJoin(products, and(eq(products.id, optionGroups.productId), activeProducts(tenant)))
       .innerJoin(menus, and(eq(menus.id, products.menuId), menuOfBranch(tenant, branchId)))
-      .leftJoin(
-        options,
-        and(eq(options.organizationId, tenant.orgId), eq(options.optionGroupId, optionGroups.id)),
-      )
       .where(eq(optionGroups.organizationId, tenant.orgId))
       .orderBy(asc(optionGroups.position), asc(optionGroups.id), asc(options.position)),
   ]);
-  return { menu: menuRows[0], categoryRows, productRows, groupRows };
+  return {
+    menu: menuRows[0],
+    categoryRows,
+    productRows: productRows.map(({ product, variant }) => ({
+      product,
+      variant: present(variant),
+    })),
+    groupRows: toGroupRows(groupRows),
+  };
 }
-
-export type ProductRowWithVariant = Awaited<ReturnType<typeof readMenuTree>>["productRows"][number];
-export type GroupRowWithOption = Awaited<ReturnType<typeof readMenuTree>>["groupRows"][number];
 
 // Categorías --------------------------------------------------------------------------------
 
@@ -436,20 +488,14 @@ export async function readProduct(
         ),
       )
       .orderBy(asc(productVariants.position)),
-    db
-      .select({ group: groupFields, option: optionFields })
-      .from(optionGroups)
-      .leftJoin(
-        options,
-        and(eq(options.organizationId, tenant.orgId), eq(options.optionGroupId, optionGroups.id)),
-      )
+    groupsWithOptions(db, tenant)
       .where(
         and(eq(optionGroups.organizationId, tenant.orgId), eq(optionGroups.productId, productId)),
       )
       .orderBy(asc(optionGroups.position), asc(optionGroups.id), asc(options.position)),
   ]);
   const product = productRows[0];
-  return product ? { product, variantRows, groupRows } : undefined;
+  return product ? { product, variantRows, groupRows: toGroupRows(groupRows) } : undefined;
 }
 
 /** Variantes, grupos y opciones nuevos de un producto, con ids y posiciones ya asignados. */
