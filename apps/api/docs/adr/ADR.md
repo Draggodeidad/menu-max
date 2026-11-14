@@ -15,7 +15,7 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 | [003](#adr-003--d1--drizzle-con-una-base-compartida)                  | D1 + Drizzle con una base compartida                     | Aceptado                     | 2026-11-11 |
 | [004](#adr-004--zod-v4-como-contrato-único)                           | Zod v4 como contrato único                               | Aceptado                     | 2026-11-11 |
 | [005](#adr-005--better-auth-solo-para-identidad)                      | Better Auth solo para identidad                          | Aceptado                     | 2026-11-11 |
-| [006](#adr-006--multi-tenancy-por-organización-con-tenant-en-la-ruta) | Multi-tenancy por organización con tenant en la ruta     | Aceptado                     | 2026-11-11 |
+| [006](#adr-006--multi-tenancy-por-organización-con-tenant-en-la-ruta) | Multi-tenancy por organización con tenant en la ruta     | Aceptado (enmienda T12b)     | 2026-11-11 |
 | [007](#adr-007--autorización-rbac--abac-con-código-propio)            | Autorización RBAC + ABAC con código propio               | Aceptado                     | 2026-11-11 |
 | [008](#adr-008--verificación-de-correo-no-bloqueante)                 | Verificación de correo no bloqueante                     | Aceptado (gracia: Propuesto) | 2026-11-11 |
 | [009](#adr-009--correo-transaccional-con-cloudflare-email-service)    | Correo con Cloudflare Email Service tras puerto `Mailer` | Reemplazado por ADR-020      | 2026-11-11 |
@@ -166,6 +166,13 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 - Índices compuestos empiezan por `organization_id`.
 
 **Alternativas descartadas.** Organización activa guardada en la sesión (estado implícito, fácil de confundir entre pestañas); una base por tenant.
+
+**Enmienda (2026-11-13, T12b).** Solo cambia cómo se verifica la viñeta de `eslint-plugin-drizzle`; el resto de la decisión sigue igual.
+
+- `eslint-plugin-drizzle` no carga bajo oxlint: importa `@typescript-eslint/utils` sin declararlo, y pnpm agrega `eslint` como peer (~73 paquetes), fuera de la lista de dependencias permitidas.
+- La verificación se implementa como regla local de oxlint en `oxlint/drizzle-plugin.mjs`, cargada con `jsPlugins` en `.oxlintrc.json`, sin dependencias nuevas. Replica `drizzle/enforce-update-with-where` y `drizzle/enforce-delete-with-where` con la misma opción `drizzleObjectName` (en el repo: `["db", "database"]`). Aplica a `apps/api/**` y `packages/database/**`, y corre en `pnpm lint`, `lefthook` y CI.
+- Límite conocido, igual que en el plugin oficial: la regla solo sigue la cadena dentro de una misma expresión. `const q = db.delete(t); q.where(...)` se reporta.
+- Se vuelve al plugin oficial si corrige sus dependencias: basta cambiar la entrada de `jsPlugins`, porque los nombres de las reglas y sus opciones son los mismos.
 
 ---
 

@@ -34,7 +34,9 @@ Confirma en tu primer mensaje: **"Leí AGENTS.md y ADR.md"** y, en una línea, q
 | Gestor         | pnpm workspaces                                                                         |
 
 **Dependencias permitidas en producción:** `hono`, `drizzle-orm`, `zod`, `better-auth`, `hono-openapi`.
-**Dependencias permitidas en desarrollo:** `wrangler`, `drizzle-kit`, `vitest`, `@cloudflare/vitest-pool-workers`, `@cloudflare/workers-types`, `@scalar/hono-api-reference`, `eslint-plugin-drizzle`.
+**Dependencias permitidas en desarrollo:** `wrangler`, `drizzle-kit`, `vitest`, `@cloudflare/vitest-pool-workers`, `@cloudflare/workers-types`, `@scalar/hono-api-reference`.
+
+`update` y `delete` de Drizzle siempre llevan `where`: lo verifica la regla local de oxlint `oxlint/drizzle-plugin.mjs` (`drizzle/enforce-update-with-where`, `drizzle/enforce-delete-with-where`), sin dependencias (enmienda a ADR-006). No instales `eslint-plugin-drizzle`: no carga bajo oxlint y arrastra `eslint` como peer.
 
 Cualquier otra dependencia necesita un ADR aprobado antes de instalarla. Prohibido en particular:
 
@@ -53,7 +55,7 @@ Desde la raíz del monorepo:
 ```bash
 pnpm --filter api dev               # wrangler dev en http://localhost:8787 (/docs disponible)
 pnpm --filter api check             # tsc --noEmit
-pnpm --filter api lint              # eslint + prettier
+pnpm --filter api lint              # oxlint + oxfmt --check
 pnpm --filter api test              # vitest (D1, R2 y cola locales)
 pnpm --filter api openapi:export    # escribe docs/api/openapi.json
 pnpm --filter database db:generate  # drizzle-kit generate (nueva migración)

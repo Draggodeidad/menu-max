@@ -216,7 +216,7 @@ Cómo se resuelve el tenant en cada petición:
 
 Reglas que no se negocian:
 
-- Ningún repositorio de tenant existe sin `tenant` como primer argumento; un lint con `eslint-plugin-drizzle` (`enforce-delete-with-where`, `enforce-update-with-where`) evita `update`/`delete` sin `where`.
+- Ningún repositorio de tenant existe sin `tenant` como primer argumento; una regla local de oxlint (`oxlint/drizzle-plugin.mjs`: `drizzle/enforce-delete-with-where`, `drizzle/enforce-update-with-where`) evita `update`/`delete` sin `where` (enmienda a ADR-006, T12b; reemplaza a `eslint-plugin-drizzle`, que no carga bajo oxlint).
 - Toda búsqueda por id de recurso es `where org_id = ? and id = ?`. Un id válido de otra organización devuelve 404.
 - Ids no secuenciales (UUIDv7) en todo; el número visible del pedido (`#1042`) es un contador por sucursal y nunca sirve para consultar.
 - Lo público (`/v1/public/*`) se resuelve por `slug` o por token, y solo lee columnas publicables mediante consultas dedicadas, no reutilizando las del panel.
