@@ -1,5 +1,4 @@
 import { MEMBER_ROLES, MEMBER_STATUSES } from "@menu-max/contracts";
-import { sql } from "drizzle-orm";
 import {
   check,
   foreignKey,
@@ -12,16 +11,9 @@ import {
 } from "drizzle-orm/sqlite-core";
 import { users } from "./auth";
 import { branches } from "./business";
-import { id, organizationId, timestamps } from "./columns";
+import { id, inList, organizationId, timestamps } from "./columns";
 
 // Tenancy (ADR-006, ADR-016).
-
-function inList(column: unknown, values: readonly string[]) {
-  return sql`${column} in (${sql.join(
-    values.map((value) => sql`${value}`),
-    sql`, `,
-  )})`.inlineParams();
-}
 
 /** El tenant. Su `id` es el `organization_id` de todas las tablas de negocio. */
 export const organizations = sqliteTable("organizations", {
