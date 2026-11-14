@@ -20,7 +20,7 @@ Punto de entrada para cualquier agente de IA. Este archivo solo dice **qué leer
 | Backend  | `apps/api/docs/tasks/phase-XX-*.md` | `apps/api/docs/STATUS.md` |
 | Frontend | `docs/tasks/task-NN-*.md`           | `docs/tasks/INDEX.md`     |
 
-`apps/api/docs/tasks/` y `apps/api/docs/STATUS.md` son planeación local (están en `.gitignore`). Los números de task del backend (`TNN`) y del frontend (`task-NN`) son independientes: confirma de cuál backlog se trata antes de empezar.
+`apps/api/docs/tasks/` y `apps/api/docs/STATUS.md` se versionan en git: la fila de estado de una task se actualiza en el mismo PR de la task. Los números de task del backend (`TNN`) y del frontend (`task-NN`) son independientes: confirma de cuál backlog se trata antes de empezar.
 
 Si una tarea toca ambas apps, el orden es: contrato en `packages/contracts` → API → web. Los cambios de contrato deben ser compatibles con la versión anterior durante el despliegue.
 
@@ -71,7 +71,7 @@ pnpm test
   - [ ] Definición de terminado del AGENTS.md correspondiente
   ```
 
-- **No commitees** `apps/api/docs/STATUS.md` ni `apps/api/docs/tasks/`: son planeación local.
+- **Incluye en el PR de la task** la fila actualizada de `apps/api/docs/STATUS.md` (o `docs/tasks/INDEX.md`, si la task es del frontend).
 - No hagas `force push` a `main` ni reescribas historia compartida.
 
 ---

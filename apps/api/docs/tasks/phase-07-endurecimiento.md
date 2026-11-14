@@ -1,6 +1,6 @@
 # Fase B7 — Endurecimiento para el piloto
 
-> Planeación local (en `.gitignore`).
+> Planeación del backend (versionada en git).
 > **Criterio para cerrar la fase:** presupuestos de p95 cumplidos en staging y restauración de D1 probada.
 > **Orden de ejecución:** T26 → T27.
 > **Regla:** el agente escribe scripts, runbooks y código; todo lo que se ejecuta contra staging o producción lo corre un humano.

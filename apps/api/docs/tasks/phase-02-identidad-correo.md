@@ -1,6 +1,6 @@
 # Fase B2 — Identidad y correo
 
-> Planeación local (en `.gitignore`).
+> Planeación del backend (versionada en git).
 > **Criterio para cerrar la fase:** con un usuario de prueba, se recibe un correo real, el clic deja la sesión verificada y el reset de contraseña funciona; reset y reenvío no revelan si un correo existe.
 > **Orden de ejecución:** T07 → T10, en orden numérico.
 > **Nota:** las pantallas de `apps/web` (`/entrar`, verificar correo, restablecer contraseña) no se hacen aquí. Las que no están en `DESIGN.md §7` deben agregarse primero a ese documento.

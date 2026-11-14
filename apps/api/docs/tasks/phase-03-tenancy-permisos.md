@@ -1,6 +1,6 @@
 # Fase B3 — Tenancy y permisos
 
-> Planeación local (en `.gitignore`).
+> Planeación del backend (versionada en git).
 > **Criterio para cerrar la fase:** roles, invitaciones y límites del plan funcionan; la suite de aislamiento confirma que una organización no lee ni modifica otra.
 > **Orden de ejecución:** T11 → T14, en orden numérico.
 > **Nota:** en esta fase las organizaciones de prueba se crean con factories. El alta real (`/crear`) llega en T20.

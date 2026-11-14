@@ -1,6 +1,6 @@
 # Fase B4 — Catálogo, menú y onboarding
 
-> Planeación local (en `.gitignore`).
+> Planeación del backend (versionada en git).
 > **Criterio para cerrar la fase:** `/crear` en un solo envío deja un menú publicado con QR; una cuenta sin verificar no recibe pedidos de comensales.
 > **Orden de ejecución:** T15 → T20, en orden numérico.
 > **Convención de rutas de esta fase:** `/v1/orgs/:orgId/branches/:branchId/...` siempre con `requireBranch()` y `canAccessBranch`.

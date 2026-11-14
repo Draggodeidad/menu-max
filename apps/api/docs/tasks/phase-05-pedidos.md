@@ -1,6 +1,6 @@
 # Fase B5 — Pedidos
 
-> Planeación local (en `.gitignore`).
+> Planeación del backend (versionada en git).
 > **Criterio para cerrar la fase:** un pedido se registra una sola vez ante reintentos y su total no cambia por manipulación; el panel lo opera de principio a fin.
 > **Orden de ejecución:** T21 → T23, en orden numérico.
 

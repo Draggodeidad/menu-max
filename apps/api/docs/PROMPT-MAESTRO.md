@@ -55,8 +55,7 @@ Confirma en tu primer mensaje: "Leí AGENTS.md y ADR.md", más una línea con m�
   - Título: `<tipo>: <resumen> (TNN)`.
   - Descripción corta: Qué, Por qué (TNN + ADR), Cómo probar (comandos exactos), Checklist.
   - Lo que debe hacer un humano (ids reales, secretos, aprobaciones) como casillas sin marcar.
-- No incluyas `apps/api/docs/STATUS.md` ni `apps/api/docs/tasks/` en el PR.
-- Actualiza la fila de TNN en `apps/api/docs/STATUS.md` a `en revisión`, con rama y número de PR.
+- Después de crear el PR, actualiza la fila de TNN en `apps/api/docs/STATUS.md` a `en revisión`, con rama y número de PR, y súbela al mismo PR en un commit `docs(api): …`.
 - Reporte final:
   - Link del PR, y si check, lint y test pasaron.
   - Archivos tocados, endpoints, migraciones/tablas, permisos nuevos, variables y bindings nuevos, dependencias nuevas.
