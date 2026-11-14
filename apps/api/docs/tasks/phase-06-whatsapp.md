@@ -26,6 +26,12 @@ Cada evento de pedido llega a la cola aunque la petición original falle despué
 - **Destinatarios:**
   - `order.created` → `branches.alert_whatsapp` si tiene `alert_opt_in_at` y algún `owner` tiene correo verificado;
   - `order.status_changed` → el comensal solo si `customer_whatsapp_opt_in` y existe plantilla aprobada para ese estado (configurable por variable); si no, no se envía nada.
+- **Presupuesto mensual de avisos por organización** (el número emisor es central de MenusMax y Meta cobra por mensaje entregado):
+  - columna `whatsapp_monthly_budget` (`integer not null`, con valor por defecto) en `subscriptions`; un humano la ajusta por organización con el runbook;
+  - el consumidor cuenta los envíos del mes en curso (UTC) de la organización en `notification_deliveries` (`sent`, `delivered`, `read`, `ambiguous`) antes de llamar a Meta; índice `(organization_id, created_at)`;
+  - presupuesto agotado → no se llama a Meta, la entrega queda en `skipped` (valor nuevo del `CHECK`), `ack` y `log.warn("whatsapp.budget_exhausted")` una vez por organización y mes;
+  - los pedidos **nunca** se limitan: siguen llegando al panel aunque el presupuesto esté agotado;
+  - `GET /subscription` agrega a `usage` los avisos usados y el presupuesto del mes (cambio aditivo).
 - **Consumidor** (`jobs/whatsapp.handler.ts`):
   1. `insert … on conflict(dedupe_key) do nothing` con `dedupe_key = orderId:event:status:recipientHash`; si ya existe en `sent`, `delivered`, `read` o `ambiguous` → `ack`;
   2. `infrastructure/whatsapp.ts`: `POST https://graph.facebook.com/${META_GRAPH_API_VERSION}/${META_PHONE_NUMBER_ID}/messages` con plantilla y parámetros (número de pedido, sucursal, modalidad, total, resumen de ítems, colonia para domicilio, enlace `${WEB_ORIGIN}/app`); timeout de 10 s;
@@ -54,10 +60,17 @@ Cada evento de pedido llega a la cola aunque la petición original falle despué
 - [ ] Owner sin verificar o sucursal sin opt-in → no se envía nada y queda registrado.
 - [ ] El cuerpo enviado a Meta no contiene calle ni número de la dirección.
 - [ ] El panel muestra el pedido aunque Meta esté caído.
+- [ ] Presupuesto agotado → no hay llamada a Meta, la entrega queda `skipped` y el pedido sigue en el panel; al cambiar de mes se vuelve a enviar.
+- [ ] Subir el presupuesto de una organización reanuda sus avisos sin tocar a las demás.
 
 ### Criterios de aceptación
 
 - [ ] `notification_outbox` no conserva eventos `pending` de más de 2 minutos con la cola sana.
+
+### Notas
+
+- **Decisión abierta:** el valor por defecto del presupuesto mensual. Un humano confirma antes la categoría que Meta asigna a las plantillas y su tarifa vigente para México. Referencia del dueño del producto (2026-11-14, sin verificar por el agente): la cuota gratuita de 1,000 mensajes aplica a mensajes de servicio, no a plantillas de utilidad; 1,000 mensajes de utilidad a números mexicanos costarían alrededor de $156.50 MXN a tarifa de lista.
+- Avisar al dueño dentro del panel que su presupuesto se agotó es trabajo de frontend; aquí solo se expone el uso en `GET /subscription`.
 
 ---
 
