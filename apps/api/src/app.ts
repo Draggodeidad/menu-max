@@ -17,6 +17,7 @@ import { requireMembership } from "./middleware/tenant";
 import { AUTH_BASE_PATH } from "./modules/auth/auth";
 import { authRoutes, meRoutes } from "./modules/auth/auth.routes";
 import { branchRoutes, businessRoutes } from "./modules/businesses/businesses.routes";
+import { catalogRoutes } from "./modules/catalog/catalog.routes";
 import {
   organizationRoutes,
   publicInvitationRoutes,
@@ -74,6 +75,7 @@ export function createApp(environment?: Env["ENVIRONMENT"]) {
   orgScoped.route("/subscription", subscriptionRoutes);
   orgScoped.route("/business", businessRoutes);
   orgScoped.route("/branches", branchRoutes);
+  orgScoped.route("/branches/:branchId/menu", catalogRoutes);
   app.route("/v1/orgs/:orgId", orgScoped);
 
   app.get(
