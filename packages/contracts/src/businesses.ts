@@ -161,3 +161,68 @@ export const BranchDetailDto = BranchDto.extend({ hours: z.array(HoursRangeDto) 
   id: "BranchDetailDto",
 });
 export type BranchDetailDto = z.infer<typeof BranchDetailDto>;
+
+// Zonas de entrega (ADR-018) ------------------------------------------------------------------
+
+export const ZoneParams = z.strictObject({ zoneId: z.uuidv7() });
+
+/** Topes técnicos de ADR-018; no son límites del plan. */
+export const MAX_ZONES_PER_BRANCH = 20;
+export const MAX_POSTAL_CODES_PER_ZONE = 100;
+
+/** Código postal mexicano: 5 dígitos. Solo se valida el formato. */
+export const PostalCode = z
+  .string()
+  .trim()
+  .regex(/^\d{5}$/, { message: "Escribe códigos postales de 5 dígitos, por ejemplo 06700." });
+
+export const DUPLICATE_POSTAL_CODE = "Hay códigos postales repetidos en la zona.";
+
+const PostalCodes = z
+  .array(PostalCode)
+  .min(1)
+  .max(MAX_POSTAL_CODES_PER_ZONE)
+  .refine((codes) => new Set(codes).size === codes.length, { message: DUPLICATE_POSTAL_CODE });
+
+/** Tarifa de envío en centavos (`0` = envío gratis), hasta $10,000.00. */
+export const DeliveryFeeCents = z.int().min(0).max(1_000_000);
+
+export const CreateDeliveryZoneInput = z.strictObject({
+  name: Name,
+  postalCodes: PostalCodes,
+  feeCents: DeliveryFeeCents,
+  active: z.boolean().optional(),
+});
+export type CreateDeliveryZoneInput = z.infer<typeof CreateDeliveryZoneInput>;
+
+/** Cambios parciales con `version` obligatorio. `active: false` pausa la zona. */
+export const UpdateDeliveryZoneInput = z.strictObject({
+  version: z.int().positive(),
+  name: Name.optional(),
+  postalCodes: PostalCodes.optional(),
+  feeCents: DeliveryFeeCents.optional(),
+  active: z.boolean().optional(),
+});
+export type UpdateDeliveryZoneInput = z.infer<typeof UpdateDeliveryZoneInput>;
+
+/** Zona para el panel. Los códigos postales nunca salen en rutas públicas (ADR-018). */
+export const DeliveryZoneDto = z
+  .strictObject({
+    id: z.uuidv7(),
+    branchId: z.uuidv7(),
+    name: z.string(),
+    postalCodes: z.array(z.string()),
+    feeCents: z.int().nonnegative(),
+    active: z.boolean(),
+    version: z.int().positive(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .meta({ id: "DeliveryZoneDto" });
+export type DeliveryZoneDto = z.infer<typeof DeliveryZoneDto>;
+
+/** Zonas no borradas de la sucursal (máximo `MAX_ZONES_PER_BRANCH`, sin paginación). */
+export const DeliveryZoneListDto = z
+  .strictObject({ items: z.array(DeliveryZoneDto) })
+  .meta({ id: "DeliveryZoneListDto" });
+export type DeliveryZoneListDto = z.infer<typeof DeliveryZoneListDto>;
