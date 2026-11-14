@@ -36,6 +36,13 @@
       "when": 1794636332773,
       "tag": "0005_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1794680464352,
+      "tag": "0006_t14b_capacidades_plan",
+      "breakpoints": true
     }
   ]
 }
