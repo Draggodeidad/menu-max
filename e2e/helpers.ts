@@ -13,6 +13,14 @@ export async function ir(page: Page, url: string) {
 
 export const menu = "/m/tacos-el-guero";
 
+export const invitationEmail = "equipo@example.com";
+
+export function invitationUrl(state?: string) {
+  const query = new URLSearchParams({ token: "equipo-demo" });
+  if (state) query.set("estado", state);
+  return `/invitacion?${query}`;
+}
+
 export async function abrirPedido(page: Page, query = "") {
   await ir(page, menu);
   await page.getByRole("button", { name: "Agregar Agua de horchata (1 L)" }).click();

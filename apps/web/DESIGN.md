@@ -71,7 +71,7 @@ La API valida que `--brand` sobre `--brand-bg` cumpla contraste AA para texto de
 
 ### 3.3 Tipografía
 
-Una sola familia: **Onest** (Google Fonts, pesos 400, 500, 600, 700).
+Una sola familia: **Onest** (pesos 400, 500, 600, 700), servida desde la web de MenusMax.
 
 | Rol            | Clases Tailwind                                                    |
 | -------------- | ------------------------------------------------------------------ |
@@ -255,6 +255,7 @@ Prohibido: animaciones en bucle, parallax y efectos que distraigan al comensal m
 | E   | `/app/catalogo` | Editar productos en línea                      | Guardar por fila                    |
 | F   | `/app/ajustes`  | Tema, modalidades, horarios, zonas, equipo, QR | "Guardar cambios" por sección       |
 | G   | `/entrar`       | Volver al panel                                | "Entrar"                            |
+| H   | `/invitacion`   | Unirse al equipo de un negocio                 | "Aceptar invitación"                |
 
 **A · Landing**
 
@@ -319,15 +320,39 @@ Transiciones de estado y nombre del botón principal:
 
 "Rechazar" vive en un `<details>` con campo de motivo (o un `AlertDialog` si se prefiere confirmar).
 
+**H · Invitación**
+
+```text
+┌──────────────────────────────────┐
+│ MenusMax                         │
+│ Únete a Tacos El Güero            │
+│ Rol              personal        │
+│ Correo invitado  e***@example.com │
+│ ──────────────────────────────── │
+│ Crea tu cuenta para unirte al     │
+│ equipo.                          │
+│ Nombre       [                 ] │
+│ Contraseña   [                 ] │
+│ De 10 a 128 caracteres.          │
+│ [       Aceptar invitación      ] │
+└──────────────────────────────────┘
+```
+
+El enlace del correo abre `/invitacion?token=…`. La pantalla usa el contenedor de `/entrar` y muestra el rol como «dueño», «administrador» o «personal». Si ya tienes sesión, solo aparece «Aceptar invitación». Si ya tienes cuenta, «Entra con tu cuenta para aceptar la invitación.» acompaña al botón «Entrar», que permite volver a la invitación. Al aceptar, el botón muestra «Aceptando…» y el flujo abre `/app`.
+
+- Vencida. «Esta invitación venció. Pide una nueva a quien te invitó.»
+- No válida. «Esta invitación ya no es válida. Pide una nueva a quien te invitó.» y «Volver al inicio».
+- Fallo al aceptar. Los errores de campo aparecen debajo del control y los demás en un aviso. Para otro correo, «Entrar» permite cambiar de cuenta.
+
 ### 7.2 Comensal
 
 | #   | Ruta                    | Objetivo                | Acción principal                           |
 | --- | ----------------------- | ----------------------- | ------------------------------------------ |
-| H   | `/m/[slug]` (`?mesa=n`) | Elegir productos        | "+" y "Ver pedido"                         |
-| I   | `/m/[slug]/pedido`      | Enviar pedido           | "Enviar pedido · $total"                   |
-| J   | `/pedido/[token]`       | Saber cuándo está listo | "Llamar al negocio" (solo si hay problema) |
+| I   | `/m/[slug]` (`?mesa=n`) | Elegir productos        | "+" y "Ver pedido"                         |
+| J   | `/m/[slug]/pedido`      | Enviar pedido           | "Enviar pedido · $total"                   |
+| K   | `/pedido/[token]`       | Saber cuándo está listo | "Llamar al negocio" (solo si hay problema) |
 
-**H · Menú**
+**I · Menú**
 
 ```
 ┌────────────────────────┐
@@ -346,9 +371,9 @@ Transiciones de estado y nombre del botón principal:
 
 El horario se ve antes de agregar nada. Si el negocio está cerrado, los botones `+` se deshabilitan y la cabecera dice a qué hora abre.
 
-**I · Pedido (checkout)**: resumen con −/+, modalidad (fija y oculta si viene `?mesa`), nombre, teléfono, dirección solo para domicilio, "Pagas en efectivo al recibir", "Recordar mis datos", botón fijo "Enviar pedido · $240". Idempotency key en input oculto generado en `load`.
+**J · Pedido (checkout)**: resumen con −/+, modalidad (fija y oculta si viene `?mesa`), nombre, teléfono, dirección solo para domicilio, "Pagas en efectivo al recibir", "Recordar mis datos", botón fijo "Enviar pedido · $240". Idempotency key en input oculto generado en `load`.
 
-**J · Seguimiento**: línea de estado vertical (`<ol>`, es una secuencia real), polling 10 s que se detiene en estados finales.
+**K · Seguimiento**: línea de estado vertical (`<ol>`, es una secuencia real), polling 10 s que se detiene en estados finales.
 
 ---
 
@@ -360,6 +385,7 @@ routes/
 ├── +layout.svelte
 ├── (marketing)/+page.svelte
 ├── (auth)/entrar/+page.svelte · +page.server.ts
+├── (auth)/invitacion/+page.svelte · +page.server.ts
 ├── crear/+page.svelte · +page.server.ts
 ├── app/+layout.server.ts · +layout.svelte
 ├── app/+page.svelte · +page.server.ts

@@ -6,13 +6,16 @@
   import { Label } from "#lib/components/ui/label/index.js";
   import type { PageProps } from "./$types";
 
-  let { form }: PageProps = $props();
+  let { data, form }: PageProps = $props();
   let enviando = $state(false);
   let mostrarContrasena = $state(false);
 </script>
 
 <svelte:head>
-  <title>Entrar a tu panel | MenusMax</title>
+  <title
+    >{data.returningToInvitation ? "Entrar para aceptar tu invitación" : "Entrar a tu panel"} | MenusMax</title
+  >
+  {#if data.returningToInvitation}<meta name="referrer" content="no-referrer" />{/if}
   <meta
     name="description"
     content="Entra a tu panel de MenusMax para gestionar tu menú y pedidos."
@@ -32,9 +35,13 @@
         <ArrowLeft size={16} aria-hidden="true" /> MenusMax
       </a>
 
-      <h1 id="titulo" class="mt-3 text-3xl font-bold tracking-tight">Entra a tu panel</h1>
+      <h1 id="titulo" class="mt-3 text-3xl font-bold tracking-tight">
+        {data.returningToInvitation ? "Entra a tu cuenta" : "Entra a tu panel"}
+      </h1>
       <p class="mt-1 text-sm leading-relaxed text-piedra">
-        Gestiona tus pedidos en tiempo real, menú y ajustes.
+        {data.returningToInvitation
+          ? "Usa el correo que recibió la invitación."
+          : "Gestiona tus pedidos en tiempo real, menú y ajustes."}
       </p>
 
       <form
@@ -117,13 +124,15 @@
         >
       </form>
 
-      <p class="mt-6 border-t border-linea pt-5 text-center text-sm text-piedra">
-        ¿No tienes cuenta? <a
-          href="/crear"
-          class="font-semibold text-nopal underline-offset-4 hover:underline focus-visible:rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-nopal"
-          >Crea tu menú</a
-        >
-      </p>
+      {#if !data.returningToInvitation}
+        <p class="mt-6 border-t border-linea pt-5 text-center text-sm text-piedra">
+          ¿No tienes cuenta? <a
+            href="/crear"
+            class="font-semibold text-nopal underline-offset-4 hover:underline focus-visible:rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-nopal"
+            >Crea tu menú</a
+          >
+        </p>
+      {/if}
     </section>
     <p class="mt-8 text-center text-sm text-piedra">
       Sistema operativo para comercio gastronómico · México

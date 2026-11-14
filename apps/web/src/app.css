@@ -1,6 +1,14 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+@font-face {
+  font-family: "Onest";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./lib/fonts/onest-latin.woff2") format("woff2");
+}
+
 @theme {
   --color-cal: #f3f4f1;
   --color-tinta: #1c1f1a;
