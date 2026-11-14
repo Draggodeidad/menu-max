@@ -16,6 +16,7 @@ import { session } from "./middleware/session";
 import { requireMembership } from "./middleware/tenant";
 import { AUTH_BASE_PATH } from "./modules/auth/auth";
 import { authRoutes, meRoutes } from "./modules/auth/auth.routes";
+import { branchRoutes, businessRoutes } from "./modules/businesses/businesses.routes";
 import {
   organizationRoutes,
   publicInvitationRoutes,
@@ -71,6 +72,8 @@ export function createApp(environment?: Env["ENVIRONMENT"]) {
   const orgScoped = new Hono<TenantEnv>().use(requireAuth, requireMembership(), requireOperable());
   orgScoped.route("/", organizationRoutes);
   orgScoped.route("/subscription", subscriptionRoutes);
+  orgScoped.route("/business", businessRoutes);
+  orgScoped.route("/branches", branchRoutes);
   app.route("/v1/orgs/:orgId", orgScoped);
 
   app.get(

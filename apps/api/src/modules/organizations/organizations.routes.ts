@@ -36,7 +36,7 @@ import {
   type OrgDeps,
 } from "./organizations.service";
 
-function jsonResponse(description: string, schema: ZodType) {
+export function jsonResponse(description: string, schema: ZodType) {
   return { description, content: { "application/json": { schema: resolver(schema) } } };
 }
 
@@ -76,14 +76,14 @@ function deps(c: Context<TenantEnv>): OrgDeps {
  * Hook de `validator`: ante datos inválidos vuelve a validar con Zod y deja que `onError` arme
  * `VALIDATION_FAILED` con `fieldErrors`, igual que en el resto de la API.
  */
-function rejectWith(schema: ZodType) {
+export function rejectWith(schema: ZodType) {
   return (result: { success: boolean; data: unknown }) => {
     if (!result.success) schema.parse(result.data);
   };
 }
 
 /** Id de la ruta con formato inválido → `NOT_FOUND`: el recurso no existe para quien pregunta. */
-function routeParam<K extends string>(
+export function routeParam<K extends string>(
   schema: ZodType<Record<K, string>>,
   key: K,
   value: string | undefined,
