@@ -1,12 +1,14 @@
 // Datos de prueba directos en la D1 local. Las organizaciones reales se crean con el onboarding
 // (T20); aquí se insertan sin pasar por la API para aislar lo que prueba cada suite.
-import type { MemberRole } from "@menu-max/contracts";
+import type { MemberRole, SubscriptionStatus } from "@menu-max/contracts";
 import {
   branches,
   businesses,
   memberBranches,
   organizationMembers,
   organizations,
+  plans,
+  subscriptions,
   users,
 } from "@menu-max/database";
 import { makeSignature } from "better-auth/crypto";
@@ -43,8 +45,17 @@ export async function createUser(options: { emailVerified?: boolean } = {}): Pro
 
 export type TestOrg = { orgId: string; ownerMemberId: string; businessId: string };
 
-/** Organización con su miembro `owner` y un negocio (toda sucursal cuelga de uno). */
-export async function createOrg(options: { ownerId: string; name?: string }): Promise<TestOrg> {
+/**
+ * Organización con su miembro `owner`, un negocio (toda sucursal cuelga de uno) y su
+ * suscripción. Por defecto `pro` activa, para que los límites del plan no interfieran con lo que
+ * prueba cada suite; las pruebas de límites piden `free` y leen sus valores de `plans`.
+ */
+export async function createOrg(options: {
+  ownerId: string;
+  name?: string;
+  planId?: string;
+  status?: SubscriptionStatus;
+}): Promise<TestOrg> {
   const orgId = newId();
   const ownerMemberId = newId();
   const businessId = newId();
@@ -60,6 +71,12 @@ export async function createOrg(options: { ownerId: string; name?: string }): Pr
     database
       .insert(businesses)
       .values({ id: businessId, organizationId: orgId, name: "Tacos El Güero" }),
+    database.insert(subscriptions).values({
+      id: newId(),
+      organizationId: orgId,
+      planId: options.planId ?? "pro",
+      status: options.status ?? "active",
+    }),
   ]);
   return { orgId, ownerMemberId, businessId };
 }
@@ -104,6 +121,26 @@ export async function createBranch(options: {
       organizationId: options.orgId,
       businessId: options.businessId,
       name: options.name ?? "Sucursal Centro",
+    });
+  return id;
+}
+
+/**
+ * Plan de prueba con límites propios, para no depender de los valores que siembra
+ * la migración. Devuelve su id.
+ */
+export async function createPlan(
+  limits: { maxBranches?: number; maxProducts?: number; maxMembers?: number } = {},
+): Promise<string> {
+  const id = `prueba-${crypto.randomUUID()}`;
+  await db()
+    .insert(plans)
+    .values({
+      id,
+      name: "Plan de prueba",
+      maxBranches: limits.maxBranches ?? 5,
+      maxProducts: limits.maxProducts ?? 100,
+      maxMembers: limits.maxMembers ?? 10,
     });
   return id;
 }

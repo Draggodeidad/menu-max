@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { integer, text } from "drizzle-orm/sqlite-core";
 
 // Columnas comunes de todas las tablas (ADR-003, ADR-013). Cada helper devuelve
@@ -25,3 +26,11 @@ export const version = () => integer("version").notNull().default(1);
 
 /** Borrado lógico; `null` mientras la fila esté activa. */
 export const deletedAt = () => integer("deleted_at", { mode: "timestamp_ms" });
+
+/** `CHECK (columna in (...))` a partir de una constante de `contracts`. */
+export function inList(column: unknown, values: readonly string[]) {
+  return sql`${column} in (${sql.join(
+    values.map((value) => sql`${value}`),
+    sql`, `,
+  )})`.inlineParams();
+}

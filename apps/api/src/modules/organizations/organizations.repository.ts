@@ -5,6 +5,8 @@ import {
   memberBranches,
   organizationMembers,
   organizations,
+  plans,
+  subscriptions,
   users,
 } from "@menu-max/database";
 import {
@@ -26,8 +28,9 @@ import type { Db } from "../../infrastructure/db";
 import type { TenantContext } from "../../types";
 
 /**
- * Membresía activa de `(orgId, userId)` y sus sucursales asignadas, en un solo viaje a D1.
- * Todavía no hay `tenant`: filtra por el `orgId` de la ruta, que es lo que se está verificando.
+ * Membresía activa de `(orgId, userId)`, el plan de la organización (T14) y las sucursales
+ * asignadas, en un solo viaje a D1. Todavía no hay `tenant`: filtra por el `orgId` de la ruta,
+ * que es lo que se está verificando. Sin suscripción, los campos del plan llegan en `null`.
  */
 export async function findActiveMembership(db: Db, orgId: string, userId: string) {
   const activeMember = and(
@@ -37,8 +40,20 @@ export async function findActiveMembership(db: Db, orgId: string, userId: string
   );
   const [members, assigned] = await db.batch([
     db
-      .select({ id: organizationMembers.id, role: organizationMembers.role })
+      .select({
+        id: organizationMembers.id,
+        role: organizationMembers.role,
+        // `subscriptions.plan_id` y no `plans.id`: D1 arma las filas de `batch` por nombre de
+        // columna y dos `id` se pisarían.
+        planId: subscriptions.planId,
+        status: subscriptions.status,
+        maxBranches: plans.maxBranches,
+        maxProducts: plans.maxProducts,
+        maxMembers: plans.maxMembers,
+      })
       .from(organizationMembers)
+      .leftJoin(subscriptions, eq(subscriptions.organizationId, organizationMembers.organizationId))
+      .leftJoin(plans, eq(plans.id, subscriptions.planId))
       .where(activeMember)
       .limit(1),
     db
@@ -444,10 +459,11 @@ export function invitationClaimed(db: Db, claim: InvitationClaim): SQL {
 
 /**
  * Sentencias para canjear una invitación en un solo `db.batch`. La primera marca el token usado
- * solo si sigue pendiente y vigente; las demás corren solo si esa lo logró (`invitationClaimed`).
- * El servicio agrega la sentencia de correo verificado del módulo `auth` y revisa la primera.
+ * solo si sigue pendiente y vigente y se cumple `memberSlot` (lugar en el plan, T14); las demás
+ * corren solo si esa lo logró (`invitationClaimed`). El servicio agrega la sentencia de correo
+ * verificado del módulo `auth` y revisa la primera.
  */
-export function claimInvitationStatements(db: Db, claim: InvitationClaim) {
+export function claimInvitationStatements(db: Db, claim: InvitationClaim, memberSlot: SQL) {
   const claimed = invitationClaimed(db, claim);
   const claimedRow = and(
     eq(invitations.id, claim.invitationId),
@@ -467,6 +483,7 @@ export function claimInvitationStatements(db: Db, claim: InvitationClaim) {
           isNull(invitations.acceptedAt),
           isNull(invitations.revokedAt),
           gt(invitations.expiresAt, claim.now),
+          memberSlot,
         ),
       ),
     claim.reactivate

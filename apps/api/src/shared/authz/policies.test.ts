@@ -1,7 +1,14 @@
-import type { MemberRole } from "@menu-max/contracts";
+import type { MemberRole, SubscriptionStatus } from "@menu-max/contracts";
 import { describe, expect, it } from "vitest";
 import { AppError } from "../errors";
-import { canAccessBranch, canInviteMember, canManageMember, type MemberChange } from "./policies";
+import {
+  canAccessBranch,
+  canInviteMember,
+  canManageMember,
+  canOperate,
+  SUSPENDED_MESSAGE,
+  type MemberChange,
+} from "./policies";
 import { allow, assertAllowed, deny, type PolicyResult } from "./result";
 
 const BRANCH_A = "0190f3a0-0000-7000-8000-00000000000a";
@@ -111,5 +118,24 @@ describe("assertAllowed", () => {
     expect(() => assertAllowed(deny("BUSINESS_RULE", "Mensaje propio."))).toThrow(
       "Mensaje propio.",
     );
+  });
+});
+
+const withStatus = (status: SubscriptionStatus) => ({
+  plan: { id: "free", status, limits: { maxBranches: 1, maxProducts: 1, maxMembers: 1 } },
+});
+
+describe("canOperate", () => {
+  it.each([
+    ["trialing", "ALLOW"],
+    ["active", "ALLOW"],
+    ["past_due", "ALLOW"],
+    ["suspended", "FORBIDDEN"],
+  ] as const)("suscripción %s → %s", (status, expected) => {
+    expect(codeOf(canOperate(withStatus(status)))).toBe(expected);
+  });
+
+  it("explica por qué no puede escribir", () => {
+    expect(canOperate(withStatus("suspended"))).toEqual(deny("FORBIDDEN", SUSPENDED_MESSAGE));
   });
 });
