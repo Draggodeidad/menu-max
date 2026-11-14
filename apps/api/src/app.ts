@@ -15,7 +15,10 @@ import { session } from "./middleware/session";
 import { requireMembership } from "./middleware/tenant";
 import { AUTH_BASE_PATH } from "./modules/auth/auth";
 import { authRoutes, meRoutes } from "./modules/auth/auth.routes";
-import { organizationRoutes } from "./modules/organizations/organizations.routes";
+import {
+  organizationRoutes,
+  publicInvitationRoutes,
+} from "./modules/organizations/organizations.routes";
 import { AppError, notFound, onError } from "./shared/errors";
 import type { AppEnv, TenantEnv } from "./types";
 
@@ -58,6 +61,8 @@ export function createApp(environment?: Env["ENVIRONMENT"]) {
   app.route(AUTH_BASE_PATH, authRoutes);
   app.use("*", session);
   app.route("/v1", meRoutes);
+  // Sin sesión obligatoria: el token, Turnstile y las cuotas protegen estas rutas.
+  app.route("/v1/public", publicInvitationRoutes);
 
   // Tenant explícito en la ruta (ADR-006): todo lo de abajo exige sesión y membresía activa.
   const orgScoped = new Hono<TenantEnv>().use(requireAuth, requireMembership());
