@@ -13,6 +13,7 @@ const {
   CLOUDFLARE_API_TOKEN: apiToken,
   WEB_ORIGIN: webOrigin,
   EMAIL_FROM: emailFrom,
+  MEDIA_PUBLIC_BASE_URL: mediaBaseUrl,
   BETTER_AUTH_SECRET: authSecret,
   INTERNAL_TOKEN: internalToken,
   RESEND_API_KEY: resendApiKey,
@@ -47,6 +48,21 @@ if (
   /@example\.(com|org|net)$/i.test(sender)
 ) {
   throw new Error("Configura EMAIL_FROM con el remitente real dado de alta en Resend.");
+}
+// Dominio propio del bucket MEDIA (T17), sin diagonal final. r2.dev tiene rate limit y no es
+// para producción.
+const media = mediaBaseUrl && URL.parse(mediaBaseUrl);
+if (
+  !media ||
+  media.protocol !== "https:" ||
+  media.search ||
+  media.hash ||
+  mediaBaseUrl.endsWith("/") ||
+  (environment === "production" && media.hostname.endsWith(".r2.dev"))
+) {
+  throw new Error(
+    "Configura MEDIA_PUBLIC_BASE_URL con el dominio HTTPS propio del bucket, sin diagonal final.",
+  );
 }
 if (
   !authSecret ||
@@ -127,6 +143,7 @@ await access(new URL(`apps/web/${web.main}`, root));
 
 apiEnvironment.vars.WEB_ORIGIN = origin.origin;
 apiEnvironment.vars.EMAIL_FROM = emailFrom.trim();
+apiEnvironment.vars.MEDIA_PUBLIC_BASE_URL = mediaBaseUrl;
 apiEnvironment.preview_urls = false;
 database.database_id = databaseId.toLowerCase();
 webEnvironment.workers_dev = usesWorkersDev;
