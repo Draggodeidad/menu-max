@@ -33,7 +33,8 @@ Quien crea su menú sabe, antes de enviar el formulario, que tiene 3 meses grati
 2. Crear `/terminos` con el texto que entregue el humano. Mientras no exista, la página muestra las secciones con un marcador `// TEMPORAL` y **no se publica en producción**. La cláusula de la prueba debe decir, como mínimo:
    - 3 meses sin costo desde que se crea la cuenta, con todas las funciones y sin pedir tarjeta;
    - al cumplirse, la cuenta pasa automáticamente al plan gratuito; no se cobra nada ni se borra información;
-   - lo que exceda los límites del plan gratuito se conserva, pero no se puede agregar más;
+   - el plan gratuito incluye 1 sucursal, 50 productos y 3 miembros (contando al dueño), con pedidos ilimitados;
+   - lo que exceda esos límites se conserva y sigue funcionando; solo no se puede agregar más ("Conservas tus sucursales actuales. Para agregar otra necesitas Pro.");
    - se avisa por correo 15 y 3 días antes.
 3. En `/` y `/crear`, junto a "Gratis. Sin tarjeta.": "3 meses gratis con todo. Después sigues en el plan gratuito." y, junto al botón "Publicar menú": "Al publicar aceptas los [Términos](/terminos)." Sin casilla adicional: no se agrega fricción al alta (DESIGN.md, "valor antes que cuenta").
 4. En `/app/ajustes`, una línea informativa: "Tu prueba gratis termina el 12 de febrero de 2027." (fecha con `Intl.DateTimeFormat("es-MX")` en la zona de la sucursal). Si la suscripción no está en prueba, no se muestra.
