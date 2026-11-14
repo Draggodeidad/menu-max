@@ -126,7 +126,7 @@ export async function createBranch(options: {
 }
 
 /**
- * Plan de prueba con límites propios, para no depender de los valores (provisionales) que siembra
+ * Plan de prueba con límites propios, para no depender de los valores que siembra
  * la migración. Devuelve su id.
  */
 export async function createPlan(
