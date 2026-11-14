@@ -21,7 +21,7 @@ export type MemberAuthView = { role: MemberRole; activeOwnerCount: number };
 
 export type MemberChange = { action: "remove" } | { action: "update"; role?: MemberRole };
 
-const LAST_OWNER_MESSAGE =
+export const LAST_OWNER_MESSAGE =
   "La organización necesita al menos un dueño. Asigna otro dueño antes de continuar.";
 
 /**
@@ -54,4 +54,18 @@ export function canManageMember(
     (change.action === "remove" || (newRole !== undefined && newRole !== "owner"));
   if (losesOwner && target.activeOwnerCount <= 1) return deny("BUSINESS_RULE", LAST_OWNER_MESSAGE);
   return allow();
+}
+
+/**
+ * Invitar o revocar una invitación con el rol `role` (ADR-007): `owner` invita cualquier rol,
+ * `admin` solo `staff` y `staff` a nadie.
+ */
+export function canInviteMember(tenant: TenantView, role: MemberRole): PolicyResult {
+  if (tenant.role === "owner") return allow();
+  if (tenant.role === "admin") {
+    return role === "staff"
+      ? allow()
+      : deny("FORBIDDEN", "Solo un dueño puede invitar a un dueño o administrador.");
+  }
+  return deny("FORBIDDEN");
 }

@@ -1,6 +1,8 @@
 import type { MeDto } from "@menu-max/contracts";
+import { isAPIError } from "better-auth/api";
+import type { SQL } from "drizzle-orm";
 import type { Env } from "../../env";
-import { createDb } from "../../infrastructure/db";
+import { createDb, type Db } from "../../infrastructure/db";
 import { AppError } from "../../shared/errors";
 import { log } from "../../shared/log";
 import { verifyTurnstile, TURNSTILE_HEADER } from "../../infrastructure/turnstile";
@@ -8,7 +10,7 @@ import { normalizeEmail } from "../../shared/email-checks";
 import { hit, peek } from "../../shared/rate-counters";
 import { listMemberships } from "../organizations/organizations.service";
 import { createAuth, sendAuthEmail, type AuthRequestOptions, type AuthUser } from "./auth";
-import { findEmailState } from "./auth.repository";
+import { findEmailState, findUserIdByEmail, markEmailVerified } from "./auth.repository";
 import { resetPasswordLink } from "./web-links";
 
 export type AuthDeps = {
@@ -241,4 +243,58 @@ export async function changePassword(deps: AuthDeps, request: Request): Promise<
     log.error("auth.password_changed_without_user", { requestId: deps.requestId });
   }
   return response;
+}
+
+/** `true` si ya existe una cuenta con ese correo normalizado. */
+export async function accountExists(db: Db, email: string): Promise<boolean> {
+  return (await findUserIdByEmail(db, email)) !== undefined;
+}
+
+/**
+ * Sentencia para el `db.batch` de otro módulo: marca verificado el correo del usuario solo si se
+ * cumple `when` (p. ej., que la invitación se haya canjeado en el mismo batch).
+ */
+export function emailVerifiedStatement(db: Db, userId: string, when: SQL) {
+  return markEmailVerified(db, userId, when);
+}
+
+export const ACCOUNT_EXISTS_MESSAGE = "Entra con tu cuenta para aceptar la invitación.";
+
+type InvitedUser = { email: string; name: string; password: string };
+
+/**
+ * Crea la cuenta de quien acepta una invitación sin tener una (T13) y abre su sesión. No envía
+ * `verify-email`: el enlace de invitación ya probó el correo. Devuelve las cookies de sesión.
+ */
+export async function createInvitedUser(
+  deps: { env: Env; requestId: string },
+  requestHeaders: Headers,
+  input: InvitedUser,
+): Promise<{ userId: string; setCookies: string[] }> {
+  // Solo los headers que Better Auth usa para la sesión; nunca cookies del cliente.
+  const headers = new Headers();
+  for (const name of ["x-client-ip", "user-agent"]) {
+    const value = requestHeaders.get(name);
+    if (value) headers.set(name, value);
+  }
+  try {
+    const { headers: responseHeaders, response } = await createAuth(deps.env, {
+      requestId: deps.requestId,
+      skipVerificationEmail: true,
+    }).api.signUpEmail({ body: input, headers, returnHeaders: true });
+    return { userId: response.user.id, setCookies: responseHeaders.getSetCookie() };
+  } catch (error) {
+    if (!isAPIError(error)) throw error;
+    const code = (error.body as { code?: unknown } | undefined)?.code;
+    if (code === "PASSWORD_COMPROMISED") {
+      const message = "Esta contraseña se ha filtrado. Elige otra.";
+      throw new AppError("VALIDATION_FAILED", message, { password: [message] });
+    }
+    // Carrera: otra petición creó la cuenta con este correo entre la consulta y el registro.
+    if (code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
+      throw new AppError("AUTH_REQUIRED", ACCOUNT_EXISTS_MESSAGE);
+    }
+    if (error.statusCode < 500) throw new AppError("VALIDATION_FAILED");
+    throw error;
+  }
 }

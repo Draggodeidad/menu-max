@@ -1,7 +1,7 @@
 import type { MemberRole } from "@menu-max/contracts";
 import { describe, expect, it } from "vitest";
 import { AppError } from "../errors";
-import { canAccessBranch, canManageMember, type MemberChange } from "./policies";
+import { canAccessBranch, canInviteMember, canManageMember, type MemberChange } from "./policies";
 import { allow, assertAllowed, deny, type PolicyResult } from "./result";
 
 const BRANCH_A = "0190f3a0-0000-7000-8000-00000000000a";
@@ -69,6 +69,22 @@ describe("canManageMember", () => {
     expect(() => assertAllowed(result)).toThrow(
       "La organización necesita al menos un dueño. Asigna otro dueño antes de continuar.",
     );
+  });
+});
+
+describe("canInviteMember", () => {
+  it.each([
+    ["owner", "owner", "ALLOW"],
+    ["owner", "admin", "ALLOW"],
+    ["owner", "staff", "ALLOW"],
+    ["admin", "owner", "FORBIDDEN"],
+    ["admin", "admin", "FORBIDDEN"],
+    ["admin", "staff", "ALLOW"],
+    ["staff", "owner", "FORBIDDEN"],
+    ["staff", "admin", "FORBIDDEN"],
+    ["staff", "staff", "FORBIDDEN"],
+  ] as const)("%s invita %s → %s", (actor, role, expected) => {
+    expect(codeOf(canInviteMember(tenant(actor), role))).toBe(expected);
   });
 });
 

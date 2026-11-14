@@ -21,6 +21,11 @@ export type AuthRequestOptions = {
   waitUntil?: (promise: Promise<unknown>) => void;
   /** Se llama solo si esta petición marcó el correo como verificado. */
   onEmailVerified?: () => void;
+  /**
+   * No envía `verify-email` al registrarse: la cuenta nace de un enlace de invitación, que ya
+   * probó el correo, y se marca verificada en el mismo batch que la membresía (T13).
+   */
+  skipVerificationEmail?: boolean;
 };
 
 type AuthEmail = { to: string; template: Exclude<EmailTemplate, "invitation">; url: string };
@@ -83,7 +88,7 @@ export function createAuth(env: Env, options: AuthRequestOptions = {}) {
         }),
     },
     emailVerification: {
-      sendOnSignUp: true,
+      sendOnSignUp: !options.skipVerificationEmail,
       autoSignInAfterVerification: true,
       expiresIn: DAY,
       sendVerificationEmail: ({ user, token }) =>

@@ -1,6 +1,6 @@
 # Fase B6 — WhatsApp
 
-> Planeación local (en `.gitignore`).
+> Planeación del backend (versionada en git).
 > **Criterio para cerrar la fase:** si WhatsApp falla, el pedido sigue visible en el panel y el aviso se reintenta o queda en DLQ; nunca se pierde en silencio.
 > **Orden de ejecución:** T24 → T25.
 > **Prerrequisitos humanos:** cuenta de WhatsApp Business Platform, número emisor, plantillas aprobadas por Meta (`es_MX`) y secretos cargados por entorno. Sin eso, las pruebas usan Meta simulado y no se prueba contra Meta real.

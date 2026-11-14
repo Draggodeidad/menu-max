@@ -1,6 +1,6 @@
 # Fase B1 — Fundación del backend
 
-> Planeación local (en `.gitignore`).
+> Planeación del backend (versionada en git).
 > **Criterio para cerrar la fase:** WEB llama a `/v1/health` por Service Binding; CI en verde; `/docs` abre en local y responde 404 con `ENVIRONMENT=production`.
 > **Orden de ejecución:** T01 → T03 → T02 → T04 → T06 → T05.
 

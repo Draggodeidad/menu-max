@@ -6,6 +6,7 @@ import type { Env } from "../../env";
 export const WEB_ROUTES = {
   verifyEmail: "/verificar-correo",
   resetPassword: "/restablecer",
+  invitation: "/invitacion",
 } as const;
 
 function webLink(env: Pick<Env, "WEB_ORIGIN">, path: string, token?: string): string {
@@ -22,4 +23,9 @@ export function verifyEmailLink(env: Pick<Env, "WEB_ORIGIN">, token: string): st
 /** `${WEB_ORIGIN}/restablecer?token=…`; sin token, la pantalla para pedir un enlace nuevo. */
 export function resetPasswordLink(env: Pick<Env, "WEB_ORIGIN">, token?: string): string {
   return webLink(env, WEB_ROUTES.resetPassword, token);
+}
+
+/** `${WEB_ORIGIN}/invitacion?token=…` */
+export function invitationLink(env: Pick<Env, "WEB_ORIGIN">, token: string): string {
+  return webLink(env, WEB_ROUTES.invitation, token);
 }

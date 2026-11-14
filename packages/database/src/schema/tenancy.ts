@@ -4,6 +4,7 @@ import {
   check,
   foreignKey,
   index,
+  integer,
   primaryKey,
   sqliteTable,
   text,
@@ -13,7 +14,7 @@ import { users } from "./auth";
 import { branches } from "./business";
 import { id, organizationId, timestamps } from "./columns";
 
-// Tenancy (ADR-006, ADR-016). `invitations` llega en T13.
+// Tenancy (ADR-006, ADR-016).
 
 function inList(column: unknown, values: readonly string[]) {
   return sql`${column} in (${sql.join(
@@ -78,6 +79,46 @@ export const memberBranches = sqliteTable(
       name: "member_branches_branch_fk",
       columns: [table.organizationId, table.branchId],
       foreignColumns: [branches.organizationId, branches.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/**
+ * Invitación por correo a una organización (T13). Vigencia 7 días y un solo uso: se acepta
+ * (`accepted_at`) o se revoca (`revoked_at`), nunca se borra. Del token solo se guarda su
+ * SHA-256 (ADR-013). `branch_ids` (JSON) se valida contra `branches` al crear y al aceptar.
+ */
+export const invitations = sqliteTable(
+  "invitations",
+  {
+    id: id(),
+    organizationId: organizationId().references(() => organizations.id, {
+      onDelete: "restrict",
+    }),
+    /** Correo normalizado (minúsculas, sin espacios). */
+    email: text("email").notNull(),
+    role: text("role", { enum: MEMBER_ROLES }).notNull(),
+    branchIds: text("branch_ids", { mode: "json" }).$type<string[]>().notNull(),
+    tokenHash: text("token_hash").notNull(),
+    invitedByMemberId: text("invited_by_member_id").notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    acceptedAt: integer("accepted_at", { mode: "timestamp_ms" }),
+    revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [
+    uniqueIndex("invitations_token_hash_unique").on(table.tokenHash),
+    // Lista por cursor de las invitaciones del tenant.
+    index("invitations_org_id_idx").on(table.organizationId, table.id),
+    // Invitación pendiente para un correo dentro de la organización.
+    index("invitations_org_email_idx").on(table.organizationId, table.email),
+    check("invitations_role_check", inList(table.role, MEMBER_ROLES)),
+    foreignKey({
+      name: "invitations_inviter_fk",
+      columns: [table.organizationId, table.invitedByMemberId],
+      foreignColumns: [organizationMembers.organizationId, organizationMembers.id],
     }).onDelete("restrict"),
   ],
 );
