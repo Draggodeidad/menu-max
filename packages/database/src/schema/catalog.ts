@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/sqlite-core";
 import { branches } from "./business";
 import { deletedAt, id, inList, organizationId, timestamps, version } from "./columns";
+import { mediaAssets } from "./media";
 import { organizations } from "./tenancy";
 
 // Catálogo (T16, ADR-016). Un menú por sucursal; los productos cuelgan de su categoría. Todo
@@ -92,6 +93,13 @@ export const products = sqliteTable(
     priceCents: integer("price_cents").notNull(),
     available: integer("available", { mode: "boolean" }).notNull().default(true),
     position: integer("position").notNull(),
+    /**
+     * Imagen del producto (T17). FK simple: agregarla compuesta obligaría a reconstruir la
+     * tabla; el servicio comprueba que el asset sea de la misma organización.
+     */
+    imageAssetId: text("image_asset_id").references(() => mediaAssets.id, {
+      onDelete: "restrict",
+    }),
     version: version(),
     ...timestamps(),
     deletedAt: deletedAt(),
@@ -101,6 +109,8 @@ export const products = sqliteTable(
     uniqueIndex("products_org_id_unique").on(table.organizationId, table.id),
     index("products_org_menu_idx").on(table.organizationId, table.menuId),
     index("products_org_category_idx").on(table.organizationId, table.categoryId),
+    // `DELETE /media/:id`: ¿algún producto activo usa la imagen?
+    index("products_org_image_idx").on(table.organizationId, table.imageAssetId),
     foreignKey({
       name: "products_menu_fk",
       columns: [table.organizationId, table.menuId],
