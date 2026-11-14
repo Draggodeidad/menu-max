@@ -43,6 +43,13 @@
       "when": 1794680464352,
       "tag": "0006_t14b_capacidades_plan",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1794684967932,
+      "tag": "0007_t15_negocio_sucursales",
+      "breakpoints": true
     }
   ]
 }
