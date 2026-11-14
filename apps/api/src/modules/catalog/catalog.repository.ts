@@ -1,5 +1,6 @@
 import {
   categories,
+  mediaAssets,
   menus,
   optionGroups,
   options,
@@ -29,12 +30,22 @@ type Statements = [Statement, ...Statement[]];
 const GUARD_PREFIX = "mm_guard:";
 
 /**
- * Por qué abortó una guarda: `version` vieja, el recurso (o la categoría destino) ya no existe, o
- * la categoría que se iba a borrar tiene productos.
+ * Por qué abortó una guarda: `version` vieja, el recurso (o la categoría destino) ya no existe,
+ * la categoría que se iba a borrar tiene productos, la imagen ya se borró (T17) o la imagen que
+ * se iba a borrar la usa un producto (T17).
  */
-export type GuardReason = "version" | "missing" | "category_in_use";
+export type GuardReason =
+  | "version"
+  | "missing"
+  | "category_in_use"
+  | "asset_missing"
+  | "asset_in_use";
 
-const GUARD_PATTERN = /mm_guard:(version|missing|category_in_use)\b/;
+const GUARD_PATTERN = /mm_guard:(version|missing|category_in_use|asset_missing|asset_in_use)\b/;
+
+function guardValue(reason: GuardReason, condition: SQL) {
+  return sql`json_extract('{}', case when ${condition} then '$' else ${GUARD_PREFIX + reason} end)`;
+}
 
 /**
  * Sentencia que aborta el batch si `condition` es falsa. Se evalúa sobre la fila del menú, que
@@ -42,11 +53,23 @@ const GUARD_PATTERN = /mm_guard:(version|missing|category_in_use)\b/;
  */
 function guard(db: Db, tenant: TenantContext, menuId: string, reason: GuardReason, condition: SQL) {
   return db
-    .select({
-      ok: sql`json_extract('{}', case when ${condition} then '$' else ${GUARD_PREFIX + reason} end)`,
-    })
+    .select({ ok: guardValue(reason, condition) })
     .from(menus)
     .where(and(eq(menus.organizationId, tenant.orgId), eq(menus.id, menuId)));
+}
+
+/** Como `guard`, pero evaluada sobre la fila de la imagen (`media_assets`, T17). */
+export function assetGuard(
+  db: Db,
+  tenant: TenantContext,
+  assetId: string,
+  reason: GuardReason,
+  condition: SQL,
+) {
+  return db
+    .select({ ok: guardValue(reason, condition) })
+    .from(mediaAssets)
+    .where(and(eq(mediaAssets.organizationId, tenant.orgId), eq(mediaAssets.id, assetId)));
 }
 
 /** Motivo de la guarda que abortó el batch, o `undefined` si el error es otro. */
@@ -208,7 +231,29 @@ const joinedOptionFields = {
   position: aliased<number>(options.position, "option_position"),
 };
 
+const joinedImageFields = {
+  key: aliased<string>(mediaAssets.key, "image_key"),
+  width: aliased<number>(mediaAssets.width, "image_width"),
+  height: aliased<number>(mediaAssets.height, "image_height"),
+};
+
+/** Imagen del producto (T17): llave en R2 y dimensiones. */
+export type ProductImageView = { key: string; width: number; height: number };
+
 type Joined<T> = { [K in keyof T]: T[K] | null };
+
+/** Imagen no borrada del producto, para un `left join` desde `products`. */
+function productImage(tenant: TenantContext) {
+  return and(
+    eq(mediaAssets.organizationId, tenant.orgId),
+    eq(mediaAssets.id, products.imageAssetId),
+    isNull(mediaAssets.deletedAt),
+  );
+}
+
+function presentImage(row: Joined<ProductImageView>): ProductImageView | undefined {
+  return row.key === null ? undefined : (row as ProductImageView);
+}
 
 /** Fila del `left join` → vista, o `undefined` si no hubo fila a la derecha. */
 function present<T extends { id: string }>(row: Joined<T>): T | undefined {
@@ -248,7 +293,7 @@ function activeProducts(tenant: TenantContext) {
 
 /**
  * Menú del panel en un solo `db.batch` de 4 consultas, sin N+1: menú, categorías, productos con
- * sus variantes y grupos con sus opciones. Excluye lo borrado; incluye lo no disponible.
+ * sus variantes e imagen, y grupos con sus opciones. Excluye lo borrado; incluye lo no disponible.
  */
 export async function readMenuTree(db: Db, tenant: TenantContext, branchId: string) {
   const [menuRows, categoryRows, productRows, groupRows] = await db.batch([
@@ -260,9 +305,10 @@ export async function readMenuTree(db: Db, tenant: TenantContext, branchId: stri
       .where(and(eq(categories.organizationId, tenant.orgId), isNull(categories.deletedAt)))
       .orderBy(asc(categories.position), asc(categories.id)),
     db
-      .select({ product: productFields, variant: joinedVariantFields })
+      .select({ product: productFields, variant: joinedVariantFields, image: joinedImageFields })
       .from(products)
       .innerJoin(menus, and(eq(menus.id, products.menuId), menuOfBranch(tenant, branchId)))
+      .leftJoin(mediaAssets, productImage(tenant))
       .leftJoin(
         productVariants,
         and(
@@ -281,9 +327,10 @@ export async function readMenuTree(db: Db, tenant: TenantContext, branchId: stri
   return {
     menu: menuRows[0],
     categoryRows,
-    productRows: productRows.map(({ product, variant }) => ({
+    productRows: productRows.map(({ product, variant, image }) => ({
       product,
       variant: present(variant),
+      image: presentImage(image),
     })),
     groupRows: toGroupRows(groupRows),
   };
@@ -466,7 +513,7 @@ export function listCategoryProducts(db: Db, tenant: TenantContext, categoryId: 
     .orderBy(asc(products.position), asc(products.id));
 }
 
-/** Producto con sus variantes y grupos de opciones, en un solo `db.batch`. */
+/** Producto con su imagen, variantes y grupos de opciones, en un solo `db.batch`. */
 export async function readProduct(
   db: Db,
   tenant: TenantContext,
@@ -475,8 +522,9 @@ export async function readProduct(
 ) {
   const [productRows, variantRows, groupRows] = await db.batch([
     db
-      .select(productFields)
+      .select({ product: productFields, image: joinedImageFields })
       .from(products)
+      .leftJoin(mediaAssets, productImage(tenant))
       .where(productCondition(tenant, menuId, productId)),
     db
       .select(variantFields)
@@ -494,8 +542,14 @@ export async function readProduct(
       )
       .orderBy(asc(optionGroups.position), asc(optionGroups.id), asc(options.position)),
   ]);
-  const product = productRows[0];
-  return product ? { product, variantRows, groupRows: toGroupRows(groupRows) } : undefined;
+  const row = productRows[0];
+  if (!row) return undefined;
+  return {
+    product: row.product,
+    image: presentImage(row.image),
+    variantRows,
+    groupRows: toGroupRows(groupRows),
+  };
 }
 
 /** Variantes, grupos y opciones nuevos de un producto, con ids y posiciones ya asignados. */
@@ -592,13 +646,25 @@ export async function insertProduct(
 }
 
 export type ProductChanges = Partial<
-  Pick<NewProduct, "name" | "description" | "priceCents" | "available">
+  Pick<NewProduct, "name" | "description" | "priceCents" | "available"> & {
+    imageAssetId: string | null;
+  }
 >;
+
+/** La imagen existe en la organización y no está borrada (T17). */
+function activeAsset(tenant: TenantContext, assetId: string) {
+  return sql`exists (select 1 from ${mediaAssets} where ${and(
+    eq(mediaAssets.organizationId, tenant.orgId),
+    eq(mediaAssets.id, assetId),
+    isNull(mediaAssets.deletedAt),
+  )})`;
+}
 
 /**
  * Cambios del producto con concurrencia optimista. `moveTo` lo pasa al final de otra categoría;
  * `variants` u `optionGroups` presentes reemplazan los anteriores. Aborta con `version` si la
- * versión ya cambió y con `missing` si la categoría destino ya no existe.
+ * versión ya cambió, con `missing` si la categoría destino ya no existe y con `asset_missing` si
+ * la imagen nueva se borró después de que el servicio la validó.
  */
 export async function updateProduct(
   db: Db,
@@ -627,6 +693,10 @@ export async function updateProduct(
     statements.push(
       guard(db, tenant, menuId, "missing", categoryExists(tenant, menuId, update.moveTo)),
     );
+  }
+  const imageAssetId = update.changes.imageAssetId;
+  if (imageAssetId) {
+    statements.push(guard(db, tenant, menuId, "asset_missing", activeAsset(tenant, imageAssetId)));
   }
   statements.push(
     db
