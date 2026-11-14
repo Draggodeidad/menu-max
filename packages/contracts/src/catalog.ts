@@ -111,7 +111,8 @@ export type CreateProductInput = z.infer<typeof CreateProductInput>;
 /**
  * Cambios parciales con `version` obligatorio. `variants` y `optionGroups`, si se envían,
  * reemplazan la lista completa (sus ids cambian); si se omiten, no cambian. Cambiar `categoryId`
- * mueve el producto al final de esa categoría.
+ * mueve el producto al final de esa categoría. `imageAssetId` liga una imagen subida con
+ * `POST /media` (T17); `null` la quita.
  */
 export const UpdateProductInput = z.strictObject({
   version: Version,
@@ -122,6 +123,7 @@ export const UpdateProductInput = z.strictObject({
   available: z.boolean().optional(),
   variants: Variants.optional(),
   optionGroups: OptionGroups.optional(),
+  imageAssetId: z.uuidv7().nullable().optional(),
 });
 export type UpdateProductInput = z.infer<typeof UpdateProductInput>;
 
@@ -167,6 +169,10 @@ export const ProductDto = z
     version: Version,
     variants: z.array(VariantDto),
     optionGroups: z.array(OptionGroupDto),
+    /** URL pública de la imagen (T17); `null` sin imagen. El frontend no arma rutas de R2. */
+    imageUrl: z.url().nullable(),
+    imageWidth: z.int().positive().nullable(),
+    imageHeight: z.int().positive().nullable(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
