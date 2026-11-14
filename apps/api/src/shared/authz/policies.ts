@@ -69,3 +69,14 @@ export function canInviteMember(tenant: TenantView, role: MemberRole): PolicyRes
   }
   return deny("FORBIDDEN");
 }
+
+export const SUSPENDED_MESSAGE =
+  "Tu suscripción está suspendida: puedes consultar tu información, pero no hacer cambios.";
+
+/**
+ * Escrituras privadas según el estado de la suscripción (T14): con `suspended` solo se permiten
+ * lecturas; `trialing`, `active` y `past_due` operan normalmente.
+ */
+export function canOperate(tenant: Pick<TenantContext, "plan">): PolicyResult {
+  return tenant.plan.status === "suspended" ? deny("FORBIDDEN", SUSPENDED_MESSAGE) : allow();
+}

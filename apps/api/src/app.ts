@@ -8,6 +8,7 @@ import type { Env } from "./env";
 import { createDb, pingDb } from "./infrastructure/db";
 import { clientContext } from "./middleware/client-context";
 import { internal } from "./middleware/internal";
+import { requireOperable } from "./middleware/authz";
 import { rateLimit, type RateLimitGroup } from "./middleware/rate-limit";
 import { requestId } from "./middleware/request-id";
 import { requireAuth } from "./middleware/require-auth";
@@ -19,6 +20,7 @@ import {
   organizationRoutes,
   publicInvitationRoutes,
 } from "./modules/organizations/organizations.routes";
+import { subscriptionRoutes } from "./modules/subscriptions/subscriptions.routes";
 import { AppError, notFound, onError } from "./shared/errors";
 import type { AppEnv, TenantEnv } from "./types";
 
@@ -64,9 +66,11 @@ export function createApp(environment?: Env["ENVIRONMENT"]) {
   // Sin sesión obligatoria: el token, Turnstile y las cuotas protegen estas rutas.
   app.route("/v1/public", publicInvitationRoutes);
 
-  // Tenant explícito en la ruta (ADR-006): todo lo de abajo exige sesión y membresía activa.
-  const orgScoped = new Hono<TenantEnv>().use(requireAuth, requireMembership());
+  // Tenant explícito en la ruta (ADR-006): todo lo de abajo exige sesión y membresía activa, y
+  // con la suscripción suspendida solo admite lecturas (T14).
+  const orgScoped = new Hono<TenantEnv>().use(requireAuth, requireMembership(), requireOperable());
   orgScoped.route("/", organizationRoutes);
+  orgScoped.route("/subscription", subscriptionRoutes);
   app.route("/v1/orgs/:orgId", orgScoped);
 
   app.get(

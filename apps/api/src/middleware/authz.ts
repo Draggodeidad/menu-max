@@ -1,6 +1,8 @@
 import { createMiddleware } from "hono/factory";
 import type { MiddlewareHandler } from "hono";
 import { hasPermission, type Permission } from "../shared/authz/permissions";
+import { canOperate } from "../shared/authz/policies";
+import { assertAllowed } from "../shared/authz/result";
 import { AppError } from "../shared/errors";
 import type { AuthenticatedEnv, TenantEnv } from "../types";
 
@@ -26,6 +28,19 @@ export function requirePermission(permission: Permission): PermissionGuard {
 export function requireVerifiedEmail() {
   return createMiddleware<AuthenticatedEnv>(async (c, next) => {
     if (!c.var.user.emailVerified) throw new AppError("EMAIL_NOT_VERIFIED");
+    await next();
+  });
+}
+
+const READ_METHODS = new Set(["GET", "HEAD"]);
+
+/**
+ * Con la suscripción suspendida se bloquea toda escritura privada (`canOperate`, T14); las
+ * lecturas siguen. Va después de `requireMembership()`, que carga el plan en el tenant.
+ */
+export function requireOperable() {
+  return createMiddleware<TenantEnv>(async (c, next) => {
+    if (!READ_METHODS.has(c.req.method)) assertAllowed(canOperate(c.var.tenant));
     await next();
   });
 }
