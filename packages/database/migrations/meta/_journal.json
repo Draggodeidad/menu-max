@@ -57,6 +57,13 @@
       "when": 1794686783559,
       "tag": "0008_t15_zonas_entrega",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794689138811,
+      "tag": "0009_t16_catalogo",
+      "breakpoints": true
     }
   ]
 }
