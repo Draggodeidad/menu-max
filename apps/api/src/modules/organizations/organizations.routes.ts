@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import type { ZodType } from "zod";
 import { createDb } from "../../infrastructure/db";
+import { requirePermission } from "../../middleware/authz";
 import type { TenantEnv } from "../../types";
 import { getOrganization } from "./organizations.service";
 
@@ -45,5 +46,6 @@ export const organizationRoutes = new Hono<TenantEnv>().get(
       ...orgScopedResponses,
     },
   }),
+  requirePermission("organization:read"),
   async (c) => c.json(await getOrganization(createDb(c.env), c.var.tenant)),
 );
