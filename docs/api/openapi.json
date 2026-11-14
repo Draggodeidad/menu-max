@@ -134,9 +134,53 @@
             },
             "required": ["id", "email", "name", "emailVerified"],
             "additionalProperties": false
+          },
+          "memberships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MembershipDto"
+            }
           }
         },
-        "required": ["user"],
+        "required": ["user", "memberships"],
+        "additionalProperties": false
+      },
+      "MembershipDto": {
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+          },
+          "orgName": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["owner", "admin", "staff"]
+          }
+        },
+        "required": ["orgId", "orgName", "role"],
+        "additionalProperties": false
+      },
+      "OrganizationDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["owner", "admin", "staff"]
+          }
+        },
+        "required": ["id", "name", "role"],
         "additionalProperties": false
       }
     }
@@ -1021,7 +1065,7 @@
       "get": {
         "operationId": "getV1Me",
         "tags": ["Autenticación"],
-        "summary": "Consultar mi usuario",
+        "summary": "Consultar mi usuario y mis organizaciones",
         "security": [
           {
             "InternalToken": [],
@@ -1030,7 +1074,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Usuario de la sesión.",
+            "description": "Usuario de la sesión y sus membresías activas.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1051,6 +1095,83 @@
           },
           "404": {
             "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
+          },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ocurrió un error interno.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/orgs/{orgId}": {
+      "get": {
+        "operationId": "getV1OrgsByOrgId",
+        "tags": ["Organizaciones"],
+        "summary": "Consultar una organización y mi rol en ella",
+        "security": [
+          {
+            "InternalToken": [],
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "description": "Id (UUIDv7) de la organización.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Organización y rol del usuario en ella.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La sesión falta o ya no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "La organización no existe o no eres miembro activo. Sin token interno, la respuesta no tiene cuerpo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "429": {
             "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",

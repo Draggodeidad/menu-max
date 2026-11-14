@@ -10,11 +10,14 @@ import { clientContext } from "./middleware/client-context";
 import { internal } from "./middleware/internal";
 import { rateLimit, type RateLimitGroup } from "./middleware/rate-limit";
 import { requestId } from "./middleware/request-id";
+import { requireAuth } from "./middleware/require-auth";
 import { session } from "./middleware/session";
+import { requireMembership } from "./middleware/tenant";
 import { AUTH_BASE_PATH } from "./modules/auth/auth";
 import { authRoutes, meRoutes } from "./modules/auth/auth.routes";
+import { organizationRoutes } from "./modules/organizations/organizations.routes";
 import { AppError, notFound, onError } from "./shared/errors";
-import type { AppEnv } from "./types";
+import type { AppEnv, TenantEnv } from "./types";
 
 function routeGroup(path: string): RateLimitGroup {
   const under = (prefix: string) => path === prefix || path.startsWith(`${prefix}/`);
@@ -55,6 +58,11 @@ export function createApp(environment?: Env["ENVIRONMENT"]) {
   app.route(AUTH_BASE_PATH, authRoutes);
   app.use("*", session);
   app.route("/v1", meRoutes);
+
+  // Tenant explícito en la ruta (ADR-006): todo lo de abajo exige sesión y membresía activa.
+  const orgScoped = new Hono<TenantEnv>().use(requireAuth, requireMembership());
+  orgScoped.route("/", organizationRoutes);
+  app.route("/v1/orgs/:orgId", orgScoped);
 
   app.get(
     "/v1/health",

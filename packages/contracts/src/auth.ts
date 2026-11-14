@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MembershipDto } from "./organizations";
 
 export const EMAIL_STATUSES = ["ok", "undeliverable"] as const;
 
@@ -43,7 +44,10 @@ const MeUser = z.strictObject({
   emailVerified: z.boolean(),
 });
 
-export const MeDto = z.strictObject({ user: MeUser }).meta({ id: "MeDto" });
+/** Usuario de la sesión y sus membresías activas (ADR-006). */
+export const MeDto = z
+  .strictObject({ user: MeUser, memberships: z.array(MembershipDto) })
+  .meta({ id: "MeDto" });
 export type MeDto = z.infer<typeof MeDto>;
 
 const AuthUserDto = MeUser.extend({
