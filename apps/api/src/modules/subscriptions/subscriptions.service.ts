@@ -30,6 +30,7 @@ export async function getSubscription(deps: SubscriptionDeps): Promise<Subscript
       maxProducts: row.maxProducts,
       maxMembers: row.maxMembers,
     },
+    features: { customTheme: row.customTheme, removeBranding: row.removeBranding },
     usage: row.usage,
   };
 }

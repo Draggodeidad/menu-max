@@ -50,6 +50,8 @@ export async function findActiveMembership(db: Db, orgId: string, userId: string
         maxBranches: plans.maxBranches,
         maxProducts: plans.maxProducts,
         maxMembers: plans.maxMembers,
+        customTheme: plans.customTheme,
+        removeBranding: plans.removeBranding,
       })
       .from(organizationMembers)
       .leftJoin(subscriptions, eq(subscriptions.organizationId, organizationMembers.organizationId))

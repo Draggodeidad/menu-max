@@ -130,7 +130,13 @@ export async function createBranch(options: {
  * la migración. Devuelve su id.
  */
 export async function createPlan(
-  limits: { maxBranches?: number; maxProducts?: number; maxMembers?: number } = {},
+  limits: {
+    maxBranches?: number;
+    maxProducts?: number;
+    maxMembers?: number;
+    customTheme?: boolean;
+    removeBranding?: boolean;
+  } = {},
 ): Promise<string> {
   const id = `prueba-${crypto.randomUUID()}`;
   await db()
@@ -141,6 +147,8 @@ export async function createPlan(
       maxBranches: limits.maxBranches ?? 5,
       maxProducts: limits.maxProducts ?? 100,
       maxMembers: limits.maxMembers ?? 10,
+      customTheme: limits.customTheme ?? false,
+      removeBranding: limits.removeBranding ?? false,
     });
   return id;
 }

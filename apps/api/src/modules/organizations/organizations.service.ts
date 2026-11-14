@@ -75,13 +75,16 @@ export async function loadTenant(
 ): Promise<TenantContext | null> {
   const member = await findActiveMembership(db, orgId, userId);
   if (!member) return null;
-  const { planId, status, maxBranches, maxProducts, maxMembers } = member;
+  const { planId, status, maxBranches, maxProducts, maxMembers, customTheme, removeBranding } =
+    member;
   if (
     planId === null ||
     status === null ||
     maxBranches === null ||
     maxProducts === null ||
-    maxMembers === null
+    maxMembers === null ||
+    customTheme === null ||
+    removeBranding === null
   ) {
     throw missingSubscription(requestId, orgId);
   }
@@ -90,7 +93,12 @@ export async function loadTenant(
     memberId: member.id,
     role: member.role,
     branchIds: member.branchIds,
-    plan: { id: planId, status, limits: { maxBranches, maxProducts, maxMembers } },
+    plan: {
+      id: planId,
+      status,
+      limits: { maxBranches, maxProducts, maxMembers },
+      features: { customTheme, removeBranding },
+    },
   };
 }
 

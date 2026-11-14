@@ -122,7 +122,12 @@ describe("assertAllowed", () => {
 });
 
 const withStatus = (status: SubscriptionStatus) => ({
-  plan: { id: "free", status, limits: { maxBranches: 1, maxProducts: 1, maxMembers: 1 } },
+  plan: {
+    id: "free",
+    status,
+    limits: { maxBranches: 1, maxProducts: 1, maxMembers: 1 },
+    features: { customTheme: false, removeBranding: false },
+  },
 });
 
 describe("canOperate", () => {

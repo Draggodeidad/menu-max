@@ -17,7 +17,7 @@ import { SUSPENDED_MESSAGE } from "../../shared/authz/policies";
 import { AppError } from "../../shared/errors";
 import { newId } from "../../shared/ids";
 import { loadTenant } from "../organizations/organizations.service";
-import { assertWithinLimit } from "./limits";
+import { assertFeature, assertWithinLimit } from "./limits";
 
 const db = () => createDb(getEnv(env));
 
@@ -47,14 +47,21 @@ describe("plans (migración)", () => {
 });
 
 describe("requireMembership carga el plan", () => {
-  it("deja en el tenant el plan, el estado y los límites de la tabla plans", async () => {
-    const planId = await createPlan({ maxBranches: 2, maxProducts: 7, maxMembers: 4 });
+  it("deja en el tenant el plan, el estado, los límites y las capacidades de la tabla plans", async () => {
+    const planId = await createPlan({
+      maxBranches: 2,
+      maxProducts: 7,
+      maxMembers: 4,
+      customTheme: true,
+      removeBranding: false,
+    });
     const owner = await createUser();
     const org = await createOrg({ ownerId: owner.id, planId, status: "trialing" });
     expect((await tenantOf(org.orgId, owner.id)).plan).toEqual({
       id: planId,
       status: "trialing",
       limits: { maxBranches: 2, maxProducts: 7, maxMembers: 4 },
+      features: { customTheme: true, removeBranding: false },
     });
   });
 
@@ -68,6 +75,38 @@ describe("requireMembership carga el plan", () => {
       "INTERNAL",
     );
     expect(error.message).not.toContain("suscripción");
+  });
+});
+
+describe("assertFeature", () => {
+  it("permite una capacidad activa en el plan", async () => {
+    const owner = await createUser();
+    const org = await createOrg({
+      ownerId: owner.id,
+      planId: await createPlan({ customTheme: true, removeBranding: true }),
+    });
+    const tenant = await tenantOf(org.orgId, owner.id);
+    expect(() => assertFeature({ tenant }, "customTheme")).not.toThrow();
+    expect(() => assertFeature({ tenant }, "removeBranding")).not.toThrow();
+  });
+
+  it("lanza PLAN_LIMIT_REACHED con mensaje accionable sin la capacidad", async () => {
+    const owner = await createUser();
+    const org = await createOrg({ ownerId: owner.id, planId: await createPlan() });
+    const tenant = await tenantOf(org.orgId, owner.id);
+    const error = (() => {
+      try {
+        assertFeature({ tenant }, "customTheme");
+      } catch (caught) {
+        return caught;
+      }
+    })();
+    expect(error).toBeInstanceOf(AppError);
+    expect(error).toMatchObject({
+      code: "PLAN_LIMIT_REACHED",
+      message: "La personalización de marca está disponible en Pro. Cambia de plan para usarla.",
+    });
+    expect(() => assertFeature({ tenant }, "removeBranding")).toThrow(AppError);
   });
 });
 
@@ -192,7 +231,13 @@ describe("Suscripción suspendida", () => {
 });
 
 async function subscriptionScenario() {
-  const planId = await createPlan({ maxBranches: 3, maxProducts: 50, maxMembers: 6 });
+  const planId = await createPlan({
+    maxBranches: 3,
+    maxProducts: 50,
+    maxMembers: 6,
+    customTheme: true,
+    removeBranding: false,
+  });
   const owner = await createUser();
   const org = await createOrg({ ownerId: owner.id, planId });
   const branchId = await createBranch({ orgId: org.orgId, businessId: org.businessId });
@@ -213,6 +258,7 @@ describe("GET /v1/orgs/:orgId/subscription", () => {
       status: "active",
       currentPeriodEnd: null,
       limits: { maxBranches: 3, maxProducts: 50, maxMembers: 6 },
+      features: { customTheme: true, removeBranding: false },
       usage: { branches: 1, members: 3 },
     });
   });

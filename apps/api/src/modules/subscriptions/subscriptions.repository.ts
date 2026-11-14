@@ -40,6 +40,8 @@ export async function findSubscriptionWithUsage(db: Db, tenant: TenantContext) {
         maxBranches: plans.maxBranches,
         maxProducts: plans.maxProducts,
         maxMembers: plans.maxMembers,
+        customTheme: plans.customTheme,
+        removeBranding: plans.removeBranding,
       })
       .from(subscriptions)
       .innerJoin(plans, eq(plans.id, subscriptions.planId))
