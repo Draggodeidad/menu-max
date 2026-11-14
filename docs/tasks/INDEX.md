@@ -20,4 +20,4 @@ El alcance es exclusivamente el frontend con datos simulados. Cada tarea indica 
 
 Para cualquier tarea, primero reproducir el test indicado quitando exclusivamente su marca `fixme`, implementar y volver a ejecutar toda la suite. Cuando un test forma parte de un bucle, eliminar la condición `test.fixme` específica de ese caso y conservar los demás. Las dependencias son funcionales o de archivos compartidos, no autorización para desplegar ni integrar cambios directamente en `main`.
 
-[^task-13]: En revisión en `feat/t13-pantalla-invitacion`. La task-08 se integró en el PR #29.
+[^task-13]: En revisión en `feat/t13-pantalla-invitacion` ([PR #52](https://github.com/Draggodeidad/menu-max/pull/52)). La task-08 se integró en el PR #29.
