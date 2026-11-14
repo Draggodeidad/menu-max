@@ -3,7 +3,7 @@ import { ErrorResponse } from "@menu-max/contracts";
 import { createExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { expect } from "vitest";
-import { getEnv } from "../src/env";
+import { getEnv, type Env } from "../src/env";
 import worker from "../src/index";
 import type { TestUser } from "./factories";
 
@@ -16,13 +16,12 @@ function randomIp() {
 export function callApi(
   method: string,
   path: string,
-  options: { cookie?: string; body?: unknown } = {},
+  options: { cookie?: string; body?: unknown; headers?: HeadersInit; bindings?: Env } = {},
 ) {
-  const bindings = getEnv(env);
-  const headers = new Headers({
-    "x-mm-internal": bindings.INTERNAL_TOKEN,
-    "x-client-ip": randomIp(),
-  });
+  const bindings = options.bindings ?? getEnv(env);
+  const headers = new Headers(options.headers);
+  headers.set("x-mm-internal", bindings.INTERNAL_TOKEN);
+  if (!headers.has("x-client-ip")) headers.set("x-client-ip", randomIp());
   if (options.cookie) headers.set("cookie", options.cookie);
   let body: string | undefined;
   if (options.body !== undefined) {
