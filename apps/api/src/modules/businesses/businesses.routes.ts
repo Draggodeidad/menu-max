@@ -6,11 +6,16 @@ import {
   BranchParams,
   BusinessDto,
   CreateBranchInput,
+  CreateDeliveryZoneInput,
   CursorQuery,
+  DeliveryZoneDto,
+  DeliveryZoneListDto,
   ErrorResponse,
   ReplaceHoursInput,
   UpdateBranchInput,
   UpdateBusinessInput,
+  UpdateDeliveryZoneInput,
+  ZoneParams,
 } from "@menu-max/contracts";
 import { Hono, type Context } from "hono";
 import { describeRoute, validator } from "hono-openapi";
@@ -27,12 +32,16 @@ import {
 } from "../organizations/organizations.routes";
 import {
   createBranch,
+  createZone,
+  deleteZone,
   getBranch,
   getBusiness,
   listBranches,
+  listZones,
   replaceHours,
   updateBranch,
   updateBusiness,
+  updateZone,
   type BusinessDeps,
 } from "./businesses.service";
 
@@ -43,6 +52,18 @@ function deps(c: Context<TenantEnv>): BusinessDeps {
 function branchId(c: Context<TenantEnv>) {
   return routeParam(BranchParams, "branchId", c.req.param("branchId"));
 }
+
+function zoneId(c: Context<TenantEnv>) {
+  return routeParam(ZoneParams, "zoneId", c.req.param("zoneId"));
+}
+
+const zoneIdParameter = {
+  name: "zoneId",
+  in: "path",
+  required: true,
+  description: "Id (UUIDv7) de la zona de entrega.",
+  schema: { type: "string", format: "uuid" },
+} as const;
 
 const branchIdParameter = {
   name: "branchId",
@@ -56,6 +77,10 @@ const privateSecurity = [{ InternalToken: [], SessionCookie: [] }];
 const invalidInput = jsonResponse("Datos inválidos.", ErrorResponse);
 const forbidden = jsonResponse(
   "Tu rol no tiene el permiso, o la suscripción está suspendida y solo admite lecturas.",
+  ErrorResponse,
+);
+const zoneNotFound = jsonResponse(
+  "La organización, la sucursal o la zona no existen (o la zona ya se borró).",
   ErrorResponse,
 );
 const branchNotFound = jsonResponse(
@@ -208,4 +233,98 @@ export const branchRoutes = new Hono<TenantEnv>()
     requireBranch(),
     validator("json", ReplaceHoursInput, rejectWith(ReplaceHoursInput)),
     async (c) => c.json(await replaceHours(deps(c), branchId(c), c.req.valid("json"))),
+  )
+  .get(
+    "/:branchId/zones",
+    describeRoute({
+      tags: ["Zonas de entrega"],
+      summary: "Listar las zonas de entrega de una sucursal",
+      description: "Zonas no borradas, activas y pausadas, con sus códigos postales (ADR-018).",
+      security: privateSecurity,
+      parameters: [orgIdParameter, branchIdParameter],
+      responses: {
+        200: jsonResponse("Zonas de la sucursal.", DeliveryZoneListDto),
+        ...orgScopedResponses,
+        404: branchNotFound,
+      },
+    }),
+    requirePermission("settings:read"),
+    requireBranch(),
+    async (c) => c.json(await listZones(deps(c), branchId(c))),
+  )
+  .post(
+    "/:branchId/zones",
+    describeRoute({
+      tags: ["Zonas de entrega"],
+      summary: "Crear una zona de entrega",
+      description:
+        "Códigos postales de 5 dígitos y tarifa fija en centavos (`0` = envío gratis). Un código no puede estar en dos zonas activas de la misma sucursal. Hasta 20 zonas por sucursal.",
+      security: privateSecurity,
+      parameters: [orgIdParameter, branchIdParameter],
+      responses: {
+        201: jsonResponse("Zona creada.", DeliveryZoneDto),
+        400: invalidInput,
+        403: forbidden,
+        ...orgScopedResponses,
+        404: branchNotFound,
+        409: jsonResponse(
+          "Algún código postal ya está en otra zona activa de la sucursal (detalle en `fieldErrors.postalCodes`).",
+          ErrorResponse,
+        ),
+        422: jsonResponse("La sucursal ya tiene 20 zonas.", ErrorResponse),
+      },
+    }),
+    requirePermission("settings:write"),
+    requireBranch(),
+    validator("json", CreateDeliveryZoneInput, rejectWith(CreateDeliveryZoneInput)),
+    async (c) => c.json(await createZone(deps(c), branchId(c), c.req.valid("json")), 201),
+  )
+  .patch(
+    "/:branchId/zones/:zoneId",
+    describeRoute({
+      tags: ["Zonas de entrega"],
+      summary: "Editar, pausar o reactivar una zona de entrega",
+      description:
+        "Cambios parciales con `version` obligatorio. `postalCodes` reemplaza la lista completa. Reactivar una zona revisa que sus códigos no estén en otra zona activa.",
+      security: privateSecurity,
+      parameters: [orgIdParameter, branchIdParameter, zoneIdParameter],
+      responses: {
+        200: jsonResponse("Zona actualizada.", DeliveryZoneDto),
+        400: invalidInput,
+        403: forbidden,
+        ...orgScopedResponses,
+        404: zoneNotFound,
+        409: jsonResponse(
+          "`version` vieja, o algún código postal ya está en otra zona activa.",
+          ErrorResponse,
+        ),
+      },
+    }),
+    requirePermission("settings:write"),
+    requireBranch(),
+    validator("json", UpdateDeliveryZoneInput, rejectWith(UpdateDeliveryZoneInput)),
+    async (c) => c.json(await updateZone(deps(c), branchId(c), zoneId(c), c.req.valid("json"))),
+  )
+  .delete(
+    "/:branchId/zones/:zoneId",
+    describeRoute({
+      tags: ["Zonas de entrega"],
+      summary: "Borrar una zona de entrega",
+      description:
+        "Borrado lógico: deja de atender y de aparecer, pero los pedidos que la usaron la conservan.",
+      security: privateSecurity,
+      parameters: [orgIdParameter, branchIdParameter, zoneIdParameter],
+      responses: {
+        204: { description: "Zona borrada." },
+        403: forbidden,
+        ...orgScopedResponses,
+        404: zoneNotFound,
+      },
+    }),
+    requirePermission("settings:write"),
+    requireBranch(),
+    async (c) => {
+      await deleteZone(deps(c), branchId(c), zoneId(c));
+      return c.body(null, 204);
+    },
   );

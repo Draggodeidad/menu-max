@@ -1,6 +1,11 @@
 import {
+  MAX_ZONES_PER_BRANCH,
   MODES_REQUIRED,
   TABLES_REQUIRED,
+  type CreateDeliveryZoneInput,
+  type DeliveryZoneDto,
+  type DeliveryZoneListDto,
+  type UpdateDeliveryZoneInput,
   type BranchDetailDto,
   type BranchDto,
   type BranchHoursDto,
@@ -26,12 +31,18 @@ import {
   findBranchWithHours,
   findBusiness,
   insertBranch,
+  insertZone,
   listBranches as listBranchRows,
+  listZones as listZoneRows,
+  softDeleteZone,
+  updateZone as updateZoneRow,
   replaceHours as replaceHoursRows,
   updateBranch as updateBranchRow,
   updateBusinessName,
   type BranchChanges,
   type BranchView,
+  type ZoneChanges,
+  type ZoneView,
 } from "./businesses.repository";
 import { normalizeWeek, OVERLAPPING_HOURS } from "./hours";
 
@@ -218,4 +229,156 @@ export async function replaceHours(
     branchId,
   });
   return { ranges };
+}
+
+// Zonas de entrega (ADR-018) ------------------------------------------------------------------
+
+export const ZONE_VERSION_CONFLICT =
+  "Alguien más cambió esta zona mientras la editabas. Actualiza la página y vuelve a intentarlo.";
+export const ZONES_LIMIT_MESSAGE = `Una sucursal admite hasta ${MAX_ZONES_PER_BRANCH} zonas de entrega. Borra una que ya no uses o junta códigos postales en una zona.`;
+
+function toZoneDto(row: ZoneView): DeliveryZoneDto {
+  return {
+    id: row.id,
+    branchId: row.branchId,
+    name: row.name,
+    postalCodes: row.postalCodes,
+    feeCents: row.feeCents,
+    active: row.active,
+    version: row.version,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Un código postal solo puede estar en una zona activa de la sucursal (ADR-018). Compara contra
+ * las demás zonas activas y no borradas; `CONFLICT` con los códigos repetidos en `fieldErrors`.
+ */
+function assertPostalCodesFree(
+  zones: readonly ZoneView[],
+  postalCodes: readonly string[],
+  exceptZoneId?: string,
+) {
+  const taken = new Map<string, string>();
+  for (const zone of zones) {
+    if (!zone.active || zone.id === exceptZoneId) continue;
+    for (const code of zone.postalCodes) taken.set(code, zone.name);
+  }
+  const conflicts = postalCodes
+    .filter((code) => taken.has(code))
+    .map((code) => `El código ${code} ya está en la zona "${taken.get(code)}".`);
+  if (conflicts.length > 0) {
+    throw new AppError(
+      "CONFLICT",
+      "Algunos códigos postales ya están en otra zona activa. Quítalos de una de las dos zonas.",
+      { postalCodes: conflicts },
+    );
+  }
+}
+
+function sortedCodes(codes: readonly string[]) {
+  const sorted = [...codes];
+  sorted.sort();
+  return sorted;
+}
+
+export async function listZones(
+  deps: BusinessDeps,
+  branchId: string,
+): Promise<DeliveryZoneListDto> {
+  assertAllowed(canAccessBranch(deps.tenant, branchId));
+  const rows = await listZoneRows(deps.db, deps.tenant, branchId);
+  return { items: rows.map(toZoneDto) };
+}
+
+export async function createZone(
+  deps: BusinessDeps,
+  branchId: string,
+  input: CreateDeliveryZoneInput,
+): Promise<DeliveryZoneDto> {
+  assertAllowed(canAccessBranch(deps.tenant, branchId));
+  const zones = await listZoneRows(deps.db, deps.tenant, branchId);
+  if (zones.length >= MAX_ZONES_PER_BRANCH)
+    throw new AppError("BUSINESS_RULE", ZONES_LIMIT_MESSAGE);
+  const active = input.active ?? true;
+  if (active) assertPostalCodesFree(zones, input.postalCodes);
+
+  const row = await insertZone(deps.db, deps.tenant, {
+    id: newId(),
+    branchId,
+    name: input.name,
+    postalCodes: sortedCodes(input.postalCodes),
+    feeCents: input.feeCents,
+    active,
+  });
+  log.info("zone.created", {
+    requestId: deps.requestId,
+    orgId: deps.tenant.orgId,
+    branchId,
+    zoneId: row.id,
+  });
+  return toZoneDto(row);
+}
+
+/**
+ * Cambios parciales con concurrencia optimista. Si la zona queda activa, sus códigos (nuevos o
+ * los que ya tenía) no pueden estar en otra zona activa; reactivar una zona pausada también lo
+ * revisa.
+ */
+export async function updateZone(
+  deps: BusinessDeps,
+  branchId: string,
+  zoneId: string,
+  input: UpdateDeliveryZoneInput,
+): Promise<DeliveryZoneDto> {
+  assertAllowed(canAccessBranch(deps.tenant, branchId));
+  const zones = await listZoneRows(deps.db, deps.tenant, branchId);
+  const current = zones.find((zone) => zone.id === zoneId);
+  if (!current) throw new AppError("NOT_FOUND");
+  if (current.version !== input.version) throw new AppError("CONFLICT", ZONE_VERSION_CONFLICT);
+
+  const postalCodes = input.postalCodes ?? current.postalCodes;
+  if (input.active ?? current.active) assertPostalCodesFree(zones, postalCodes, zoneId);
+
+  const changes: ZoneChanges = {
+    name: input.name,
+    postalCodes: input.postalCodes ? sortedCodes(input.postalCodes) : undefined,
+    feeCents: input.feeCents,
+    active: input.active,
+  };
+  const updated = await updateZoneRow(
+    deps.db,
+    deps.tenant,
+    branchId,
+    zoneId,
+    input.version,
+    changes,
+  );
+  if (!updated) throw new AppError("CONFLICT", ZONE_VERSION_CONFLICT);
+  log.info("zone.updated", {
+    requestId: deps.requestId,
+    orgId: deps.tenant.orgId,
+    branchId,
+    zoneId,
+  });
+  return toZoneDto(updated);
+}
+
+/** Borrado lógico (ADR-018): deja de aparecer y de atender, pero la fila queda para los pedidos. */
+export async function deleteZone(
+  deps: BusinessDeps,
+  branchId: string,
+  zoneId: string,
+  now = new Date(),
+) {
+  assertAllowed(canAccessBranch(deps.tenant, branchId));
+  const deleted = await softDeleteZone(deps.db, deps.tenant, branchId, zoneId, now);
+  if (!deleted) throw new AppError("NOT_FOUND");
+  log.info("zone.deleted", {
+    requestId: deps.requestId,
+    orgId: deps.tenant.orgId,
+    branchId,
+    zoneId,
+  });
 }

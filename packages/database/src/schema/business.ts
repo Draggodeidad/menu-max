@@ -8,11 +8,10 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
-import { id, organizationId, timestamps, version } from "./columns";
+import { deletedAt, id, organizationId, timestamps, version } from "./columns";
 import { organizations } from "./tenancy";
 
-// Negocio (ADR-006, ADR-016). Las columnas de operación de `branches` llegan en T15; las zonas de
-// entrega (`delivery_zones`) esperan a ADR-018.
+// Negocio (ADR-006, ADR-016). Columnas de operación de `branches`, horarios y zonas: T15.
 
 /** La marca o comercio dentro de la organización. */
 export const businesses = sqliteTable(
@@ -103,5 +102,44 @@ export const businessHours = sqliteTable(
     }).onDelete("restrict"),
     check("business_hours_weekday_check", sql`${table.weekday} between 0 and 6`),
     check("business_hours_range_check", sql`${table.opensAt} < ${table.closesAt}`),
+  ],
+);
+
+/**
+ * Zonas de entrega con tarifa fija, definidas por códigos postales (ADR-018). `active = false`
+ * pausa la zona; el borrado es lógico porque los pedidos conservan `delivery_zone_id`. Que un
+ * código no esté en dos zonas activas de la misma sucursal lo valida el servicio.
+ */
+export const deliveryZones = sqliteTable(
+  "delivery_zones",
+  {
+    id: id(),
+    organizationId: organizationId().references(() => organizations.id, {
+      onDelete: "restrict",
+    }),
+    branchId: text("branch_id").notNull(),
+    name: text("name").notNull(),
+    /** Arreglo JSON de códigos postales de 5 dígitos, ordenado. */
+    postalCodes: text("postal_codes", { mode: "json" }).$type<string[]>().notNull().default([]),
+    feeCents: integer("fee_cents").notNull(),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    version: version(),
+    ...timestamps(),
+    deletedAt: deletedAt(),
+  },
+  (table) => [
+    // Destino de la FK compuesta de `orders` (T21).
+    uniqueIndex("delivery_zones_org_id_unique").on(table.organizationId, table.id),
+    index("delivery_zones_org_branch_idx").on(table.organizationId, table.branchId),
+    foreignKey({
+      name: "delivery_zones_branch_fk",
+      columns: [table.organizationId, table.branchId],
+      foreignColumns: [branches.organizationId, branches.id],
+    }).onDelete("restrict"),
+    check(
+      "delivery_zones_postal_codes_check",
+      sql`json_valid(${table.postalCodes}) and json_type(${table.postalCodes}) = 'array'`,
+    ),
+    check("delivery_zones_fee_check", sql`${table.feeCents} >= 0`),
   ],
 );
