@@ -16,6 +16,8 @@ El alcance es exclusivamente el frontend con datos simulados. Cada tarea indica 
 | 10    | [task-10 — Corregir semántica accesible](task-10-semantica-accesible.md)                       | P1        | ninguna          | H10       |
 | 11    | [task-11 — Aclarar invitación simulada](task-11-feedback-invitacion.md)                        | P1        | ninguna          | H11       |
 | 12    | [task-12 — Error de carga del menú público](task-12-error-carga-menu.md)                       | P1        | task-05          | H13       |
-| 13    | [task-13 — Pantalla para aceptar una invitación](task-13-pantalla-invitacion.md)               | P1        | task-08          | —         |
+| 13    | [task-13 — Pantalla para aceptar una invitación](task-13-pantalla-invitacion.md) [^task-13]    | P1        | task-08          | —         |
 
 Para cualquier tarea, primero reproducir el test indicado quitando exclusivamente su marca `fixme`, implementar y volver a ejecutar toda la suite. Cuando un test forma parte de un bucle, eliminar la condición `test.fixme` específica de ese caso y conservar los demás. Las dependencias son funcionales o de archivos compartidos, no autorización para desplegar ni integrar cambios directamente en `main`.
+
+[^task-13]: En revisión en `feat/t13-pantalla-invitacion`. La task-08 se integró en el PR #29.
