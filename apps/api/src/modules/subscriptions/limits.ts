@@ -1,4 +1,4 @@
-import type { PlanLimits } from "@menu-max/contracts";
+import type { PlanFeatures, PlanLimits } from "@menu-max/contracts";
 import type { Db } from "../../infrastructure/db";
 import { AppError } from "../../shared/errors";
 import type { TenantContext } from "../../types";
@@ -36,4 +36,21 @@ export async function assertWithinLimit(deps: LimitDeps, resource: LimitedResour
   const limit = deps.tenant.plan.limits[LIMIT_KEY[resource]];
   const used = await countResource(deps.db, deps.tenant, resource);
   if (used >= limit) throw planLimitError(resource, limit);
+}
+
+export type PlanFeature = keyof PlanFeatures;
+
+const FEATURE_MESSAGE = {
+  customTheme: "La personalización de marca está disponible en Pro. Cambia de plan para usarla.",
+  removeBranding:
+    "Quitar el sello de MenusMax está disponible en Pro. Cambia de plan para quitarlo.",
+} as const satisfies Record<PlanFeature, string>;
+
+/**
+ * Lanza `PLAN_LIMIT_REACHED` si el plan del tenant no incluye la capacidad. Lee `tenant.plan`
+ * (tabla `plans`, cargada por `requireMembership`); sin consulta extra. Llámalo antes de escribir.
+ */
+export function assertFeature(deps: { tenant: TenantContext }, feature: PlanFeature) {
+  if (deps.tenant.plan.features[feature]) return;
+  throw new AppError("PLAN_LIMIT_REACHED", FEATURE_MESSAGE[feature]);
 }

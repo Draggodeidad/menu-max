@@ -7,7 +7,8 @@ import { organizations } from "./tenancy";
 
 /**
  * Catálogo de planes. La migración siembra `free` y `pro`. `active = false` lo retira para
- * suscripciones nuevas sin afectar a las que ya lo tienen.
+ * suscripciones nuevas sin afectar a las que ya lo tienen. `custom_theme` y `remove_branding`
+ * son capacidades (T14b): sí o no por plan, leídas de aquí y nunca de constantes.
  */
 export const plans = sqliteTable("plans", {
   id: text("id").primaryKey(),
@@ -15,6 +16,8 @@ export const plans = sqliteTable("plans", {
   maxBranches: integer("max_branches").notNull(),
   maxProducts: integer("max_products").notNull(),
   maxMembers: integer("max_members").notNull(),
+  customTheme: integer("custom_theme", { mode: "boolean" }).notNull().default(false),
+  removeBranding: integer("remove_branding", { mode: "boolean" }).notNull().default(false),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
 });
 

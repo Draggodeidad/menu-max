@@ -21,7 +21,7 @@
 ```bash
 pnpm exec wrangler d1 execute DB --env staging --remote --command "
   SELECT s.organization_id, s.plan_id, p.name, s.status, s.current_period_end,
-         p.max_branches, p.max_products, p.max_members
+         p.max_branches, p.max_products, p.max_members, p.custom_theme, p.remove_branding
   FROM subscriptions s JOIN plans p ON p.id = s.plan_id
   WHERE s.organization_id = '<ORG_ID>';"
 ```
@@ -32,7 +32,7 @@ Planes disponibles:
 
 ```bash
 pnpm exec wrangler d1 execute DB --env staging --remote --command "
-  SELECT id, name, max_branches, max_products, max_members, active FROM plans;"
+  SELECT id, name, max_branches, max_products, max_members, custom_theme, remove_branding, active FROM plans;"
 ```
 
 ## 2. Cambiar de plan
@@ -87,5 +87,6 @@ pnpm exec wrangler d1 execute DB --env staging --remote --command "
 
 ## Lo que este runbook no cubre
 
+- **Cambiar las capacidades de un plan** (`plans.custom_theme`, `plans.remove_branding`): afecta a todas las organizaciones con ese plan. Se hace con una migración revisada, igual que los límites.
 - **Cambiar los límites de un plan** (`plans.max_*`): afecta a todas las organizaciones con ese plan. Se hace con una migración revisada en un PR, nunca con `wrangler d1 execute`.
 - Cobros, facturas o pasarelas de pago: fuera del MVP.
