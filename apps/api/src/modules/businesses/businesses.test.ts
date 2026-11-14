@@ -4,11 +4,14 @@ import {
   BranchHoursDto,
   BranchListDto,
   BusinessDto,
+  DeliveryZoneDto,
+  DeliveryZoneListDto,
   ErrorResponse,
+  MAX_ZONES_PER_BRANCH,
   MODES_REQUIRED,
   TABLES_REQUIRED,
 } from "@menu-max/contracts";
-import { businessHours } from "@menu-max/database";
+import { businessHours, deliveryZones } from "@menu-max/database";
 import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
@@ -17,6 +20,7 @@ import { callApi, expectNotFoundForOtherTenant } from "../../../test/isolation";
 import { getEnv } from "../../env";
 import { createDb } from "../../infrastructure/db";
 import { loadTenant } from "../organizations/organizations.service";
+import { newId } from "../../shared/ids";
 import { replaceHours } from "./businesses.repository";
 import { OVERLAPPING_HOURS } from "./hours";
 
@@ -593,5 +597,281 @@ describe("suscripción suspendida", () => {
       403,
       "FORBIDDEN",
     );
+  });
+});
+
+describe("zonas de entrega (ADR-018)", () => {
+  const centro = { name: "Centro", postalCodes: ["06700", "06000"], feeCents: 3_500 };
+
+  async function createZone(
+    base: string,
+    branchId: string,
+    cookie: string,
+    body: unknown = centro,
+  ) {
+    const response = await callApi("POST", `${base}/branches/${branchId}/zones`, { cookie, body });
+    expect(response.status).toBe(201);
+    return DeliveryZoneDto.parse(await response.json());
+  }
+
+  it("sin sesión → 401 en las cuatro rutas", async () => {
+    const { owner, base, branchId } = await setup();
+    const zone = await createZone(base, branchId, owner.cookie);
+    const zones = `${base}/branches/${branchId}/zones`;
+    await Promise.all(
+      (
+        [
+          ["GET", zones],
+          ["POST", zones, centro],
+          ["PATCH", `${zones}/${zone.id}`, { version: 1 }],
+          ["DELETE", `${zones}/${zone.id}`],
+        ] as [string, string, unknown?][]
+      ).map(async ([method, path, body]) => {
+        await expectError(await callApi(method, path, { body }), 401, "AUTH_REQUIRED");
+      }),
+    );
+  });
+
+  it("crea, lista, edita y borra (lógico) una zona", async () => {
+    const { owner, admin, base, branchId } = await setup();
+    const zone = await createZone(base, branchId, admin.cookie);
+    expect(zone).toMatchObject({
+      branchId,
+      name: "Centro",
+      postalCodes: ["06000", "06700"],
+      feeCents: 3_500,
+      active: true,
+      version: 1,
+    });
+
+    const response = await callApi("PATCH", `${base}/branches/${branchId}/zones/${zone.id}`, {
+      cookie: owner.cookie,
+      body: { version: 1, feeCents: 0, postalCodes: ["06100"] },
+    });
+    expect(response.status).toBe(200);
+    expect(DeliveryZoneDto.parse(await response.json())).toMatchObject({
+      feeCents: 0,
+      postalCodes: ["06100"],
+      version: 2,
+    });
+
+    const deleted = await callApi("DELETE", `${base}/branches/${branchId}/zones/${zone.id}`, {
+      cookie: owner.cookie,
+    });
+    expect(deleted.status).toBe(204);
+    const list = DeliveryZoneListDto.parse(
+      await (
+        await callApi("GET", `${base}/branches/${branchId}/zones`, { cookie: owner.cookie })
+      ).json(),
+    );
+    expect(list.items).toEqual([]);
+    const [row] = await db().select().from(deliveryZones).where(eq(deliveryZones.id, zone.id));
+    expect(row).toMatchObject({ active: false });
+    expect(row?.deletedAt).not.toBeNull();
+
+    await expectError(
+      await callApi("PATCH", `${base}/branches/${branchId}/zones/${zone.id}`, {
+        cookie: owner.cookie,
+        body: { version: 3, name: "Otra" },
+      }),
+      404,
+      "NOT_FOUND",
+    );
+    await expectError(
+      await callApi("DELETE", `${base}/branches/${branchId}/zones/${zone.id}`, {
+        cookie: owner.cookie,
+      }),
+      404,
+      "NOT_FOUND",
+    );
+  });
+
+  it("código postal repetido en dos zonas activas de la misma sucursal → CONFLICT", async () => {
+    const { owner, base, branchId } = await setup();
+    await createZone(base, branchId, owner.cookie);
+    const error = await expectError(
+      await callApi("POST", `${base}/branches/${branchId}/zones`, {
+        cookie: owner.cookie,
+        body: { name: "Roma", postalCodes: ["06700", "06760"], feeCents: 4_000 },
+      }),
+      409,
+      "CONFLICT",
+    );
+    expect(error.fieldErrors?.postalCodes).toEqual([
+      'El código 06700 ya está en la zona "Centro".',
+    ]);
+  });
+
+  it("una zona pausada no bloquea el código; reactivarla con el código tomado → CONFLICT", async () => {
+    const { owner, base, branchId } = await setup();
+    const paused = await createZone(base, branchId, owner.cookie, { ...centro, active: false });
+    await createZone(base, branchId, owner.cookie, { ...centro, name: "Centro nuevo" });
+    await expectError(
+      await callApi("PATCH", `${base}/branches/${branchId}/zones/${paused.id}`, {
+        cookie: owner.cookie,
+        body: { version: paused.version, active: true },
+      }),
+      409,
+      "CONFLICT",
+    );
+  });
+
+  it("editar una zona conservando sus propios códigos no choca consigo misma", async () => {
+    const { owner, base, branchId } = await setup();
+    const zone = await createZone(base, branchId, owner.cookie);
+    const response = await callApi("PATCH", `${base}/branches/${branchId}/zones/${zone.id}`, {
+      cookie: owner.cookie,
+      body: { version: 1, postalCodes: ["06700", "06000", "06010"] },
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it("dos sucursales distintas sí comparten un código postal", async () => {
+    const { owner, org, base, branchId } = await setup();
+    const other = await createBranch({ orgId: org.orgId, businessId: org.businessId });
+    await createZone(base, branchId, owner.cookie);
+    await createZone(base, other, owner.cookie);
+  });
+
+  it("formato inválido, códigos repetidos en la zona o tarifa negativa → 400", async () => {
+    const { owner, base, branchId } = await setup();
+    await Promise.all(
+      [
+        { ...centro, postalCodes: ["6700"] },
+        { ...centro, postalCodes: ["06700", "06700"] },
+        { ...centro, postalCodes: [] },
+        { ...centro, feeCents: -1 },
+        { ...centro, feeCents: 10.5 },
+        { ...centro, branchId },
+      ].map(async (body) => {
+        await expectError(
+          await callApi("POST", `${base}/branches/${branchId}/zones`, {
+            cookie: owner.cookie,
+            body,
+          }),
+          400,
+          "VALIDATION_FAILED",
+        );
+      }),
+    );
+  });
+
+  it(`la zona ${MAX_ZONES_PER_BRANCH + 1} de una sucursal → BUSINESS_RULE`, async () => {
+    const { owner, org, base, branchId } = await setup();
+    const database = db();
+    const [first, ...rest] = Array.from({ length: MAX_ZONES_PER_BRANCH }, (_, i) =>
+      database.insert(deliveryZones).values({
+        id: newId(),
+        organizationId: org.orgId,
+        branchId,
+        name: `Zona ${i}`,
+        postalCodes: [String(10_000 + i)],
+        feeCents: 0,
+      }),
+    );
+    if (!first) throw new Error("Sin zonas");
+    // Una sentencia por fila: D1 admite hasta 100 parámetros por sentencia.
+    await database.batch([first, ...rest]);
+    await expectError(
+      await callApi("POST", `${base}/branches/${branchId}/zones`, {
+        cookie: owner.cookie,
+        body: centro,
+      }),
+      422,
+      "BUSINESS_RULE",
+    );
+  });
+
+  it("PATCH con version vieja → 409", async () => {
+    const { owner, base, branchId } = await setup();
+    const zone = await createZone(base, branchId, owner.cookie);
+    const path = `${base}/branches/${branchId}/zones/${zone.id}`;
+    await callApi("PATCH", path, { cookie: owner.cookie, body: { version: 1, name: "A" } });
+    await expectError(
+      await callApi("PATCH", path, { cookie: owner.cookie, body: { version: 1, name: "B" } }),
+      409,
+      "CONFLICT",
+    );
+  });
+
+  it("staff lee las zonas de su sucursal pero no las cambia (403); otra sucursal → 404", async () => {
+    const { owner, staff, org, base, branchId } = await setup();
+    const zone = await createZone(base, branchId, owner.cookie);
+    const zones = `${base}/branches/${branchId}/zones`;
+    const list = DeliveryZoneListDto.parse(
+      await (await callApi("GET", zones, { cookie: staff.cookie })).json(),
+    );
+    expect(list.items.map((z) => z.id)).toEqual([zone.id]);
+    await expectError(
+      await callApi("POST", zones, { cookie: staff.cookie, body: centro }),
+      403,
+      "FORBIDDEN",
+    );
+    await expectError(
+      await callApi("PATCH", `${zones}/${zone.id}`, {
+        cookie: staff.cookie,
+        body: { version: 1, active: false },
+      }),
+      403,
+      "FORBIDDEN",
+    );
+    await expectError(
+      await callApi("DELETE", `${zones}/${zone.id}`, { cookie: staff.cookie }),
+      403,
+      "FORBIDDEN",
+    );
+    const other = await createBranch({ orgId: org.orgId, businessId: org.businessId });
+    await expectError(
+      await callApi("GET", `${base}/branches/${other}/zones`, { cookie: staff.cookie }),
+      404,
+      "NOT_FOUND",
+    );
+  });
+
+  it("una zona de otra sucursal de la misma organización → 404", async () => {
+    const { owner, org, base, branchId } = await setup();
+    const zone = await createZone(base, branchId, owner.cookie);
+    const other = await createBranch({ orgId: org.orgId, businessId: org.businessId });
+    await expectError(
+      await callApi("PATCH", `${base}/branches/${other}/zones/${zone.id}`, {
+        cookie: owner.cookie,
+        body: { version: 1, name: "Movida" },
+      }),
+      404,
+      "NOT_FOUND",
+    );
+    await expectError(
+      await callApi("DELETE", `${base}/branches/${other}/zones/${zone.id}`, {
+        cookie: owner.cookie,
+      }),
+      404,
+      "NOT_FOUND",
+    );
+  });
+
+  it("otra organización → 404 por las dos vías en las cuatro rutas", async () => {
+    const { owner, org, base, branchId } = await setup();
+    const zone = await createZone(base, branchId, owner.cookie);
+    const { intruder, orgId } = await intruderOrg();
+    const zonesA = `/v1/orgs/${org.orgId}/branches/${branchId}/zones`;
+    const zonesB = `/v1/orgs/${orgId}/branches/${branchId}/zones`;
+    await expectNotFoundForOtherTenant({ intruder, paths: [zonesA, zonesB] });
+    await expectNotFoundForOtherTenant({
+      intruder,
+      method: "POST",
+      body: centro,
+      paths: [zonesA, zonesB],
+    });
+    await expectNotFoundForOtherTenant({
+      intruder,
+      method: "PATCH",
+      body: { version: 1, name: "Robada" },
+      paths: [`${zonesA}/${zone.id}`, `${zonesB}/${zone.id}`],
+    });
+    await expectNotFoundForOtherTenant({
+      intruder,
+      method: "DELETE",
+      paths: [`${zonesA}/${zone.id}`, `${zonesB}/${zone.id}`],
+    });
   });
 });
