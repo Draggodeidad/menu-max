@@ -10,11 +10,13 @@ export type LimitDeps = { db: Db; tenant: TenantContext };
 
 const LIMIT_KEY = {
   branches: "maxBranches",
+  products: "maxProducts",
   members: "maxMembers",
 } as const satisfies Record<LimitedResource, keyof PlanLimits>;
 
 const NOUNS = {
   branches: ["sucursal", "sucursales"],
+  products: ["producto", "productos"],
   members: ["miembro", "miembros"],
 } as const satisfies Record<LimitedResource, readonly [string, string]>;
 

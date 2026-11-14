@@ -1,10 +1,10 @@
-import { branches, organizationMembers, plans, subscriptions } from "@menu-max/database";
-import { and, count, eq, sql, type SQL } from "drizzle-orm";
+import { branches, organizationMembers, plans, products, subscriptions } from "@menu-max/database";
+import { and, count, eq, isNull, sql, type SQL } from "drizzle-orm";
 import type { Db } from "../../infrastructure/db";
 import type { TenantContext } from "../../types";
 
-/** Lo que limita un plan y hoy tiene tabla. `products` se agrega con el catálogo (T16). */
-export type LimitedResource = "branches" | "members";
+/** Lo que limita un plan. */
+export type LimitedResource = "branches" | "products" | "members";
 
 function activeMembersOf(orgId: string) {
   return and(
@@ -18,6 +18,12 @@ function countQuery(db: Db, orgId: string, resource: LimitedResource) {
   switch (resource) {
     case "branches":
       return db.select({ count: count() }).from(branches).where(eq(branches.organizationId, orgId));
+    case "products":
+      // Productos no borrados de todas las sucursales de la organización.
+      return db
+        .select({ count: count() })
+        .from(products)
+        .where(and(eq(products.organizationId, orgId), isNull(products.deletedAt)));
     case "members":
       return db.select({ count: count() }).from(organizationMembers).where(activeMembersOf(orgId));
   }
@@ -30,7 +36,7 @@ export async function countResource(db: Db, tenant: TenantContext, resource: Lim
 
 /** Suscripción con su plan y el uso actual de la organización, en un solo `db.batch`. */
 export async function findSubscriptionWithUsage(db: Db, tenant: TenantContext) {
-  const [rows, branchCount, memberCount] = await db.batch([
+  const [rows, branchCount, productCount, memberCount] = await db.batch([
     db
       .select({
         planId: subscriptions.planId,
@@ -48,13 +54,18 @@ export async function findSubscriptionWithUsage(db: Db, tenant: TenantContext) {
       .where(eq(subscriptions.organizationId, tenant.orgId))
       .limit(1),
     countQuery(db, tenant.orgId, "branches"),
+    countQuery(db, tenant.orgId, "products"),
     countQuery(db, tenant.orgId, "members"),
   ]);
   const subscription = rows[0];
   if (!subscription) return undefined;
   return {
     ...subscription,
-    usage: { branches: branchCount[0]?.count ?? 0, members: memberCount[0]?.count ?? 0 },
+    usage: {
+      branches: branchCount[0]?.count ?? 0,
+      products: productCount[0]?.count ?? 0,
+      members: memberCount[0]?.count ?? 0,
+    },
   };
 }
 

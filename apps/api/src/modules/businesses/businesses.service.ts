@@ -25,6 +25,7 @@ import { AppError } from "../../shared/errors";
 import { newId } from "../../shared/ids";
 import { log } from "../../shared/log";
 import type { TenantContext } from "../../types";
+import { menuVersionBumpStatement, newMenuStatement } from "../catalog/catalog.service";
 import { assertWithinLimit } from "../subscriptions/limits";
 import {
   findBranch,
@@ -130,8 +131,9 @@ export async function getBranch(deps: BusinessDeps, branchId: string): Promise<B
 }
 
 /**
- * Sucursal nueva del negocio de la organización. Respeta el límite del plan (`branches`); guardar
- * `alertWhatsapp` registra `alertOptInAt` (quien lo captura confirma que el número acepta avisos).
+ * Sucursal nueva del negocio de la organización, con su menú vacío en el mismo batch (T16).
+ * Respeta el límite del plan (`branches`); guardar `alertWhatsapp` registra `alertOptInAt` (quien
+ * lo captura confirma que el número acepta avisos).
  */
 export async function createBranch(
   deps: BusinessDeps,
@@ -144,18 +146,25 @@ export async function createBranch(
   const business = await loadBusiness(deps);
 
   const alertWhatsapp = input.alertWhatsapp ?? null;
-  const row = await insertBranch(deps.db, deps.tenant, {
-    id: newId(),
-    businessId: business.id,
-    name: input.name,
-    timezone: input.timezone,
-    contactPhone: input.contactPhone ?? null,
-    ...modeColumns(input.modes),
-    tableCount,
-    maxOrderTotalCents: input.maxOrderTotalCents ?? null,
-    alertWhatsapp,
-    alertOptInAt: alertWhatsapp ? now : null,
-  });
+  const branchId = newId();
+  const row = await insertBranch(
+    deps.db,
+    deps.tenant,
+    {
+      id: branchId,
+      businessId: business.id,
+      name: input.name,
+      timezone: input.timezone,
+      contactPhone: input.contactPhone ?? null,
+      ...modeColumns(input.modes),
+      tableCount,
+      maxOrderTotalCents: input.maxOrderTotalCents ?? null,
+      alertWhatsapp,
+      alertOptInAt: alertWhatsapp ? now : null,
+    },
+    [newMenuStatement(deps.db, deps.tenant, branchId)],
+  );
+  if (!row) throw new AppError("INTERNAL");
   log.info("branch.created", {
     requestId: deps.requestId,
     orgId: deps.tenant.orgId,
@@ -304,14 +313,20 @@ export async function createZone(
   const active = input.active ?? true;
   if (active) assertPostalCodesFree(zones, input.postalCodes);
 
-  const row = await insertZone(deps.db, deps.tenant, {
-    id: newId(),
-    branchId,
-    name: input.name,
-    postalCodes: sortedCodes(input.postalCodes),
-    feeCents: input.feeCents,
-    active,
-  });
+  const row = await insertZone(
+    deps.db,
+    deps.tenant,
+    {
+      id: newId(),
+      branchId,
+      name: input.name,
+      postalCodes: sortedCodes(input.postalCodes),
+      feeCents: input.feeCents,
+      active,
+    },
+    [menuVersionBumpStatement(deps.db, deps.tenant, branchId)],
+  );
+  if (!row) throw new AppError("INTERNAL");
   log.info("zone.created", {
     requestId: deps.requestId,
     orgId: deps.tenant.orgId,
@@ -354,6 +369,7 @@ export async function updateZone(
     zoneId,
     input.version,
     changes,
+    [menuVersionBumpStatement(deps.db, deps.tenant, branchId)],
   );
   if (!updated) throw new AppError("CONFLICT", ZONE_VERSION_CONFLICT);
   log.info("zone.updated", {
@@ -373,7 +389,9 @@ export async function deleteZone(
   now = new Date(),
 ) {
   assertAllowed(canAccessBranch(deps.tenant, branchId));
-  const deleted = await softDeleteZone(deps.db, deps.tenant, branchId, zoneId, now);
+  const deleted = await softDeleteZone(deps.db, deps.tenant, branchId, zoneId, now, [
+    menuVersionBumpStatement(deps.db, deps.tenant, branchId),
+  ]);
   if (!deleted) throw new AppError("NOT_FOUND");
   log.info("zone.deleted", {
     requestId: deps.requestId,

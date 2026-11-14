@@ -25,10 +25,12 @@ export const PlanFeatures = z
   .meta({ id: "PlanFeatures" });
 export type PlanFeatures = z.infer<typeof PlanFeatures>;
 
-/** Uso actual de lo que limita el plan. `products` llega con el catálogo (T16). */
+/** Uso actual de lo que limita el plan. */
 export const PlanUsage = z
   .strictObject({
     branches: z.int().nonnegative(),
+    /** Productos no borrados de toda la organización (T16). */
+    products: z.int().nonnegative(),
     members: z.int().nonnegative(),
   })
   .meta({ id: "PlanUsage" });

@@ -259,7 +259,7 @@ describe("GET /v1/orgs/:orgId/subscription", () => {
       currentPeriodEnd: null,
       limits: { maxBranches: 3, maxProducts: 50, maxMembers: 6 },
       features: { customTheme: true, removeBranding: false },
-      usage: { branches: 1, members: 3 },
+      usage: { branches: 1, products: 0, members: 3 },
     });
   });
 
@@ -300,6 +300,10 @@ describe("GET /v1/orgs/:orgId/subscription", () => {
     const own = await callApi("GET", `/v1/orgs/${other.orgId}/subscription`, {
       cookie: intruder.cookie,
     });
-    expect(SubscriptionDto.parse(await own.json()).usage).toEqual({ branches: 0, members: 1 });
+    expect(SubscriptionDto.parse(await own.json()).usage).toEqual({
+      branches: 0,
+      products: 0,
+      members: 1,
+    });
   });
 });

@@ -1,10 +1,14 @@
 import type { CursorQuery } from "@menu-max/contracts";
 import { branches, businesses, businessHours, deliveryZones } from "@menu-max/database";
 import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import type { Db } from "../../infrastructure/db";
 import { newId } from "../../shared/ids";
 import type { TenantContext } from "../../types";
 import type { HoursRange } from "./hours";
+
+/** Sentencias de otro módulo que deben ir en el mismo `db.batch` (menú de la sucursal, T16). */
+export type Also = BatchItem<"sqlite">[];
 
 // Negocio --------------------------------------------------------------------------------------
 
@@ -113,12 +117,21 @@ export type NewBranch = Omit<
   "organizationId" | "version" | "nextOrderNumber" | "createdAt" | "updatedAt"
 >;
 
-export function insertBranch(db: Db, tenant: TenantContext, values: NewBranch) {
-  return db
-    .insert(branches)
-    .values({ ...values, organizationId: tenant.orgId })
-    .returning(branchFields)
-    .get();
+/** Inserta la sucursal y `also` (su menú vacío) en un solo `db.batch`. */
+export async function insertBranch(
+  db: Db,
+  tenant: TenantContext,
+  values: NewBranch,
+  also: Also = [],
+) {
+  const [rows] = await db.batch([
+    db
+      .insert(branches)
+      .values({ ...values, organizationId: tenant.orgId })
+      .returning(branchFields),
+    ...also,
+  ]);
+  return rows[0];
 }
 
 export type BranchChanges = Partial<
@@ -230,51 +243,66 @@ export type NewZone = Pick<
   "id" | "branchId" | "name" | "postalCodes" | "feeCents" | "active"
 >;
 
-export function insertZone(db: Db, tenant: TenantContext, values: NewZone) {
-  return db
-    .insert(deliveryZones)
-    .values({ ...values, organizationId: tenant.orgId })
-    .returning(zoneFields)
-    .get();
+/** `also` va en el mismo `db.batch` (sube `menu_version`, ADR-018). */
+export async function insertZone(db: Db, tenant: TenantContext, values: NewZone, also: Also = []) {
+  const [rows] = await db.batch([
+    db
+      .insert(deliveryZones)
+      .values({ ...values, organizationId: tenant.orgId })
+      .returning(zoneFields),
+    ...also,
+  ]);
+  return rows[0];
 }
 
 export type ZoneChanges = Partial<Pick<NewZone, "name" | "postalCodes" | "feeCents" | "active">>;
 
-/** Concurrencia optimista; `undefined` si la zona cambió, se borró o no existe. */
-export function updateZone(
+/**
+ * Concurrencia optimista; `undefined` si la zona cambió, se borró o no existe. `also` va en el
+ * mismo `db.batch` (sube `menu_version`, ADR-018).
+ */
+export async function updateZone(
   db: Db,
   tenant: TenantContext,
   branchId: string,
   zoneId: string,
   version: number,
   changes: ZoneChanges,
+  also: Also = [],
 ) {
-  return db
-    .update(deliveryZones)
-    .set({ ...changes, version: sql`${deliveryZones.version} + 1` })
-    .where(
-      and(
-        zonesOfBranch(tenant, branchId),
-        eq(deliveryZones.id, zoneId),
-        eq(deliveryZones.version, version),
-      ),
-    )
-    .returning(zoneFields)
-    .get();
+  const [rows] = await db.batch([
+    db
+      .update(deliveryZones)
+      .set({ ...changes, version: sql`${deliveryZones.version} + 1` })
+      .where(
+        and(
+          zonesOfBranch(tenant, branchId),
+          eq(deliveryZones.id, zoneId),
+          eq(deliveryZones.version, version),
+        ),
+      )
+      .returning(zoneFields),
+    ...also,
+  ]);
+  return rows[0];
 }
 
-/** Borrado lógico: la fila queda para los pedidos que la referencian. */
-export function softDeleteZone(
+/** Borrado lógico: la fila queda para los pedidos que la referencian. `also`: ver `updateZone`. */
+export async function softDeleteZone(
   db: Db,
   tenant: TenantContext,
   branchId: string,
   zoneId: string,
   now: Date,
+  also: Also = [],
 ) {
-  return db
-    .update(deliveryZones)
-    .set({ deletedAt: now, active: false, version: sql`${deliveryZones.version} + 1` })
-    .where(and(zonesOfBranch(tenant, branchId), eq(deliveryZones.id, zoneId)))
-    .returning({ id: deliveryZones.id })
-    .get();
+  const [rows] = await db.batch([
+    db
+      .update(deliveryZones)
+      .set({ deletedAt: now, active: false, version: sql`${deliveryZones.version} + 1` })
+      .where(and(zonesOfBranch(tenant, branchId), eq(deliveryZones.id, zoneId)))
+      .returning({ id: deliveryZones.id }),
+    ...also,
+  ]);
+  return rows[0];
 }

@@ -65,7 +65,7 @@ const zoneIdParameter = {
   schema: { type: "string", format: "uuid" },
 } as const;
 
-const branchIdParameter = {
+export const branchIdParameter = {
   name: "branchId",
   in: "path",
   required: true,
@@ -73,9 +73,9 @@ const branchIdParameter = {
   schema: { type: "string", format: "uuid" },
 } as const;
 
-const privateSecurity = [{ InternalToken: [], SessionCookie: [] }];
-const invalidInput = jsonResponse("Datos inválidos.", ErrorResponse);
-const forbidden = jsonResponse(
+export const privateSecurity = [{ InternalToken: [], SessionCookie: [] }];
+export const invalidInput = jsonResponse("Datos inválidos.", ErrorResponse);
+export const forbidden = jsonResponse(
   "Tu rol no tiene el permiso, o la suscripción está suspendida y solo admite lecturas.",
   ErrorResponse,
 );
