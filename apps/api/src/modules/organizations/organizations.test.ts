@@ -5,8 +5,8 @@ import { env } from "cloudflare:workers";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { addMember, createBranch, createOrg, createUser } from "../../../test/factories";
+import { callApi, expectNotFoundForOtherTenant } from "../../../test/isolation";
 import { getEnv } from "../../env";
-import worker from "../../index";
 import { createDb } from "../../infrastructure/db";
 import { requestId } from "../../middleware/request-id";
 import { requireAuth } from "../../middleware/require-auth";
@@ -16,23 +16,8 @@ import { notFound, onError } from "../../shared/errors";
 import { newId } from "../../shared/ids";
 import type { AppEnv, TenantEnv } from "../../types";
 
-function randomIp() {
-  const [a, b] = crypto.randomUUID().split("-");
-  return `2001:db8::${a?.slice(0, 4)}:${b}`;
-}
-
 function get(path: string, cookie?: string) {
-  const bindings = getEnv(env);
-  const headers = new Headers({
-    "x-mm-internal": bindings.INTERNAL_TOKEN,
-    "x-client-ip": randomIp(),
-  });
-  if (cookie) headers.set("cookie", cookie);
-  return worker.fetch(
-    new Request(`https://api.internal/v1/${path}`, { headers }),
-    bindings,
-    createExecutionContext(),
-  );
+  return callApi("GET", `/v1/${path}`, { cookie });
 }
 
 async function expectError(response: Response, status: number, code: ErrorResponse["code"]) {
@@ -101,7 +86,7 @@ describe("GET /v1/orgs/:orgId", () => {
   it("responde 404 al dueño de otra organización con el id real de la primera", async () => {
     const { org } = await scenario();
     const other = await scenario();
-    await expectError(await get(`orgs/${org.orgId}`, other.owner.cookie), 404, "NOT_FOUND");
+    await expectNotFoundForOtherTenant({ paths: [`/v1/orgs/${org.orgId}`], intruder: other.owner });
   });
 
   it("responde 404 con un id inexistente o mal formado", async () => {
