@@ -2,7 +2,7 @@
 
 > Planeación del backend (versionada en git).
 > **Criterio para cerrar la fase:** `/crear` en un solo envío deja un menú publicado con QR; una cuenta sin verificar no recibe pedidos de comensales.
-> **Orden de ejecución:** T15 → T20, en orden numérico.
+> **Orden de ejecución:** T15 → T20b, en orden numérico.
 > **Convención de rutas de esta fase:** `/v1/orgs/:orgId/branches/:branchId/...` siempre con `requireBranch()` y `canAccessBranch`.
 
 ---
@@ -242,7 +242,7 @@ El negocio descarga un QR permanente de su menú y uno por mesa, listos para imp
   2. Si hay sesión y el usuario **no** tiene organizaciones → salta al paso 4 (reanudación).
   3. Sin sesión: `auth.api.signUpEmail` con `asResponse` para obtener la cookie. Correo ya registrado → `CONFLICT` ("Ya tienes una cuenta con este correo. Entra para publicar tu menú."). _En el alta es inevitable revelar que el correo existe porque el registro da sesión inmediata; lo mitigan Turnstile y la cuota por IP (ADR-008)._
   4. Idempotencia (ADR-013): misma llave y mismo cuerpo → misma respuesta; otro cuerpo → `IDEMPOTENCY_CONFLICT`. Esta task crea la tabla `idempotency_keys (key pk, organization_id, scope, request_hash, status_code, response_json, expires_at)` y el helper reutilizable `shared/idempotency.ts`.
-  5. Un solo `db.batch`: `organizations`, membresía `owner`, `subscriptions` (`free`, `trialing`), `businesses`, `branches` (modalidades, `alert_whatsapp`), `menus` (slug generado, `published`), una categoría "Menú", productos, tema `minimal`, registro de idempotencia.
+  5. Un solo `db.batch`: `organizations`, membresía `owner`, `subscriptions` (`pro`, `trialing`, `current_period_end` = alta + 90 días: prueba gratis con todas las funciones), `businesses`, `branches` (modalidades, `alert_whatsapp`), `menus` (slug generado, `published`), una categoría "Menú", productos, tema `minimal`, registro de idempotencia.
   6. Encola `verify-email` (lo hace Better Auth en el alta) y responde `201 { orgId, branchId, menuSlug, menuUrl }` con la cookie de sesión.
 - Si el `batch` falla, el usuario queda con sesión y sin organización: el reintento desde `/app` con la misma llave entra por el paso 2.
 - Usuario con sesión que ya tiene organización → `CONFLICT`.
@@ -261,7 +261,69 @@ El negocio descarga un QR permanente de su menú y uno por mesa, listos para imp
 - [ ] Correo desechable, sin MX o Turnstile inválido → rechazo antes de crear el usuario.
 - [ ] Cuarta alta del día desde la misma IP → 429.
 - [ ] El menú recién creado tiene `acceptingOrders: false` con motivo `unverified`.
+- [ ] La organización nueva queda con suscripción `pro` + `trialing` y `current_period_end` a 90 días del alta (`GET /subscription` lo muestra).
 
 ### Criterios de aceptación
 
 - [ ] Una sola llamada HTTP desde WEB basta para pasar de `/crear` a `/app/listo`.
+
+### Notas
+
+- **Prueba de 3 meses (Release 1, acordado 2026-11-14):** todo cliente nuevo opera 90 días con el plan `pro` sin costo. El plan y la duración salen de constantes del servicio de onboarding (`TRIAL_PLAN_ID = "pro"`, `TRIAL_DAYS = 90`); los límites siguen leyéndose de `plans`.
+- El tope de productos del alta sigue siendo el del plan `free`, para que el menú inicial quepa en el plan al que pasará la cuenta al terminar la prueba.
+- El paso a `free` al vencer y sus avisos son la T20b. Sin T20b, una prueba vencida sigue operando como `pro`.
+
+---
+
+## T20b — Fin de la prueba: avisos y paso automático a Free
+
+**Fase:** B4 · **Depende de:** T08, T14, T20 · **ADR:** 007, 011 · **Rama sugerida:** `feat/t20b-fin-de-prueba`
+
+> **Bloqueada por una decisión:** los límites definitivos del plan `free` (ver "Decisiones abiertas" en `STATUS.md`). Debe estar en producción antes de que venza la primera prueba (90 días después de la primera alta real).
+
+### Objetivo
+
+Cuando se cumplen los 3 meses de prueba, la organización pasa sola al plan `free` sin perder el servicio, y su dueño lo supo con anticipación por correo.
+
+### Alcance
+
+- Cron diario existente (`0 9 * * *`, `index.ts → scheduled`): dos tareas nuevas en `modules/subscriptions`, independientes de la limpieza (si una falla, las demás corren y se registra el error).
+- **Avisos previos**, 15 y 3 días antes de `current_period_end`, solo para suscripciones `trialing`:
+  - columnas nuevas en `subscriptions`: `trial_notice_15_sent_at`, `trial_notice_3_sent_at` (`integer` ms, nullable);
+  - deduplicación (ADR-011): un `UPDATE … SET trial_notice_N_sent_at = now WHERE … IS NULL` reclama el aviso; solo si afectó una fila se encola el correo. Reintentar el Cron no duplica avisos;
+  - destinatarios: los `owner` activos de la organización con `email_status` entregable;
+  - plantilla `trial-ending` (`email.send`, por la cola): cuántos días faltan, fecha de cambio, qué conserva y qué se limita en `free` (leído de `plans`, no escrito a mano), enlace a `${WEB_ORIGIN}/app/ajustes`.
+- **Transición**: suscripciones `trialing` con `current_period_end <= now` → `plan_id = 'free'`, `status = 'active'`, `current_period_end = null`, en un `UPDATE` condicional por fila (idempotente). Después encola la plantilla `trial-ended` a los `owner`.
+- Lo que excede los límites de `free` **no se borra ni se oculta**: la organización conserva lo que tiene y `assertWithinLimit` (T14) impide agregar más hasta quedar por debajo.
+- Procesa por lotes con cursor (≤ 100 suscripciones por consulta) y registra `subscription.trial_notice_sent` y `subscription.trial_ended` con `orgId`, sin PII.
+- Actualizar `docs/runbooks/cambiar-plan.md`: cómo extender una prueba (mover `current_period_end` y limpiar los `trial_notice_*`).
+
+### Fuera de alcance
+
+- Cobro, pasarela de pagos, página de precios y descuentos de lanzamiento: Release 2 (pagos en línea están fuera del MVP).
+- Restringir funciones por plan más allá de los límites de `plans` (_feature gating_): Release 2.
+- Avisos dentro del panel o por WhatsApp; texto de los Términos y Condiciones (frontend, task-14).
+
+### Datos
+
+- Migración: dos columnas nullable en `subscriptions` e índice `(status, current_period_end)` para el barrido del Cron. Solo _expand_; no es destructiva.
+
+### Pruebas requeridas
+
+- [ ] A 15 y a 3 días se encola un aviso por `owner`; correr el Cron dos veces el mismo día no lo duplica.
+- [ ] Una prueba creada con menos de 15 días restantes recibe solo el aviso de 3 días.
+- [ ] Vencida: queda `free` + `active` sin `current_period_end` y se encola `trial-ended`; correr el Cron de nuevo no cambia nada.
+- [ ] Suscripciones `active`, `past_due` o `suspended` no se tocan aunque tengan `current_period_end` vencido.
+- [ ] Organización que excede `free` tras el cambio: sus lecturas y su menú público siguen; crear uno más → `PLAN_LIMIT_REACHED`.
+- [ ] Una tarea del Cron que falla no detiene a las demás.
+- [ ] Los correos no contienen límites escritos a mano: cambian si cambia la fila de `plans`.
+
+### Criterios de aceptación
+
+- [ ] Ningún cliente pierde acceso ni datos al terminar la prueba.
+- [ ] Los correos salen por la cola, nunca en línea, y los logs no llevan PII.
+
+### Notas
+
+- Una suscripción `suspended` durante la prueba no pasa a `free` sola: la reactiva un humano con el runbook.
+- Si los límites de `free` cambian respecto a los provisionales de T14, van en una migración nueva (no se edita `0005`).

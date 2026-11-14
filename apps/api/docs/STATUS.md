@@ -12,7 +12,7 @@
 | B1 Fundación                   | T01–T06                | `phase-01-fundacion.md`        | WEB llama a `/v1/health` por Service Binding; CI en verde; `/docs` abre en local y da 404 en producción                             | pendiente |
 | B2 Identidad y correo          | T07–T10                | `phase-02-identidad-correo.md` | Usuario de prueba → correo real recibido → clic → sesión verificada; reset funciona; reset y reenvío no revelan si un correo existe | pendiente |
 | B3 Tenancy y permisos          | T11–T14 (incluye T12b) | `phase-03-tenancy-permisos.md` | Roles, invitaciones y límites del plan funcionan; la suite de aislamiento confirma que una organización no lee ni modifica otra     | pendiente |
-| B4 Catálogo, menú y onboarding | T15–T20                | `phase-04-catalogo-menu.md`    | `/crear` en un solo envío deja un menú publicado con QR; una cuenta sin verificar no recibe pedidos de comensales                   | pendiente |
+| B4 Catálogo, menú y onboarding | T15–T20b               | `phase-04-catalogo-menu.md`    | `/crear` en un solo envío deja un menú publicado con QR; una cuenta sin verificar no recibe pedidos de comensales                   | pendiente |
 | B5 Pedidos                     | T21–T23                | `phase-05-pedidos.md`          | Un pedido se registra una sola vez ante reintentos y su total no cambia por manipulación                                            | pendiente |
 | B6 WhatsApp                    | T24–T25                | `phase-06-whatsapp.md`         | Si WhatsApp falla, el pedido sigue visible y el aviso se reintenta o queda en DLQ                                                   | pendiente |
 | B7 Endurecimiento              | T26–T27                | `phase-07-endurecimiento.md`   | Presupuestos de p95 cumplidos en staging; restauración de D1 probada                                                                | pendiente |
@@ -41,7 +41,8 @@
 | T17  | Subidas a R2 con _magic bytes_ y `media_assets`                                                             | T16                 | —             | pendiente   |                                  |     |                                                                                                                                          |
 | T18  | Tema con contraste AA, slug, publicación, `menuVersion`, lectura pública                                    | T16, T17            | 008, 014      | pendiente   |                                  |     | Gracia: ADR-008 propuesto                                                                                                                |
 | T19  | QR en SVG por menú y por mesa                                                                               | T18                 | 017           | pendiente   |                                  |     | ADR-017 propuesto                                                                                                                        |
-| T20  | `POST /v1/onboarding` en un solo envío, idempotente                                                         | T09, T10, T14, T18  | 008, 013      | pendiente   |                                  |     | Crea la suscripción: 3 meses gratis con todo (`pro` + `trialing`, fin a 90 días; acordado). Qué pasa al vencer: sin definir              |
+| T20  | `POST /v1/onboarding` en un solo envío, idempotente                                                         | T09, T10, T14, T18  | 008, 013      | pendiente   |                                  |     | Crea la suscripción `pro` + `trialing` a 90 días (prueba gratis con todo); el paso a `free` es T20b                                      |
+| T20b | Fin de la prueba: avisos a 15 y 3 días y paso automático a `free` por Cron                                  | T08, T14, T20       | 007, 011      | bloqueada   |                                  |     | Falta definir los límites de `free`; debe estar en producción antes de que venza la primera prueba                                       |
 | T21  | `POST /v1/public/orders`: Turnstile, cuotas, recálculo, idempotencia, outbox                                | T18, T20            | 010, 011, 013 | pendiente   |                                  |     |                                                                                                                                          |
 | T22  | Seguimiento público por token                                                                               | T21                 | 013           | pendiente   |                                  |     |                                                                                                                                          |
 | T23  | Panel: listado con `since`/`ETag`, detalle, máquina de estados con `version`                                | T21                 | 007           | pendiente   |                                  |     |                                                                                                                                          |
@@ -52,14 +53,24 @@
 
 ## Decisiones abiertas
 
-| Decisión                            | ADR                 | Bloquea               | Resuelta                                                                                        |
-| ----------------------------------- | ------------------- | --------------------- | ----------------------------------------------------------------------------------------------- |
-| Proveedor de correo                 | 020 (reemplaza 009) | T08                   | Sí: Resend                                                                                      |
-| Turnstile en login tras 3 fallos    | 010                 | T09 (solo esa parte)  | No                                                                                              |
-| Días de gracia sin verificar        | 008                 | T18 (solo esa parte)  | No                                                                                              |
-| TTL de la caché del menú            | 014                 | Lado WEB              | No                                                                                              |
-| Valores de los límites de cada plan | —                   | Lanzamiento de planes | No: T14 se fusiona con valores provisionales; los clientes empiezan con 3 meses gratis con todo |
-| Zonas de entrega por código postal  | 018                 | T15 (solo zonas)      | No                                                                                              |
-| Librería de QR (`uqr`)              | 017                 | T19                   | No                                                                                              |
-| Webhooks de Meta a través de WEB    | 019                 | T25                   | No                                                                                              |
-| Retención de datos del comensal     | 015                 | T26 (solo esa parte)  | No                                                                                              |
+| Decisión                                       | ADR                 | Bloquea              | Resuelta                                                             |
+| ---------------------------------------------- | ------------------- | -------------------- | -------------------------------------------------------------------- |
+| Proveedor de correo                            | 020 (reemplaza 009) | T08                  | Sí: Resend                                                           |
+| Turnstile en login tras 3 fallos               | 010                 | T09 (solo esa parte) | No                                                                   |
+| Días de gracia sin verificar                   | 008                 | T18 (solo esa parte) | No                                                                   |
+| TTL de la caché del menú                       | 014                 | Lado WEB             | No                                                                   |
+| Límites definitivos del plan `free` (y `pro`)  | —                   | T20b                 | No: T14 se fusiona con provisionales; la prueba de 3 meses usa `pro` |
+| Tarifa preferencial para los primeros clientes | —                   | Release 2 (pagos)    | No                                                                   |
+| Zonas de entrega por código postal             | 018                 | T15 (solo zonas)     | No                                                                   |
+| Librería de QR (`uqr`)                         | 017                 | T19                  | No                                                                   |
+| Webhooks de Meta a través de WEB               | 019                 | T25                  | No                                                                   |
+| Retención de datos del comensal                | 015                 | T26 (solo esa parte) | No                                                                   |
+
+## Después del MVP (Release 2)
+
+Sin tasks todavía: pagos en línea están fuera del MVP (`AGENTS.md` raíz §3). Se planean cuando termine la validación de los primeros 3 meses.
+
+- Pasarela de pagos y gestión de suscripciones de pago.
+- Página de precios con la comparativa `free` vs. planes de pago.
+- Restricción de funciones por plan (_feature gating_) además de los límites de `plans`.
+- Tarifa preferencial para los clientes de la prueba inicial.
