@@ -1,5 +1,5 @@
 import { expect, test } from "./fixtures";
-import { abrirPedido, enviarPedido, ir, menu } from "./helpers";
+import { abrirPedido, enviarPedido, invitationEmail, invitationUrl, ir, menu } from "./helpers";
 
 test("landing lleva el nombre a crear y conserva el borrador", async ({ page }) => {
   await ir(page, "/");
@@ -61,6 +61,119 @@ test.describe("sin sesión simulada", () => {
     await expect(page).toHaveURL(/\/entrar$/);
     await ir(page, "/app/ajustes");
     await expect(page).toHaveURL(/\/entrar$/);
+  });
+});
+
+test.describe("aceptar una invitación", () => {
+  test.use({ sesion: false });
+
+  test("una invitación sin cuenta crea una sesión y abre el panel", async ({ page }) => {
+    const response = await ir(page, invitationUrl());
+    expect(response?.headers()["cache-control"]).toBe("no-store");
+    expect(response?.headers()["referrer-policy"]).toBe("no-referrer");
+    await expect(page.getByRole("heading", { name: "Únete a Tacos El Güero" })).toBeVisible();
+    await expect(page.getByText("personal", { exact: true })).toBeVisible();
+    await expect(page.getByText("e***@example.com", { exact: true })).toBeVisible();
+    await page.getByLabel("Nombre", { exact: true }).fill("Ana Prueba");
+    await page.getByLabel("Contraseña", { exact: true }).fill("clave-de-prueba");
+    await page.getByRole("button", { name: "Aceptar invitación" }).click();
+    await expect(page).toHaveURL(/\/app$/);
+    await ir(page, invitationUrl());
+    await expect(page.getByRole("heading", { name: "Invitación no válida" })).toBeVisible();
+  });
+
+  test("una invitación vencida muestra el motivo sin formulario", async ({ page }) => {
+    await ir(page, invitationUrl("vencida"));
+    await expect(
+      page.getByText("Esta invitación venció. Pide una nueva a quien te invitó."),
+    ).toBeVisible();
+    await expect(page.locator("form")).toHaveCount(0);
+  });
+
+  test("una invitación no válida enlaza al inicio", async ({ page }) => {
+    await ir(page, invitationUrl("invalida"));
+    await expect(
+      page.getByText("Esta invitación ya no es válida. Pide una nueva a quien te invitó."),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "Volver al inicio" })).toHaveAttribute("href", "/");
+  });
+
+  test("entrar con una cuenta vuelve a la invitación y permite aceptarla", async ({ page }) => {
+    const invite = invitationUrl("con-cuenta");
+    await ir(page, invite);
+    await page.getByRole("link", { name: "Entrar" }).click();
+    await expect(page.getByRole("heading", { name: "Entra a tu cuenta" })).toBeVisible();
+    await page.getByLabel("Correo electrónico").fill(invitationEmail);
+    await page.getByLabel("Contraseña", { exact: true }).fill("clave-de-prueba");
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
+    await expect(page).toHaveURL(invite);
+    await expect(page.getByLabel("Nombre", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Aceptar invitación" }).click();
+    await expect(page).toHaveURL(/\/app$/);
+  });
+
+  test("entrar ignora destinos externos", async ({ page }) => {
+    await ir(page, "/entrar?siguiente=https://otro.sitio");
+    await page.getByLabel("Correo electrónico").fill(invitationEmail);
+    await page.getByLabel("Contraseña", { exact: true }).fill("clave-de-prueba");
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
+    await expect(page).toHaveURL(/\/app$/);
+  });
+
+  test("al aceptar, los errores de campo se asocian y el primero recibe el foco", async ({
+    page,
+  }) => {
+    await ir(page, invitationUrl());
+    const name = page.getByLabel("Nombre", { exact: true });
+    const password = page.getByLabel("Contraseña", { exact: true });
+    await page.getByRole("button", { name: "Aceptar invitación" }).click();
+    await expect(name).toBeFocused();
+    await expect(name).toHaveAccessibleDescription("Escribe un nombre de 1 a 120 caracteres.");
+    await expect(password).toHaveAccessibleDescription("Usa de 10 a 128 caracteres.");
+  });
+
+  test("una verificación fallida muestra el aviso en el espacio de Turnstile", async ({ page }) => {
+    await ir(page, invitationUrl("turnstile-invalido"));
+    await page.getByLabel("Nombre", { exact: true }).fill("Ana Prueba");
+    await page.getByLabel("Contraseña", { exact: true }).fill("clave-de-prueba");
+    await page.getByRole("button", { name: "Aceptar invitación" }).click();
+    const notice = page.getByRole("alert");
+    await expect(notice).toHaveText("No pudimos verificar el formulario. Inténtalo de nuevo.");
+    await expect(notice).toBeFocused();
+  });
+
+  for (const [state, message] of [
+    ["otro-correo", "Esta invitación es para otro correo."],
+    ["miembro", "Ya eres miembro de esta organización."],
+    ["usada", "Esta invitación ya se usó."],
+    ["cancelada", "Esta invitación se canceló. Pide una nueva a quien te invitó."],
+  ] as const) {
+    test(`aceptar con sesión muestra el motivo de ${state}`, async ({ page }) => {
+      const next = new URLSearchParams({ siguiente: invitationUrl(state) });
+      await ir(page, `/entrar?${next}`);
+      await page.getByLabel("Correo electrónico").fill(invitationEmail);
+      await page.getByLabel("Contraseña", { exact: true }).fill("clave-de-prueba");
+      await page.getByRole("button", { name: "Entrar", exact: true }).click();
+      await page.getByRole("button", { name: "Aceptar invitación" }).click();
+      const notice = page.getByRole("alert").filter({ hasText: message });
+      await expect(notice).toBeVisible();
+      await expect(notice).toBeFocused();
+      if (state === "otro-correo")
+        await expect(page.getByRole("link", { name: "Entrar" })).toBeVisible();
+    });
+  }
+
+  test("la invitación funciona sin JavaScript", async ({ browser, baseURL }) => {
+    const page = await browser.newPage({ javaScriptEnabled: false, baseURL });
+    try {
+      await page.goto(invitationUrl());
+      await page.getByLabel("Nombre", { exact: true }).fill("Ana Prueba");
+      await page.getByLabel("Contraseña", { exact: true }).fill("clave-de-prueba");
+      await page.getByRole("button", { name: "Aceptar invitación" }).click();
+      await expect(page).toHaveURL(/\/app$/);
+    } finally {
+      await page.close();
+    }
   });
 });
 

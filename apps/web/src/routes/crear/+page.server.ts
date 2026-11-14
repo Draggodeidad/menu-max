@@ -102,7 +102,7 @@ export const actions: Actions = {
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 30,
     });
-    abrirSesion(cookies);
+    abrirSesion(cookies, values.correo);
     redirect(303, "/app/listo");
   },
 };

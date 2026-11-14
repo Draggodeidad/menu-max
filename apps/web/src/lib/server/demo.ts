@@ -1,8 +1,15 @@
 // TEMPORAL: datos de ejemplo hasta que exista el contrato del menú público en
 // `packages/contracts` y el cliente tipado `#lib/server/api.ts`. Borrar entonces.
 import { dev } from "$app/env";
+import {
+  AcceptInvitationInput,
+  type AcceptInvitationDto,
+  type ErrorResponse,
+  type InvitationPreviewDto,
+} from "@menu-max/contracts";
 import { PLACEHOLDER_IMAGE } from "#lib/images.js";
 import { formatMoney } from "#lib/money.js";
+import type { SesionDemo } from "./sesion.js";
 
 /** Banderas solo para desarrollo: ?abierto=false, ?vacio=1, ?lento=1 */
 const flag = (url: URL, name: string, value: string) => dev && url.searchParams.get(name) === value;
@@ -10,6 +17,101 @@ const flag = (url: URL, name: string, value: string) => dev && url.searchParams.
 // TEMPORAL: negocio único de la demo; panel, menú público y activación leen de aquí.
 export const slugNegocioDemo = "tacos-el-guero";
 const NOMBRE_NEGOCIO_DEMO = "Tacos El Güero";
+
+// TEMPORAL: invitación sembrada, sin API ni persistencia compartida entre navegadores.
+export const demoInvitationToken = "equipo-demo";
+export const demoInvitationEmail = "equipo@example.com";
+export const invitationGone = "Esta invitación ya no es válida. Pide una nueva a quien te invitó.";
+export const invitationExpired = "Esta invitación venció. Pide una nueva a quien te invitó.";
+export const invitationSignIn = "Entra con tu cuenta para aceptar la invitación.";
+export const invitationOtherEmail = "Esta invitación es para otro correo.";
+
+function invitedEmail(url: URL) {
+  return flag(url, "estado", "otro-correo") ? "otra@example.com" : demoInvitationEmail;
+}
+
+export function previewDemoInvitation(url: URL, claimed: boolean): InvitationPreviewDto | null {
+  if (
+    url.searchParams.get("token") !== demoInvitationToken ||
+    claimed ||
+    flag(url, "estado", "invalida")
+  ) {
+    return null;
+  }
+
+  return {
+    orgName: NOMBRE_NEGOCIO_DEMO,
+    role: "staff",
+    emailMasked: `${invitedEmail(url).charAt(0)}***@example.com`,
+    expired: flag(url, "estado", "vencida"),
+    accountExists: ["con-cuenta", "otro-correo", "miembro"].some((state) =>
+      flag(url, "estado", state),
+    ),
+  };
+}
+
+type DemoInvitationResult = { data: AcceptInvitationDto } | { error: ErrorResponse };
+
+function invitationError(
+  code: ErrorResponse["code"],
+  message: string,
+  fieldErrors?: ErrorResponse["fieldErrors"],
+): DemoInvitationResult {
+  return { error: { code, message, requestId: crypto.randomUUID(), fieldErrors } };
+}
+
+export function acceptDemoInvitation(
+  url: URL,
+  claimed: boolean,
+  session: SesionDemo | null,
+  input: { name: string; password: string },
+): DemoInvitationResult {
+  const preview = previewDemoInvitation(url, false);
+  if (!preview) return invitationError("NOT_FOUND", invitationGone);
+  if (claimed || flag(url, "estado", "usada")) {
+    return invitationError("CONFLICT", "Esta invitación ya se usó.");
+  }
+  if (flag(url, "estado", "cancelada")) {
+    return invitationError(
+      "BUSINESS_RULE",
+      "Esta invitación se canceló. Pide una nueva a quien te invitó.",
+    );
+  }
+  if (preview.expired) return invitationError("BUSINESS_RULE", invitationExpired);
+
+  if (session) {
+    if (session.email !== invitedEmail(url)) {
+      return invitationError("CONFLICT", invitationOtherEmail);
+    }
+    if (flag(url, "estado", "miembro")) {
+      return invitationError("CONFLICT", "Ya eres miembro de esta organización.");
+    }
+  } else {
+    if (preview.accountExists) return invitationError("AUTH_REQUIRED", invitationSignIn);
+
+    const parsed = AcceptInvitationInput.safeParse(input);
+    const fieldErrors: NonNullable<ErrorResponse["fieldErrors"]> = {};
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        if (issue.path[0] === "name")
+          fieldErrors.name = ["Escribe un nombre de 1 a 120 caracteres."];
+        if (issue.path[0] === "password") fieldErrors.password = ["Usa de 10 a 128 caracteres."];
+      }
+    }
+    if (flag(url, "estado", "turnstile-invalido")) {
+      fieldErrors.turnstileToken = ["No pudimos verificar el formulario. Inténtalo de nuevo."];
+    }
+    if (Object.keys(fieldErrors).length) {
+      return invitationError(
+        "VALIDATION_FAILED",
+        "Revisa los datos para aceptar la invitación.",
+        fieldErrors,
+      );
+    }
+  }
+
+  return { data: { orgId: "01963826-9900-7000-8000-000000000001" } };
+}
 
 /** Devuelve `null` si el slug no es el negocio demo sembrado ni el publicado por este navegador. */
 export function getNegocio(
