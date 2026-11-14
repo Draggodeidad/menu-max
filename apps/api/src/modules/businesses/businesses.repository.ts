@@ -1,6 +1,6 @@
 import type { CursorQuery } from "@menu-max/contracts";
-import { branches, businesses, businessHours } from "@menu-max/database";
-import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+import { branches, businesses, businessHours, deliveryZones } from "@menu-max/database";
+import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "../../infrastructure/db";
 import { newId } from "../../shared/ids";
 import type { TenantContext } from "../../types";
@@ -188,4 +188,93 @@ export async function replaceHours(
     }),
   );
   await db.batch([remove, ...inserts]);
+}
+
+// Zonas de entrega (ADR-018) ------------------------------------------------------------------
+
+const zoneFields = {
+  id: deliveryZones.id,
+  branchId: deliveryZones.branchId,
+  name: deliveryZones.name,
+  postalCodes: deliveryZones.postalCodes,
+  feeCents: deliveryZones.feeCents,
+  active: deliveryZones.active,
+  version: deliveryZones.version,
+  createdAt: deliveryZones.createdAt,
+  updatedAt: deliveryZones.updatedAt,
+};
+
+export type ZoneView = {
+  [K in keyof typeof zoneFields]: (typeof deliveryZones.$inferSelect)[K];
+};
+
+function zonesOfBranch(tenant: TenantContext, branchId: string) {
+  return and(
+    eq(deliveryZones.organizationId, tenant.orgId),
+    eq(deliveryZones.branchId, branchId),
+    isNull(deliveryZones.deletedAt),
+  );
+}
+
+/** Zonas no borradas de la sucursal, de la más vieja a la más nueva. */
+export function listZones(db: Db, tenant: TenantContext, branchId: string) {
+  return db
+    .select(zoneFields)
+    .from(deliveryZones)
+    .where(zonesOfBranch(tenant, branchId))
+    .orderBy(asc(deliveryZones.id));
+}
+
+export type NewZone = Pick<
+  typeof deliveryZones.$inferInsert,
+  "id" | "branchId" | "name" | "postalCodes" | "feeCents" | "active"
+>;
+
+export function insertZone(db: Db, tenant: TenantContext, values: NewZone) {
+  return db
+    .insert(deliveryZones)
+    .values({ ...values, organizationId: tenant.orgId })
+    .returning(zoneFields)
+    .get();
+}
+
+export type ZoneChanges = Partial<Pick<NewZone, "name" | "postalCodes" | "feeCents" | "active">>;
+
+/** Concurrencia optimista; `undefined` si la zona cambió, se borró o no existe. */
+export function updateZone(
+  db: Db,
+  tenant: TenantContext,
+  branchId: string,
+  zoneId: string,
+  version: number,
+  changes: ZoneChanges,
+) {
+  return db
+    .update(deliveryZones)
+    .set({ ...changes, version: sql`${deliveryZones.version} + 1` })
+    .where(
+      and(
+        zonesOfBranch(tenant, branchId),
+        eq(deliveryZones.id, zoneId),
+        eq(deliveryZones.version, version),
+      ),
+    )
+    .returning(zoneFields)
+    .get();
+}
+
+/** Borrado lógico: la fila queda para los pedidos que la referencian. */
+export function softDeleteZone(
+  db: Db,
+  tenant: TenantContext,
+  branchId: string,
+  zoneId: string,
+  now: Date,
+) {
+  return db
+    .update(deliveryZones)
+    .set({ deletedAt: now, active: false, version: sql`${deliveryZones.version} + 1` })
+    .where(and(zonesOfBranch(tenant, branchId), eq(deliveryZones.id, zoneId)))
+    .returning({ id: deliveryZones.id })
+    .get();
 }
