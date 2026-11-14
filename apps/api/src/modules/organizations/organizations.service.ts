@@ -35,6 +35,12 @@ import {
   emailVerifiedStatement,
 } from "../auth/auth.service";
 import { invitationLink } from "../auth/web-links";
+import { assertWithinLimit } from "../subscriptions/limits";
+import {
+  assertMemberSlotForInvitation,
+  memberSlotCondition,
+  missingSubscription,
+} from "../subscriptions/subscriptions.service";
 import {
   claimInvitationStatements,
   findActiveMember,
@@ -57,15 +63,35 @@ import {
   updateMember as updateMemberRow,
 } from "./organizations.repository";
 
-/** Contexto del tenant o `null` si el usuario no tiene membresía activa en la organización. */
+/**
+ * Contexto del tenant, con el plan de la organización (T14), o `null` si el usuario no tiene
+ * membresía activa en ella. Una organización sin suscripción es un dato corrupto → `INTERNAL`.
+ */
 export async function loadTenant(
   db: Db,
   orgId: string,
   userId: string,
+  requestId: string,
 ): Promise<TenantContext | null> {
   const member = await findActiveMembership(db, orgId, userId);
   if (!member) return null;
-  return { orgId, memberId: member.id, role: member.role, branchIds: member.branchIds };
+  const { planId, status, maxBranches, maxProducts, maxMembers } = member;
+  if (
+    planId === null ||
+    status === null ||
+    maxBranches === null ||
+    maxProducts === null ||
+    maxMembers === null
+  ) {
+    throw missingSubscription(requestId, orgId);
+  }
+  return {
+    orgId,
+    memberId: member.id,
+    role: member.role,
+    branchIds: member.branchIds,
+    plan: { id: planId, status, limits: { maxBranches, maxProducts, maxMembers } },
+  };
 }
 
 export async function getOrganization(db: Db, tenant: TenantContext): Promise<OrganizationDto> {
@@ -241,6 +267,8 @@ export async function createInvitation(
   if (await isActiveMemberEmail(deps.db, deps.tenant, email)) {
     throw new AppError("CONFLICT", "Esta persona ya es miembro de la organización.");
   }
+  // Antes de la cuota: una invitación que no se puede enviar no gasta el cupo del día.
+  await assertWithinLimit(deps, "members");
   const quota = await hit(deps.db, `invitations:${deps.tenant.orgId}`, DAY_MS, INVITATIONS_PER_DAY);
   if (!quota.allowed) {
     log.warn("invitation.quota_exceeded", { requestId: deps.requestId, orgId: deps.tenant.orgId });
@@ -386,7 +414,8 @@ async function resolveAcceptingUser(
 }
 
 /**
- * Canjea una invitación (T13). Sin sesión exige Turnstile. Marca el token usado, crea o reactiva
+ * Canjea una invitación (T13). Sin sesión exige Turnstile. Respeta el límite de miembros del
+ * plan (T14) antes de crear la cuenta y, de nuevo, dentro del batch. Marca el token usado, crea o reactiva
  * la membresía, asigna sucursales y marca el correo verificado (el enlace lo probó) en un solo
  * `db.batch`. La cuenta nueva la crea Better Auth antes del batch: si el batch falla, el token
  * sigue sin usar y la persona puede entrar con su cuenta y aceptar de nuevo.
@@ -402,6 +431,8 @@ export async function acceptInvitation(
   const invitation = await findByToken(deps.db, token);
   const unusable = unusableReason(invitation, new Date());
   if (unusable || !invitation) throw unusable ?? new AppError("NOT_FOUND", INVITATION_GONE);
+  // Antes de crear la cuenta: si el equipo ya no tiene lugar, no se crea una cuenta huérfana.
+  await assertMemberSlotForInvitation(deps.db, invitation.orgId, deps.requestId);
 
   const { userId, setCookies } = await resolveAcceptingUser(deps, invitation, input);
   const membership = await findMembershipOfUser(deps.db, invitation.orgId, userId);
@@ -424,15 +455,17 @@ export async function acceptInvitation(
     now: new Date(),
   };
   const [claimed] = await deps.db.batch([
-    ...claimInvitationStatements(deps.db, claim),
+    ...claimInvitationStatements(deps.db, claim, memberSlotCondition(deps.db, claim.orgId)),
     emailVerifiedStatement(deps.db, userId, invitationClaimed(deps.db, claim)),
   ]);
   if (claimed.meta.changes === 0) {
-    // Otra petición la canjeó, la revocó o venció entre la lectura y el batch.
+    // Otra petición la canjeó, la revocó o venció, o el equipo se llenó, entre la lectura y
+    // el batch.
     const current = await findInvitationByTokenHash(deps.db, await hashToken(token));
-    throw (
-      unusableReason(current, claim.now) ?? new AppError("CONFLICT", "Esta invitación ya se usó.")
-    );
+    const reason = unusableReason(current, claim.now);
+    if (reason) throw reason;
+    await assertMemberSlotForInvitation(deps.db, claim.orgId, deps.requestId);
+    throw new AppError("CONFLICT", "Esta invitación ya se usó.");
   }
   log.info("invitation.accepted", { requestId: deps.requestId, orgId: invitation.orgId });
   return { orgId: invitation.orgId, setCookies };

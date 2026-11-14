@@ -6,16 +6,29 @@ import {
   InvitationPreviewDto,
   type JobMessage,
 } from "@menu-max/contracts";
-import { invitations, memberBranches, organizationMembers, users } from "@menu-max/database";
+import {
+  invitations,
+  memberBranches,
+  organizationMembers,
+  rateCounters,
+  users,
+} from "@menu-max/database";
 import { env } from "cloudflare:workers";
 import { and, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addMember, createBranch, createOrg, createUser } from "../../../test/factories";
+import {
+  addMember,
+  createBranch,
+  createOrg,
+  createPlan,
+  createUser,
+} from "../../../test/factories";
 import { callApi, expectNotFoundForOtherTenant } from "../../../test/isolation";
 import { getEnv, type Env } from "../../env";
 import { createDb } from "../../infrastructure/db";
 import { hashToken, newId } from "../../shared/ids";
 import { emailVerifiedStatement } from "../auth/auth.service";
+import { memberSlotCondition } from "../subscriptions/subscriptions.service";
 import { claimInvitationStatements, invitationClaimed } from "./organizations.repository";
 import { hit } from "../../shared/rate-counters";
 
@@ -79,9 +92,10 @@ async function expectError(response: Response, status: number, code: ErrorRespon
   return body;
 }
 
-async function scenario() {
+/** Dueño, admin y staff: 3 miembros activos. `planId` para probar los límites del plan. */
+async function scenario(planId?: string) {
   const owner = await createUser();
-  const org = await createOrg({ ownerId: owner.id, name: "Tacos El Güero" });
+  const org = await createOrg({ ownerId: owner.id, name: "Tacos El Güero", planId });
   const branchA = await createBranch({ orgId: org.orgId, businessId: org.businessId });
   const admin = await createUser();
   await addMember({ orgId: org.orgId, userId: admin.id, role: "admin" });
@@ -621,7 +635,7 @@ describe("Canje de invitación en un solo batch", () => {
     };
     const database = db();
     const [claimed] = await database.batch([
-      ...claimInvitationStatements(database, claim),
+      ...claimInvitationStatements(database, claim, memberSlotCondition(database, claim.orgId)),
       emailVerifiedStatement(database, invited.id, invitationClaimed(database, claim)),
     ]);
     expect(claimed.meta.changes).toBe(0);
@@ -636,6 +650,93 @@ describe("Canje de invitación en un solo batch", () => {
       .from(memberBranches)
       .where(eq(memberBranches.memberId, claim.memberId));
     expect(branches).toEqual([]);
+    const user = await database.select().from(users).where(eq(users.id, invited.id)).get();
+    expect(user?.emailVerified).toBe(false);
+  });
+});
+
+describe("Límite de miembros del plan (T14)", () => {
+  it("invitar con el equipo lleno responde 402 sin encolar correo ni gastar la cuota", async () => {
+    const s = await scenario(await createPlan({ maxMembers: 3 }));
+    const { response, jobs } = await invite(s.owner, s.path, {
+      email: newEmail(),
+      role: "staff",
+      branchIds: [s.branchA],
+    });
+    const error = await expectError(response, 402, "PLAN_LIMIT_REACHED");
+    expect(error.message).toBe("Tu plan permite 3 miembros. Cambia de plan para agregar más.");
+    expect(jobs.sent).toEqual([]);
+    const counter = await db()
+      .select()
+      .from(rateCounters)
+      .where(eq(rateCounters.key, `invitations:${s.org.orgId}`))
+      .get();
+    expect(counter).toBeUndefined();
+  });
+
+  it("invitar con lugar disponible funciona hasta el límite", async () => {
+    const s = await scenario(await createPlan({ maxMembers: 4 }));
+    await inviteStaff(s);
+  });
+
+  it("aceptar con el equipo lleno responde 402 y no crea la cuenta ni canjea el token", async () => {
+    const s = await scenario(await createPlan({ maxMembers: 4 }));
+    const { token, email, invitation } = await inviteStaff(s);
+    // El último lugar se ocupa después de enviar la invitación.
+    await addMember({ orgId: s.org.orgId, userId: (await createUser()).id, role: "admin" });
+
+    const error = await expectError(
+      await accept(token, { body: { name: "Ana", password } }),
+      402,
+      "PLAN_LIMIT_REACHED",
+    );
+    expect(error.message).toContain("límite de miembros");
+    const user = await db().select().from(users).where(eq(users.email, email)).get();
+    expect(user).toBeUndefined();
+    const row = await db()
+      .select()
+      .from(invitations)
+      .where(eq(invitations.id, invitation.id))
+      .get();
+    expect(row?.acceptedAt).toBeNull();
+  });
+
+  it("aceptar con el último lugar libre crea la membresía", async () => {
+    const s = await scenario(await createPlan({ maxMembers: 4 }));
+    const { token } = await inviteStaff(s);
+    const response = await accept(token, { body: { name: "Ana", password } });
+    expect(response.status).toBe(200);
+    expect(AcceptInvitationDto.parse(await response.json()).orgId).toBe(s.org.orgId);
+  });
+
+  it("si el equipo se llenó entre la lectura y el batch, el canje no escribe nada", async () => {
+    const s = await scenario(await createPlan({ maxMembers: 4 }));
+    const invited = await createUser({ emailVerified: false });
+    const { invitation } = await inviteStaff(s, invited.email);
+    // Otra aceptación ocupa el último lugar después de la revisión previa.
+    await addMember({ orgId: s.org.orgId, userId: (await createUser()).id, role: "admin" });
+    const claim = {
+      invitationId: invitation.id,
+      orgId: s.org.orgId,
+      userId: invited.id,
+      role: "staff" as const,
+      branchIds: [s.branchA],
+      memberId: newId(),
+      reactivate: false,
+      now: new Date(),
+    };
+    const database = db();
+    const [claimed] = await database.batch([
+      ...claimInvitationStatements(database, claim, memberSlotCondition(database, claim.orgId)),
+      emailVerifiedStatement(database, invited.id, invitationClaimed(database, claim)),
+    ]);
+    expect(claimed.meta.changes).toBe(0);
+    const member = await database
+      .select()
+      .from(organizationMembers)
+      .where(eq(organizationMembers.id, claim.memberId))
+      .get();
+    expect(member).toBeUndefined();
     const user = await database.select().from(users).where(eq(users.id, invited.id)).get();
     expect(user?.emailVerified).toBe(false);
   });

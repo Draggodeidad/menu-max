@@ -122,6 +122,8 @@ describe("requireMembership", () => {
       memberId: staffMemberId,
       role: "staff",
       branchIds: [branchA],
+      // El plan se prueba en subscriptions.test.ts.
+      plan: expect.anything(),
     });
 
     // `owner` y `admin` no tienen filas en `member_branches`.
@@ -131,6 +133,7 @@ describe("requireMembership", () => {
       memberId: org.ownerMemberId,
       role: "owner",
       branchIds: [],
+      plan: expect.anything(),
     });
   });
 

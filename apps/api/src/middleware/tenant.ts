@@ -17,7 +17,7 @@ export function requireMembership() {
     const params = OrgParams.safeParse({ orgId: c.req.param("orgId") });
     if (!params.success) throw new AppError("NOT_FOUND");
 
-    const tenant = await loadTenant(createDb(c.env), params.data.orgId, user.id);
+    const tenant = await loadTenant(createDb(c.env), params.data.orgId, user.id, c.var.requestId);
     if (!tenant) throw new AppError("NOT_FOUND");
     c.set("tenant", tenant);
     await next();
