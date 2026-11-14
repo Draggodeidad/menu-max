@@ -8,7 +8,7 @@
     "lint": "oxlint --deny-warnings .",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
-    "test": "pnpm -r --if-present test",
+    "test": "node --test \"oxlint/*.test.mjs\" && pnpm -r --if-present test",
     "validate": "pnpm format:check && pnpm lint && pnpm check && pnpm test && pnpm build",
     "test:e2e": "playwright test"
   },

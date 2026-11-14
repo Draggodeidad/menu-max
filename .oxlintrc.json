@@ -6,6 +6,7 @@
     "perf": "error"
   },
   "plugins": ["typescript", "unicorn", "import", "promise"],
+  "jsPlugins": ["./oxlint/drizzle-plugin.mjs"],
   "rules": {
     "eqeqeq": "error",
     "no-var": "error",
@@ -23,6 +24,23 @@
       "files": ["**/*.d.ts"],
       "rules": {
         "unicorn/require-module-specifiers": "off"
+      }
+    },
+    {
+      "files": ["apps/api/**", "packages/database/**"],
+      "rules": {
+        "drizzle/enforce-update-with-where": [
+          "error",
+          {
+            "drizzleObjectName": ["db", "database"]
+          }
+        ],
+        "drizzle/enforce-delete-with-where": [
+          "error",
+          {
+            "drizzleObjectName": ["db", "database"]
+          }
+        ]
       }
     }
   ]
