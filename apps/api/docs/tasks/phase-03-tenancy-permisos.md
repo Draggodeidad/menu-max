@@ -211,7 +211,7 @@ Un `owner` o `admin` verificado invita por correo a su equipo, asigna sucursales
 
 **Fase:** B3 · **Depende de:** T12 · **ADR:** 007 · **Rama sugerida:** `feat/t14-planes-limites`
 
-> Los valores de los límites son **provisionales**. Pide al humano que los confirme antes de fusionar.
+> Límites del piloto aprobados el 2026-11-14: `free` 1 sucursal / 50 productos / 3 miembros activos (incluido el dueño); `pro` 5 / 1000 / 20.
 
 ### Objetivo
 
@@ -220,7 +220,7 @@ Cada organización tiene un plan con límites que la API hace cumplir, y su esta
 ### Alcance
 
 - Tablas y migración:
-  - `plans (id text pk, name, max_branches, max_products, max_members, active)`; la migración siembra `free` (provisional: 1 sucursal, 60 productos, 3 miembros) y `pro` (provisional: 5, 1000, 20);
+  - `plans (id text pk, name, max_branches, max_products, max_members, active)`; la migración siembra `free` (1 sucursal, 50 productos, 3 miembros) y `pro` (5, 1000, 20);
   - `subscriptions (id, organization_id unique, plan_id, status check in ('trialing','active','past_due','suspended'), current_period_end, created_at, updated_at)`.
 - `requireMembership` agrega `plan: { id, status, limits }` a `TenantContext` (un join, sin consulta extra).
 - `modules/subscriptions/limits.ts`: `assertWithinLimit(deps, 'branches' | 'products' | 'members')` cuenta filas activas y lanza `PLAN_LIMIT_REACHED` con mensaje accionable ("Tu plan permite 1 sucursal. Cambia de plan para agregar más.").

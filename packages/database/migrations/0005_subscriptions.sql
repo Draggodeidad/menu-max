@@ -22,7 +22,8 @@ CREATE TABLE `subscriptions` (
 --> statement-breakpoint
 CREATE UNIQUE INDEX `subscriptions_organization_id_unique` ON `subscriptions` (`organization_id`);--> statement-breakpoint
 CREATE INDEX `subscriptions_plan_id_idx` ON `subscriptions` (`plan_id`);--> statement-breakpoint
--- Planes del MVP (T14). Valores provisionales: un humano los confirma antes de fusionar.
+-- Planes del piloto (T14), aprobados el 2026-11-14. `max_members` cuenta miembros activos,
+-- incluido el dueño. Cambiarlos después de fusionar requiere una migración nueva.
 INSERT INTO `plans` (`id`, `name`, `max_branches`, `max_products`, `max_members`, `active`) VALUES
-	('free', 'Gratis', 1, 60, 3, 1),
+	('free', 'Gratis', 1, 50, 3, 1),
 	('pro', 'Pro', 5, 1000, 20, 1);
