@@ -5,6 +5,7 @@ import {
   PublicMenuDto,
   PublicMenuParams,
   PublicMenuVersionDto,
+  QrQuery,
   ThemeDto,
   UpdateSlugInput,
   UpdateThemeInput,
@@ -31,6 +32,7 @@ import {
 import {
   changeSlug,
   getPublicMenu,
+  getMenuQr,
   getPublicMenuVersion,
   getTheme,
   publish,
@@ -203,6 +205,52 @@ export const storefrontRoutes = new Hono<TenantEnv>()
     requireBranch(),
     async (c) => c.json(await unpublish(deps(c), branchId(c))),
   );
+
+// Se monta en `orgScoped` (`/v1/orgs/:orgId/branches/:branchId/qr`), igual que `storefrontRoutes`.
+export const qrRoutes = new Hono<TenantEnv>().get(
+  "/",
+  describeRoute({
+    tags,
+    summary: "Descargar el QR del menú o de una mesa",
+    description:
+      "SVG listo para imprimir (ADR-017): apunta a `/m/{slug}` en WEB o, con `mesa`, a `/m/{slug}?mesa={n}`. Corrección de errores nivel M y margen de 4 módulos; sin texto ni scripts. Solo con el menú publicado. El QR no cambia al editar el catálogo.",
+    security: privateSecurity,
+    parameters: [
+      ...branchParameters,
+      {
+        name: "mesa",
+        in: "query",
+        required: false,
+        description: "Número de mesa, de 1 a `tableCount` de la sucursal.",
+        schema: { type: "integer", minimum: 1 },
+      },
+    ],
+    responses: {
+      200: {
+        description: "QR en SVG. `Cache-Control: private, max-age=300`.",
+        content: { "image/svg+xml": { schema: { type: "string" } } },
+      },
+      400: jsonResponse(
+        "`mesa` no es un número de mesa de la sucursal; `fieldErrors.mesa` dice cuáles valen.",
+        ErrorResponse,
+      ),
+      403: forbidden,
+      ...orgScopedResponses,
+      404: menuNotFound,
+      422: jsonResponse("El menú no está publicado.", ErrorResponse),
+    },
+  }),
+  requirePermission("organization:read"),
+  requireBranch(),
+  validator("query", QrQuery, rejectWith(QrQuery)),
+  async (c) => {
+    const svg = await getMenuQr(deps(c), branchId(c), c.req.valid("query").mesa);
+    return c.body(svg, 200, {
+      "content-type": "image/svg+xml; charset=utf-8",
+      "cache-control": "private, max-age=300",
+    });
+  },
+);
 
 // Se monta en `/v1/public/menus`: sin sesión, con el rate limit `public`.
 export const publicMenuRoutes = new Hono<AppEnv>()

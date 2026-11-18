@@ -69,6 +69,22 @@ export async function findBusinessNameOfBranch(db: Db, tenant: TenantContext, br
 }
 
 /**
+ * Lo que necesita el QR (T19): slug y estado del menú de la sucursal, y sus mesas. Sin menú (una
+ * sucursal anterior al catálogo), `slug` y `status` vienen en `null`.
+ */
+export function findQrTarget(db: Db, tenant: TenantContext, branchId: string) {
+  return db
+    .select({ slug: menus.slug, status: menus.status, tableCount: branches.tableCount })
+    .from(branches)
+    .leftJoin(
+      menus,
+      and(eq(menus.organizationId, branches.organizationId), eq(menus.branchId, branches.id)),
+    )
+    .where(and(eq(branches.organizationId, tenant.orgId), eq(branches.id, branchId)))
+    .get();
+}
+
+/**
  * Slugs existentes iguales a `base` o con la forma `base-…`. El slug es único entre todos los
  * negocios, así que esta lectura (solo de slugs) no filtra por organización.
  */
