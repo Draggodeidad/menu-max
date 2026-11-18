@@ -103,6 +103,20 @@ export type EffectiveTheme = ThemeColors & {
 };
 
 /**
+ * Colores que vería el comensal con este plan, sin corregir el contraste: lo que valida
+ * `PUT /theme`. Sin `customTheme`, fondo y texto son los del preset.
+ */
+export function themeColors(stored: StoredTheme, features: PlanFeatures): ThemeColors {
+  const base = THEME_PRESET_COLORS[stored.preset];
+  const custom = features.customTheme;
+  return {
+    primaryColor: stored.primaryColor ?? base.primaryColor,
+    backgroundColor: (custom ? stored.backgroundColor : null) ?? base.backgroundColor,
+    textColor: (custom ? stored.textColor : null) ?? base.textColor,
+  };
+}
+
+/**
  * Lo que ve el comensal según el plan vigente. Sin `customTheme`: preset y color principal, con
  * fondo, texto, fuente y acomodo del preset y sin imágenes; sin `removeBranding`: sello visible.
  * Lo guardado no cambia: al volver a `pro` reaparece. Si el color principal no contrasta con el
@@ -111,16 +125,15 @@ export type EffectiveTheme = ThemeColors & {
 export function effectiveTheme(stored: StoredTheme, features: PlanFeatures): EffectiveTheme {
   const base = THEME_PRESET_COLORS[stored.preset];
   const custom = features.customTheme;
-  const backgroundColor = (custom ? stored.backgroundColor : null) ?? base.backgroundColor;
-  const textColor = (custom ? stored.textColor : null) ?? base.textColor;
-  const primary = stored.primaryColor ?? base.primaryColor;
+  const colors = themeColors(stored, features);
   const primaryColor =
-    contrastRatio(primary, backgroundColor) >= MIN_CONTRAST_RATIO ? primary : base.primaryColor;
+    contrastRatio(colors.primaryColor, colors.backgroundColor) >= MIN_CONTRAST_RATIO
+      ? colors.primaryColor
+      : base.primaryColor;
   return {
     preset: stored.preset,
+    ...colors,
     primaryColor,
-    backgroundColor,
-    textColor,
     fontPreset: custom ? stored.fontPreset : DEFAULT_THEME.fontPreset,
     productLayout: custom ? stored.productLayout : DEFAULT_THEME.productLayout,
     logoAssetId: custom ? stored.logoAssetId : null,

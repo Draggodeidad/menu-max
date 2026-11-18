@@ -48,6 +48,7 @@ import {
   effectiveTheme,
   firstFreeSlug,
   slugBase,
+  themeColors,
   type StoredTheme,
 } from "./theme";
 
@@ -297,7 +298,7 @@ export async function updateTheme(
   if (missing) throw imageMissing(missing);
 
   const theme = mergeTheme(storedOf(row), input);
-  const errors = contrastErrors(effectiveTheme(theme, deps.tenant.plan.features));
+  const errors = contrastErrors(themeColors(theme, deps.tenant.plan.features));
   if (errors) {
     throw new AppError(
       "VALIDATION_FAILED",
