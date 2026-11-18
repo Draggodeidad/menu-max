@@ -371,6 +371,22 @@ El enlace del correo abre `/invitacion?token=…`. La pantalla usa el contenedor
 
 El horario se ve antes de agregar nada. Si el negocio está cerrado, los botones `+` se deshabilitan y la cabecera dice a qué hora abre.
 
+**Acomodo de productos** (`theme.productLayout`; en `free` siempre `list`):
+
+| Valor            | Móvil                                                                                            | Desktop (`lg`)        | Para qué                                     |
+| ---------------- | ------------------------------------------------------------------------------------------------ | --------------------- | -------------------------------------------- |
+| `list` (default) | Una columna: nombre, descripción y precio a la izquierda; foto cuadrada 72 px y `+` a la derecha | Dos columnas de filas | Menús largos o sin fotos: se escanean rápido |
+| `grid`           | Dos columnas de tarjetas: foto 4:3 arriba, nombre (2 líneas máx.), precio y `+`                  | Tres columnas         | Menús cortos con buenas fotos                |
+
+- En `grid`, un producto sin foto usa `--brand-tint` en el área de la foto con la inicial del producto; nunca una imagen genérica.
+- Ambos acomodos usan el mismo `MenuView`: cambia la plantilla de la tarjeta, no el flujo ni los controles.
+
+**Estados que dicta la API** (`acceptingOrders` y `notAcceptingReason` de `PublicMenuDto`):
+
+- `closed`: lo de arriba (botones `+` deshabilitados y la hora a la que abre).
+- `unverified` o `suspended`: el menú se ve completo, los `+` se deshabilitan y la cabecera dice «Este menú todavía no recibe pedidos». No se explica el motivo al comensal.
+- `inactive` (gracia de 21 días vencida sin dueño verificado, ADR-008): la API no manda categorías; una sola tarjeta centrada con «Este menú aún no está activo» y el teléfono del negocio, si existe.
+
 **J · Pedido (checkout)**: resumen con −/+, modalidad (fija y oculta si viene `?mesa`), nombre, teléfono, dirección solo para domicilio, "Pagas en efectivo al recibir", "Recordar mis datos", botón fijo "Enviar pedido · $240". Idempotency key en input oculto generado en `load`.
 
 **K · Seguimiento**: línea de estado vertical (`<ol>`, es una secuencia real), polling 10 s que se detiene en estados finales.

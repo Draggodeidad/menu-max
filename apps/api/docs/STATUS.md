@@ -58,7 +58,7 @@
 | ------------------------------------------------------------------------------ | ------------------- | --------------------- | ------------------------------------------------------------------------ |
 | Proveedor de correo                                                            | 020 (reemplaza 009) | T08                   | Sí: Resend                                                               |
 | Turnstile en login tras 3 fallos                                               | 010                 | T09 (solo esa parte)  | No                                                                       |
-| Días de gracia sin verificar                                                   | 008                 | T18 (solo esa parte)  | No                                                                       |
+| Días de gracia sin verificar                                                   | 008                 | T18 (solo esa parte)  | Sí: 21 días desde el alta de la organización; implementado en T18 (#65)  |
 | TTL de la caché del menú                                                       | 014                 | Lado WEB              | No                                                                       |
 | Límites de cada plan                                                           | —                   | T14, T20b             | Sí: `free` 1/50/3 (miembros activos, incluido el dueño), `pro` 5/1000/20 |
 | Presupuesto mensual de avisos de WhatsApp por organización (valor por defecto) | —                   | T24                   | No: falta confirmar categoría y tarifa de Meta                           |
