@@ -451,3 +451,13 @@ Cuando alguien intenta crear una cuenta en `/crear` con un correo que ya está r
 - **Por qué no se cambia el mensaje del `409`.** El texto «Ya tienes una cuenta con este correo. Entra para publicar tu menú.» no dice que se envió un correo. Así sigue siendo cierto aunque la cuota impida el aviso, y WEB no depende de esta task.
 - **Por qué esa cuota.** Es más estricta que el reenvío de verificación (1 cada 60 s, 5 por día) porque el destinatario no pidió el correo. Un tercero que conoce un correo solo puede provocar 3 avisos al día. Turnstile y la cuota de 3 altas por IP ya acotan el volumen total.
 - **Prerrequisito para salir a producción:** el dominio emisor de Resend dado de alta (pendiente de T08). Sin él, el aviso se encola y el consumidor lo reintenta hasta la DLQ, como cualquier otro correo.
+- **Decisiones al implementar (acordadas el 2026-11-17):**
+  - Todo el aviso corre con `waitUntil`, no solo el encolado: leer `email_status`, la cuota y encolar. El `409` sale en el mismo tiempo que antes y una falla de D1 en esos pasos no lo vuelve `500`. Esa falla se registra como `auth.existing_account_notice_failed`, solo con `requestId`; una falla al encolar sigue siendo `email.enqueue_failed`.
+  - Primero se revisa `undeliverable` y después la cuota: una cuenta que no recibe correo no gasta cuota.
+  - Las dos cuotas se cuentan en orden: un intento que excede la de la hora no cuenta en la del día.
+  - La cuota se gasta aunque falle el encolado. No se reintenta: un correo de auth perdido es aceptable (ADR-011).
+  - Si no hay usuario con ese correo (solo en una carrera), no se envía nada ni se registra.
+  - `auth.existing_account_notified` se registra al pasar las cuotas; el resultado de encolar lo dan `email.enqueued` y `email.enqueue_failed`.
+  - El correo lleva dos enlaces, así que las plantillas admiten varias acciones; las existentes no cambian. `renderEmail` devuelve `links` y el adaptador de consola imprime cada uno (`console.ts`, fuera de la lista de archivos esperados).
+  - `sendAuthEmail` recibe el `data` de cada plantilla de auth en lugar de solo `url`.
+  - `callApi` (`test/isolation.ts`) acepta `settle` para esperar lo que la petición dejó en `waitUntil`; sin eso no se puede probar que algo _no_ se encoló.

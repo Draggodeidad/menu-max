@@ -11,8 +11,13 @@ import { hit, peek } from "../../shared/rate-counters";
 import { listMemberships } from "../organizations/organizations.service";
 import { refreshMenusOfOwner } from "../storefront/storefront.service";
 import { createAuth, sendAuthEmail, type AuthRequestOptions, type AuthUser } from "./auth";
-import { findEmailState, findUserIdByEmail, markEmailVerified } from "./auth.repository";
-import { resetPasswordLink } from "./web-links";
+import {
+  findEmailState,
+  findEmailStatusByEmail,
+  findUserIdByEmail,
+  markEmailVerified,
+} from "./auth.repository";
+import { resetPasswordLink, signInLink } from "./web-links";
 
 export type AuthDeps = {
   env: Env;
@@ -234,6 +239,79 @@ export async function requestPasswordReset(
   });
 }
 
+// Aviso de cuenta existente (T20c, ADR-010): 1 por hora y 3 por día por correo normalizado. Más
+// estricta que el reenvío de verificación porque el destinatario no pidió el correo.
+const EXISTING_ACCOUNT_NOTICES_PER_HOUR = 1;
+const EXISTING_ACCOUNT_NOTICES_PER_DAY = 3;
+
+type NoticeDeps = Pick<AuthDeps, "env" | "requestId" | "waitUntil">;
+
+async function sendExistingAccountNotice(deps: NoticeDeps, rawEmail: string, now: number) {
+  const email = normalizeEmail(rawEmail);
+  const db = createDb(deps.env);
+  const account = await findEmailStatusByEmail(db, email);
+  if (!account) return;
+  if (account.emailStatus === "undeliverable") {
+    log.info("auth.existing_account_notice_skipped", {
+      requestId: deps.requestId,
+      reason: "undeliverable",
+    });
+    return;
+  }
+
+  // La cuota diaria solo cuenta los intentos que pasaron la de la hora.
+  const digest = await emailDigest(email);
+  const allowed =
+    (
+      await hit(
+        db,
+        `account-exists-hour:${digest}`,
+        HOUR_MS,
+        EXISTING_ACCOUNT_NOTICES_PER_HOUR,
+        now,
+      )
+    ).allowed &&
+    (await hit(db, `account-exists-day:${digest}`, DAY_MS, EXISTING_ACCOUNT_NOTICES_PER_DAY, now))
+      .allowed;
+  if (!allowed) {
+    log.warn("auth.existing_account_notice_skipped", {
+      requestId: deps.requestId,
+      reason: "quota",
+    });
+    return;
+  }
+
+  log.info("auth.existing_account_notified", { requestId: deps.requestId });
+  // Sin `waitUntil`: ya corre después de responder. Una falla al encolar se registra
+  // (`email.enqueue_failed`) y no se reintenta (ADR-011).
+  await sendAuthEmail(
+    deps.env,
+    { requestId: deps.requestId },
+    {
+      to: email,
+      template: "account-exists",
+      data: { signInUrl: signInLink(deps.env), resetUrl: resetPasswordLink(deps.env) },
+    },
+  );
+}
+
+/**
+ * Avisa al dueño de un correo ya registrado que alguien intentó crear una cuenta con él (ADR-008,
+ * T20c). Todo corre con `waitUntil`, después de responder: la respuesta de quien intenta
+ * registrarse no cambia ni en cuerpo ni en tiempo, y nunca dice si el aviso salió. No envía a una
+ * cuenta `undeliverable` ni por encima de la cuota. `now` solo lo fijan las pruebas.
+ */
+export function notifyExistingAccount(deps: NoticeDeps, email: string, now = Date.now()): void {
+  deps.waitUntil(
+    sendExistingAccountNotice(deps, email, now).catch((error: unknown) =>
+      log.error("auth.existing_account_notice_failed", {
+        requestId: deps.requestId,
+        error: error instanceof Error ? error.name : "unknown",
+      }),
+    ),
+  );
+}
+
 /** Cambia la contraseña y avisa por correo (`password-changed`) después de responder. */
 export async function changePassword(deps: AuthDeps, request: Request): Promise<Response> {
   const response = await forwardAuth(deps.env, request, { requestId: deps.requestId });
@@ -246,7 +324,7 @@ export async function changePassword(deps: AuthDeps, request: Request): Promise<
     await sendAuthEmail(
       deps.env,
       { requestId: deps.requestId, waitUntil: deps.waitUntil },
-      { to: email, template: "password-changed", url: resetPasswordLink(deps.env) },
+      { to: email, template: "password-changed", data: { url: resetPasswordLink(deps.env) } },
     );
   } else {
     log.error("auth.password_changed_without_user", { requestId: deps.requestId });

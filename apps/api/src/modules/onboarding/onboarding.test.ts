@@ -23,6 +23,8 @@ import { createOrg, createUser } from "../../../test/factories";
 import { callApi } from "../../../test/isolation";
 import { getEnv } from "../../env";
 import { createDb } from "../../infrastructure/db";
+import { newId } from "../../shared/ids";
+import { notifyExistingAccount } from "../auth/auth.service";
 import { TRIAL_DAYS } from "./onboarding.service";
 
 const SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
@@ -64,6 +66,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 const db = () => createDb(getEnv(env));
@@ -82,11 +85,12 @@ function onboardingBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** Bindings con una cola falsa para inspeccionar lo que se encola. */
-function withJobs() {
+/** Bindings con una cola falsa para inspeccionar lo que se encola; `failing`: la cola rechaza. */
+function withJobs(options: { failing?: boolean } = {}) {
   const sent: JobMessage[] = [];
   const JOBS = {
     send: (message: JobMessage) => {
+      if (options.failing) return Promise.reject(new Error("queue unavailable"));
       sent.push(message);
       return Promise.resolve();
     },
@@ -117,6 +121,8 @@ function onboard(
       headers,
       cookie: options.cookie,
       bindings: options.jobs?.bindings,
+      // Con cola falsa, espera lo encolado con `waitUntil` para poder inspeccionarlo.
+      settle: options.jobs !== undefined,
     }),
   );
 }
@@ -151,6 +157,35 @@ async function orgsOf(userId: string) {
 }
 
 const randomIp = () => `2001:db8:1::${crypto.randomUUID().slice(0, 4)}`;
+
+// Aviso al correo que ya tiene cuenta (T20c).
+const HOUR_MS = 60 * 60 * 1000;
+const ACCOUNT_EXISTS_MESSAGE = "Ya tienes una cuenta con este correo. Entra para publicar tu menú.";
+
+const notices = (jobs: ReturnType<typeof withJobs>) =>
+  jobs.sent.filter((job) => job.template === "account-exists");
+
+function captureLogs() {
+  const lines: string[] = [];
+  for (const level of ["info", "warn", "error"] as const) {
+    vi.spyOn(console, level).mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+  }
+  return lines;
+}
+
+async function expectAccountExists(response: Response) {
+  const error = await expectError(response, 409, "CONFLICT");
+  // El mismo cuerpo que en T20: nada indica si el aviso salió.
+  expect(error).toEqual({
+    code: "CONFLICT",
+    message: ACCOUNT_EXISTS_MESSAGE,
+    requestId: error.requestId,
+  });
+}
+
+const bodyFor = (email: string) => onboardingBody({ account: { email, password } });
 
 describe("POST /v1/onboarding", () => {
   it("una petición crea cuenta, organización, sucursal y menú publicado con sus productos", async () => {
@@ -472,6 +507,163 @@ describe("POST /v1/onboarding", () => {
         "VALIDATION_FAILED",
       );
       await expectError(await onboard(onboardingBody({ products: [] })), 400, "VALIDATION_FAILED");
+    });
+  });
+
+  describe("aviso al correo que ya tiene cuenta (T20c)", () => {
+    it("correo ya registrado → mismo 409 y account-exists a ese correo, con enlaces sin token", async () => {
+      const user = await createUser();
+      const jobs = withJobs();
+      const logs = captureLogs();
+
+      await expectAccountExists(await onboard(bodyFor(user.email), { jobs }));
+
+      expect(jobs.sent).toEqual([
+        {
+          type: "email.send",
+          id: expect.any(String),
+          to: user.email,
+          template: "account-exists",
+          data: {
+            signInUrl: `${env.WEB_ORIGIN}/entrar`,
+            resetUrl: `${env.WEB_ORIGIN}/restablecer`,
+          },
+        },
+      ]);
+      expect(logs.some((line) => line.includes('"event":"auth.existing_account_notified"'))).toBe(
+        true,
+      );
+      expect(logs.join("\n")).not.toContain(user.email);
+    });
+
+    it("misma llave y mismo cuerpo sin sesión → mismo 409 y el mismo aviso", async () => {
+      const key = crypto.randomUUID();
+      const body = onboardingBody();
+      const jobs = withJobs();
+      expect((await onboard(body, { key, jobs })).status).toBe(201);
+
+      await expectAccountExists(await onboard(body, { key, jobs }));
+
+      expect(jobs.sent.map((job) => job.template)).toEqual(["verify-email", "account-exists"]);
+      expect(notices(jobs)[0]?.to).toBe(body.account.email);
+    });
+
+    it("segundo intento dentro de la misma hora → 409 idéntico sin encolar", async () => {
+      const user = await createUser();
+      const jobs = withJobs();
+      const logs = captureLogs();
+
+      await expectAccountExists(await onboard(bodyFor(user.email), { jobs }));
+      await expectAccountExists(await onboard(bodyFor(user.email), { jobs }));
+
+      expect(notices(jobs)).toHaveLength(1);
+      expect(
+        logs.some(
+          (line) =>
+            line.includes('"event":"auth.existing_account_notice_skipped"') &&
+            line.includes('"reason":"quota"'),
+        ),
+      ).toBe(true);
+    });
+
+    it("el cuarto intento del día no encola, aunque sea en otra hora", async () => {
+      const user = await createUser();
+      const jobs = withJobs();
+      // Tres avisos en otras horas del mismo día UTC (ventanas fijas, ADR-010).
+      const now = Date.now();
+      const dayStart = Math.floor(now / DAY_MS) * DAY_MS;
+      const currentHour = Math.floor((now - dayStart) / HOUR_MS);
+      const otherHours = [0, 1, 2, 3].filter((hour) => hour !== currentHour).slice(0, 3);
+      const pending: Promise<unknown>[] = [];
+      for (const hour of otherHours) {
+        notifyExistingAccount(
+          { env: jobs.bindings, requestId: "prueba", waitUntil: (task) => pending.push(task) },
+          user.email,
+          dayStart + hour * HOUR_MS,
+        );
+      }
+      await Promise.all(pending);
+      expect(notices(jobs)).toHaveLength(3);
+
+      await expectAccountExists(await onboard(bodyFor(user.email), { jobs }));
+
+      expect(notices(jobs)).toHaveLength(3);
+    });
+
+    it("cuenta con email_status undeliverable → 409 sin encolar", async () => {
+      const user = await createUser();
+      await db().update(users).set({ emailStatus: "undeliverable" }).where(eq(users.id, user.id));
+      const jobs = withJobs();
+      const logs = captureLogs();
+
+      await expectAccountExists(await onboard(bodyFor(user.email), { jobs }));
+
+      expect(jobs.sent).toEqual([]);
+      expect(logs.some((line) => line.includes('"reason":"undeliverable"'))).toBe(true);
+    });
+
+    it("falla al encolar → sigue siendo 409 CONFLICT y se registra email.enqueue_failed", async () => {
+      const user = await createUser();
+      const jobs = withJobs({ failing: true });
+      const logs = captureLogs();
+
+      await expectAccountExists(await onboard(bodyFor(user.email), { jobs }));
+
+      expect(
+        logs.some(
+          (line) =>
+            line.includes('"event":"email.enqueue_failed"') &&
+            line.includes('"template":"account-exists"'),
+        ),
+      ).toBe(true);
+    });
+
+    it("correo nuevo → solo se encola verify-email", async () => {
+      const jobs = withJobs();
+
+      expect((await onboard(onboardingBody(), { jobs })).status).toBe(201);
+
+      expect(jobs.sent.map((job) => job.template)).toEqual(["verify-email"]);
+    });
+
+    it("Turnstile inválido → no se encola ningún aviso", async () => {
+      const user = await createUser();
+      const jobs = withJobs();
+
+      await expectError(
+        await onboard(bodyFor(user.email), {
+          jobs,
+          turnstile: "2x0000000000000000000000000000000AA",
+        }),
+        400,
+        "VALIDATION_FAILED",
+      );
+
+      expect(jobs.sent).toEqual([]);
+    });
+
+    it("cuota de altas por IP excedida → no se encola ningún aviso", async () => {
+      const user = await createUser();
+      const ip = randomIp();
+      const allowed = await Promise.all(
+        [1, 2, 3].map(() => onboard(onboardingBody(), { ip }).then((response) => response.status)),
+      );
+      expect(allowed).toEqual([201, 201, 201]);
+      const jobs = withJobs();
+
+      await expectError(await onboard(bodyFor(user.email), { ip, jobs }), 429, "RATE_LIMITED");
+
+      expect(jobs.sent).toEqual([]);
+    });
+
+    it("correo desechable ya registrado → no se encola ningún aviso", async () => {
+      const email = newEmail("mailinator.com");
+      await db().insert(users).values({ id: newId(), email, name: "Prueba", emailVerified: true });
+      const jobs = withJobs();
+
+      await expectError(await onboard(bodyFor(email), { jobs }), 400, "VALIDATION_FAILED");
+
+      expect(jobs.sent).toEqual([]);
     });
   });
 });

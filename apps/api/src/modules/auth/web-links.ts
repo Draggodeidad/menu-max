@@ -4,6 +4,7 @@ import type { Env } from "../../env";
 // apuntan a la API: WEB recibe el token y lo resuelve llamando a la API por Service Binding.
 // Las rutas deben coincidir con `apps/web/src/routes` (pantallas pendientes en DESIGN.md §7).
 export const WEB_ROUTES = {
+  signIn: "/entrar",
   verifyEmail: "/verificar-correo",
   resetPassword: "/restablecer",
   invitation: "/invitacion",
@@ -14,6 +15,11 @@ function webLink(env: Pick<Env, "WEB_ORIGIN">, path: string, token?: string): st
   const url = new URL(path, env.WEB_ORIGIN);
   if (token !== undefined) url.searchParams.set("token", token);
   return url.href;
+}
+
+/** `${WEB_ORIGIN}/entrar`, sin token ni correo (aviso de cuenta existente, T20c). */
+export function signInLink(env: Pick<Env, "WEB_ORIGIN">): string {
+  return webLink(env, WEB_ROUTES.signIn);
 }
 
 /** `${WEB_ORIGIN}/verificar-correo?token=…` */

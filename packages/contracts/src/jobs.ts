@@ -10,6 +10,7 @@ export const EMAIL_TEMPLATES = [
   "password-changed",
   "trial-ending",
   "trial-ended",
+  "account-exists",
 ] as const;
 
 export const EmailTemplate = z.enum(EMAIL_TEMPLATES);
@@ -72,6 +73,12 @@ export const EmailSendJob = z.discriminatedUnion("template", [
   EmailSendBase.extend({
     template: z.literal("trial-ended"),
     data: z.strictObject(TrialPlanData),
+  }),
+  // Aviso a un correo que ya tiene cuenta cuando alguien intenta registrarse con él (T20c).
+  // Sin datos del intento: solo los enlaces para entrar o restablecer, ninguno con token.
+  EmailSendBase.extend({
+    template: z.literal("account-exists"),
+    data: z.strictObject({ signInUrl: Link, resetUrl: Link }),
   }),
 ]);
 export type EmailSendJob = z.infer<typeof EmailSendJob>;

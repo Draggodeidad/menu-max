@@ -71,6 +71,18 @@ describe("consumidor de jobs", () => {
     ["no es objeto", "hola"],
     ["tipo desconocido", { ...job(), type: "sms.send" }],
     ["sin destinatario", { ...job(), to: undefined }],
+    [
+      "account-exists sin signInUrl",
+      { ...job(), template: "account-exists", data: { resetUrl: link } },
+    ],
+    [
+      "account-exists con campos extra",
+      {
+        ...job(),
+        template: "account-exists",
+        data: { signInUrl: link, resetUrl: link, businessName: "Tacos El Güero" },
+      },
+    ],
   ])("manda a JOBS_DLQ un mensaje inválido (%s) sin reintentar", async (_case, body) => {
     const { JOBS_DLQ, send } = fakeDlq();
     const spy = fakeResend(accepted);

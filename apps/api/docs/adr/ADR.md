@@ -232,7 +232,7 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 - Filtros antes de crear la cuenta: sintaxis Zod, dominios desechables (lista estática actualizada por script) y MX vía DNS-over-HTTPS (`cloudflare-dns.com`), resultado guardado 24 h en `email_domain_checks`.
 - No se hace sondeo SMTP.
 - Rebote duro o queja reportados por el proveedor → `users.email_status = 'undeliverable'` y no se vuelve a enviar.
-- Sin enumeración: reset y reenvío responden siempre lo mismo; registrarse con un correo existente envía un aviso a ese correo.
+- Sin enumeración: reset y reenvío responden siempre lo mismo; registrarse con un correo existente envía un aviso a ese correo. _Implementado en T20c: plantilla `account-exists` con enlaces a `/entrar` y `/restablecer`, sujeta a la cuota «Aviso de cuenta existente» de ADR-010; el `409` del onboarding no cambia._
 
 **Consecuencias.**
 
@@ -299,15 +299,16 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 
 **Cuotas exactas**
 
-| Acción                 | Límite                       | Llave               |
-| ---------------------- | ---------------------------- | ------------------- |
-| Crear cuenta           | 3 por día                    | IP                  |
-| Reenviar verificación  | 1 cada 60 s, 5 por día       | Usuario             |
-| Restablecer contraseña | 3 por hora                   | Correo normalizado  |
-| Login fallido          | 5 en 15 min, luego Turnstile | Correo + IP         |
-| Pedido público         | 3 en 10 min                  | Teléfono + sucursal |
-| Pedido público         | 30 por hora                  | IP                  |
-| Invitaciones           | 20 por día                   | Organización        |
+| Acción                    | Límite                       | Llave                     |
+| ------------------------- | ---------------------------- | ------------------------- |
+| Crear cuenta              | 3 por día                    | IP                        |
+| Reenviar verificación     | 1 cada 60 s, 5 por día       | Usuario                   |
+| Restablecer contraseña    | 3 por hora                   | Correo normalizado        |
+| Aviso de cuenta existente | 1 por hora, 3 por día        | Correo normalizado (hash) |
+| Login fallido             | 5 en 15 min, luego Turnstile | Correo + IP               |
+| Pedido público            | 3 en 10 min                  | Teléfono + sucursal       |
+| Pedido público            | 30 por hora                  | IP                        |
+| Invitaciones              | 20 por día                   | Organización              |
 
 - Las ventanas de `rate_counters` son fijas y alineadas a UTC: "por día" se reinicia a las 00:00 UTC (18:00 en Ciudad de México) y "por hora" al inicio de cada hora UTC. Al exceder una cuota, `Retry-After` indica cuánto falta para que cierre esa ventana.
 - Pedido: máximo 50 líneas, 99 unidades por línea; sucursal abierta, modalidad activa y zona atendida.

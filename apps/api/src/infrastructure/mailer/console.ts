@@ -9,13 +9,13 @@ import { renderEmail } from "./templates";
 export function createConsoleMailer(): Mailer {
   return {
     send(mail) {
-      const { subject } = renderEmail(mail);
+      const { subject, links } = renderEmail(mail);
       console.info(
         [
           "── Correo (development; no se envió) ──",
           `Para: ${mail.to}`,
           `Asunto: ${subject}`,
-          `Enlace: ${mail.data.url}`,
+          ...links.map((link) => `Enlace: ${link}`),
         ].join("\n"),
       );
       return Promise.resolve();
