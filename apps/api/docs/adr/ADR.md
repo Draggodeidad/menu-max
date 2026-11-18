@@ -17,7 +17,7 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 | [005](#adr-005--better-auth-solo-para-identidad)                      | Better Auth solo para identidad                          | Aceptado                     | 2026-11-11 |
 | [006](#adr-006--multi-tenancy-por-organización-con-tenant-en-la-ruta) | Multi-tenancy por organización con tenant en la ruta     | Aceptado (enmienda T12b)     | 2026-11-11 |
 | [007](#adr-007--autorización-rbac--abac-con-código-propio)            | Autorización RBAC + ABAC con código propio               | Aceptado                     | 2026-11-11 |
-| [008](#adr-008--verificación-de-correo-no-bloqueante)                 | Verificación de correo no bloqueante                     | Aceptado (gracia: Propuesto) | 2026-11-11 |
+| [008](#adr-008--verificación-de-correo-no-bloqueante)                 | Verificación de correo no bloqueante                     | Aceptado (gracia de 21 días) | 2026-11-11 |
 | [009](#adr-009--correo-transaccional-con-cloudflare-email-service)    | Correo con Cloudflare Email Service tras puerto `Mailer` | Reemplazado por ADR-020      | 2026-11-11 |
 | [010](#adr-010--anti-abuso-en-capas)                                  | Anti-abuso en capas                                      | Aceptado (login: Propuesto)  | 2026-11-11 |
 | [011](#adr-011--una-cola-con-dlq-y-outbox-solo-para-pedidos)          | Una cola con DLQ; outbox solo para pedidos               | Aceptado                     | 2026-11-11 |
@@ -214,18 +214,18 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 
 ## ADR-008 — Verificación de correo no bloqueante
 
-**Estado:** Aceptado · Período de gracia: **Propuesto** · **Fecha:** 2026-11-11
+**Estado:** Aceptado · Período de gracia: **Aceptado** (enmienda 2026-11-17, 21 días) · **Fecha:** 2026-11-11
 
 **Contexto.** DESIGN.md pide "valor antes que cuenta": el dueño publica sin fricción. Pero un bot que crea cuentas no debe obtener un menú que recibe pedidos ni enviar WhatsApp. La única prueba de que un correo existe es que su dueño haga clic en un enlace.
 
 **Decisión.**
 
-| Estado                                    | Puede                                         | No puede                                                          |
-| ----------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------- |
-| Sin verificar                             | Entrar, editar menú, ver QR, pedido de prueba | Recibir pedidos de comensales, activar WhatsApp, invitar miembros |
-| Verificada                                | Todo según su rol                             | —                                                                 |
-| Sin verificar vencida (Propuesto: 7 días) | Entrar y pedir reenvío                        | Su menú público muestra "Este menú aún no está activo"            |
-| Suspendida                                | Nada; sesiones revocadas                      | —                                                                 |
+| Estado                          | Puede                                         | No puede                                                          |
+| ------------------------------- | --------------------------------------------- | ----------------------------------------------------------------- |
+| Sin verificar                   | Entrar, editar menú, ver QR, pedido de prueba | Recibir pedidos de comensales, activar WhatsApp, invitar miembros |
+| Verificada                      | Todo según su rol                             | —                                                                 |
+| Sin verificar vencida (21 días) | Entrar y pedir reenvío                        | Su menú público muestra "Este menú aún no está activo"            |
+| Suspendida                      | Nada; sesiones revocadas                      | —                                                                 |
 
 - El enlace de verificación vence en 24 h. Reenvío: 1 cada 60 s y 5 por día por cuenta.
 - Filtros antes de crear la cuenta: sintaxis Zod, dominios desechables (lista estática actualizada por script) y MX vía DNS-over-HTTPS (`cloudflare-dns.com`), resultado guardado 24 h en `email_domain_checks`.
@@ -238,7 +238,25 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 - `requireVerifiedEmail` en rutas de publicación para comensales, WhatsApp e invitaciones.
 - El onboarding (`POST /v1/onboarding`) crea usuario con Better Auth y luego un `db.batch` con organización, membresía `owner`, negocio, sucursal, menú y productos. Si el batch falla, `/app` reanuda con la misma clave de idempotencia.
 
-**Pendiente.** Confirmar los días de gracia (3, 7 o 14).
+**Enmienda (2026-11-17).** Se acepta el período de gracia, que estaba `Propuesto`. El resto de la decisión sigue igual.
+
+- **Duración:** 21 días naturales desde `organizations.created_at`.
+- **Cuándo vence:** al terminar ese plazo, si ningún `owner` activo de la organización tiene el correo verificado. Es la misma condición que `acceptingOrders` usa para el motivo `unverified` (T18).
+- **Durante la gracia** no cambia nada respecto a T18: el menú publicado se ve, pero `acceptingOrders` es `false` con motivo `unverified`.
+- **Con la gracia vencida:**
+  - la lectura pública (`GET /v1/public/menus/:slug`) responde el menú como inactivo, sin categorías ni productos;
+  - WEB muestra «Este menú aún no está activo» (`DESIGN.md §7.2`);
+  - el panel sigue funcionando: el dueño entra, edita y pide reenvío.
+- **No se borra nada:** al verificar el correo, el menú vuelve a mostrarse en la siguiente lectura, sin otra acción. La caché de WEB lo refleja porque verificar sube `menu_version` de los menús de la organización.
+- **Por qué 21 días y no 3, 7 o 14:**
+  - el riesgo durante la gracia es bajo: un menú sin dueño verificado no recibe pedidos ni envía WhatsApp;
+  - el plazo da tres semanas a negocios pequeños que no revisan su correo a diario y se instalan el mismo día en que imprimen sus QR;
+  - el reenvío ya está acotado (5 por día);
+  - 21 días limitan cuánto tiempo puede estar publicado un menú de una cuenta falsa con datos de contacto inventados.
+- **Implementación:** pendiente en el backend, con su propia task o como ampliación de T18.
+  - La regla es una función pura junto a `acceptingOrders`.
+  - Necesita leer `organizations.created_at` en la consulta pública, la que ya calcula el dueño verificado.
+  - Necesita subir `menu_version` cuando un `owner` verifica su correo.
 
 ---
 
