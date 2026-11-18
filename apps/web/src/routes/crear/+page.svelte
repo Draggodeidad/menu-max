@@ -31,6 +31,7 @@
   let whatsapp = $state(inicial?.whatsapp ?? "");
   /* svelte-ignore state_referenced_locally */
   let correo = $state(inicial?.correo ?? "");
+  let password = $state("");
   let enviando = $state(false);
   // svelte-ignore state_referenced_locally
   let siguienteId = productos.length + 1;
@@ -181,7 +182,8 @@
         novalidate
         use:enhance={() => {
           enviando = true;
-          return async ({ update }) => {
+          return async ({ result, update }) => {
+            if (result.type === "failure" && result.data?.cuentaExistente) password = "";
             await update({ reset: false });
             enviando = false;
           };
@@ -322,11 +324,20 @@
                 class="mt-2 text-sm"
               />
               {@render msg("correo")}
+              {#if form?.cuentaExistente}
+                <Button
+                  href="/entrar"
+                  variant="outline"
+                  class="mt-2 transition-colors motion-reduce:transition-none motion-reduce:active:translate-y-0"
+                  >Entrar</Button
+                >
+              {/if}
             </div>
             <div>
               <Label for="contrasena" class="font-semibold">Contraseña</Label><Input
                 id="contrasena"
                 name="contrasena"
+                bind:value={password}
                 aria-invalid={errores.contrasena ? "true" : undefined}
                 aria-describedby={errores.contrasena ? "error-contrasena" : undefined}
                 type="password"

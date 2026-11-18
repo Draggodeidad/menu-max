@@ -1,6 +1,66 @@
 import { expect, test } from "./fixtures";
 import { abrirPedido, ir } from "./helpers";
 
+test.describe("publicar con un correo ya registrado", () => {
+  test.use({ sesion: false });
+
+  test("crear conserva el borrador y ofrece entrar junto al error del correo", async ({ page }) => {
+    if (page.viewportSize()?.width === 375) {
+      await page.setViewportSize({ width: 360, height: 812 });
+    }
+    await ir(page, "/crear");
+
+    const form = page.locator("form[action='?/publicar']");
+    const nombre = form.getByLabel("Nombre de tu negocio");
+    const producto = form.getByLabel("Nombre del producto 1");
+    const precio = form.getByLabel("Precio del producto 1");
+    const whatsapp = form.getByLabel("WhatsApp para recibir pedidos");
+    const correo = form.getByLabel("Correo electrónico");
+    const contrasena = form.getByLabel("Contraseña", { exact: true });
+
+    await nombre.fill("Cocina de Ana");
+    await producto.fill("Sopa de tortilla");
+    await precio.fill("49.50");
+    await form.getByText("Mesa (en el local)", { exact: true }).click();
+    await form.getByText("Para recoger", { exact: true }).click();
+    await whatsapp.fill("5512345678");
+    await correo.fill("JUAN@TACOSELGUERO.MX");
+    await contrasena.fill("12345678");
+
+    const envio = page.waitForResponse(
+      (respuesta) =>
+        respuesta.request().method() === "POST" && respuesta.url().includes("?/publicar"),
+    );
+    await form.getByRole("button", { name: "Publicar menú" }).click();
+    expect((await envio).status()).toBe(409);
+
+    const mensaje = "Ya tienes una cuenta con este correo. Entra para publicar tu menú.";
+    await expect(page).toHaveURL(/\/crear$/);
+    await expect(form.getByText(mensaje, { exact: true })).toBeVisible();
+    await expect(correo).toHaveAccessibleDescription(mensaje);
+    await expect(correo).toHaveAttribute("aria-invalid", "true");
+    await expect(correo).toBeFocused();
+    await expect(correo).toHaveValue("JUAN@TACOSELGUERO.MX");
+    await expect(contrasena).toHaveValue("");
+    await expect(nombre).toHaveValue("Cocina de Ana");
+    await expect(producto).toHaveValue("Sopa de tortilla");
+    await expect(precio).toHaveValue("49.50");
+    await expect(whatsapp).toHaveValue("5512345678");
+    await expect(form.getByRole("checkbox", { name: "Mesa (en el local)" })).toBeChecked();
+    await expect(form.getByRole("checkbox", { name: "Para recoger" })).not.toBeChecked();
+    const cookies = (await page.context().cookies()).map(({ name }) => name);
+    expect(cookies).not.toContain("demo_publicado");
+    expect(cookies).not.toContain("demo_sesion");
+
+    const entrar = form.getByRole("link", { name: "Entrar", exact: true });
+    await expect(entrar).toHaveAttribute("href", "/entrar");
+    await page.keyboard.press("Tab");
+    await expect(entrar).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/entrar$/);
+  });
+});
+
 test("login muestra errores asociados y enfoca el primer campo inválido", async ({ page }) => {
   await ir(page, "/entrar");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();

@@ -1,7 +1,9 @@
+import { ACCOUNT_ALREADY_EXISTS_MESSAGE } from "@menu-max/contracts";
 import { fail, redirect } from "@sveltejs/kit";
 import { parseMoneyToCents } from "#lib/money.js";
 import {
   COOKIE_PUBLICADO,
+  CORREO_CON_CUENTA_DEMO,
   LIMITE_COOKIE_PUBLICADO,
   MAX_PRODUCTOS_PUBLICADO,
   MODALIDADES,
@@ -94,6 +96,14 @@ export const actions: Actions = {
           productos: "Tu menú es demasiado largo para la demo. Quita algunos productos.",
         },
         values,
+      });
+    }
+    // TEMPORAL: sin API todavía; con API es el 409 CONFLICT de POST /v1/onboarding.
+    if (values.correo.toLowerCase() === CORREO_CON_CUENTA_DEMO) {
+      return fail(409, {
+        fieldErrors: { correo: ACCOUNT_ALREADY_EXISTS_MESSAGE },
+        values,
+        cuentaExistente: true,
       });
     }
     cookies.set(COOKIE_PUBLICADO, valor, {
