@@ -121,11 +121,14 @@ export function findMenu(db: Db, tenant: TenantContext, branchId: string) {
   return db.select(menuFields).from(menus).where(menuOfBranch(tenant, branchId)).get();
 }
 
-/** Crea el menú vacío de la sucursal; si ya existe, no hace nada (`branch_id` es único). */
+/**
+ * Crea el menú vacío de la sucursal; si ya existe, no hace nada (`branch_id` es único). `slug`
+ * (T18) es opcional: sin él, se asigna la primera vez que se usa el tema o la publicación.
+ */
 export function insertMenu(
   db: Db,
   tenant: TenantContext,
-  values: { id: string; branchId: string },
+  values: { id: string; branchId: string; slug?: string },
 ) {
   return db
     .insert(menus)

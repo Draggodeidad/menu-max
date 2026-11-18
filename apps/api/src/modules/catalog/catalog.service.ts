@@ -65,6 +65,8 @@ export type CatalogDeps = {
   requestId: string;
 };
 
+type MenuDeps = Pick<CatalogDeps, "db" | "tenant">;
+
 export const CATEGORY_VERSION_CONFLICT =
   "Alguien más cambió esta categoría mientras la editabas. Actualiza la página y vuelve a intentarlo.";
 export const PRODUCT_VERSION_CONFLICT =
@@ -84,7 +86,7 @@ export const CATEGORIES_LIMIT_MESSAGE = `Un menú admite hasta ${MAX_CATEGORIES_
  * antes del catálogo lo crean aquí la primera vez que se necesita (sin carrera: `branch_id` es
  * único y la inserción no hace nada si ya existe).
  */
-async function ensureMenu(deps: CatalogDeps, branchId: string): Promise<MenuView> {
+async function ensureMenu(deps: MenuDeps, branchId: string): Promise<MenuView> {
   const existing = await findMenu(deps.db, deps.tenant, branchId);
   if (existing) return existing;
   await insertMenu(deps.db, deps.tenant, { id: newId(), branchId });
@@ -94,9 +96,17 @@ async function ensureMenu(deps: CatalogDeps, branchId: string): Promise<MenuView
 }
 
 /** Menú para escribir: la política de sucursal primero (staff solo las suyas), luego el menú. */
-function menuForWrite(deps: CatalogDeps, branchId: string) {
+function menuForWrite(deps: MenuDeps, branchId: string) {
   assertAllowed(canAccessBranch(deps.tenant, branchId));
   return ensureMenu(deps, branchId);
+}
+
+/**
+ * Menú de la sucursal para otro módulo (storefront, T18): aplica `canAccessBranch` y lo crea si
+ * la sucursal es anterior al catálogo.
+ */
+export function menuOfBranch(deps: MenuDeps, branchId: string) {
+  return menuForWrite(deps, branchId);
 }
 
 /** Ejecuta un batch con guardas y traduce la guarda que lo abortó a un error del catálogo. */
@@ -111,11 +121,11 @@ async function guarded<T>(write: Promise<T>, errors: Partial<Record<GuardReason,
 }
 
 /**
- * Sentencia que crea el menú vacío de una sucursal nueva, para el mismo `db.batch` que la
- * inserta (T15 → T16).
+ * Sentencia que crea el menú vacío de una sucursal nueva con su slug (T18), para el mismo
+ * `db.batch` que la inserta (T15 → T16).
  */
-export function newMenuStatement(db: Db, tenant: TenantContext, branchId: string) {
-  return insertMenu(db, tenant, { id: newId(), branchId });
+export function newMenuStatement(db: Db, tenant: TenantContext, branchId: string, slug?: string) {
+  return insertMenu(db, tenant, { id: newId(), branchId, slug });
 }
 
 /**

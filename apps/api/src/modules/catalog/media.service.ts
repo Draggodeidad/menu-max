@@ -110,7 +110,15 @@ export async function uploadMedia(
   return { id, url: publicUrl(deps.env, key), width: image.width, height: image.height };
 }
 
-/** Borrado lógico; la imagen que usa un producto activo no se borra (`BUSINESS_RULE`). */
+/** Imagen no borrada de la organización (otro módulo la valida antes de ligarla, T18). */
+export function findMedia(deps: Pick<MediaDeps, "db" | "tenant">, mediaId: string) {
+  return findActiveAsset(deps.db, deps.tenant, mediaId);
+}
+
+/**
+ * Borrado lógico; la imagen que usa un producto activo o un tema (logo o portada) no se borra
+ * (`BUSINESS_RULE`).
+ */
 export async function deleteMedia(deps: MediaDeps, mediaId: string, now = new Date()) {
   if (!(await findActiveAsset(deps.db, deps.tenant, mediaId))) throw new AppError("NOT_FOUND");
   const inUse = new AppError("BUSINESS_RULE", IMAGE_IN_USE);
