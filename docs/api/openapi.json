@@ -239,7 +239,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": ["unpublished", "suspended", "unverified", "closed"]
+                "enum": ["unpublished", "suspended", "inactive", "unverified", "closed"]
               },
               {
                 "type": "null"
