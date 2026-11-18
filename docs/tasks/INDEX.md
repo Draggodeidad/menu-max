@@ -65,7 +65,7 @@ Criterios de cierre de las fases del backend:
 - task-20, el de B2, salvo el correo real (Resend, pendiente de un humano);
 - task-19, el de B4.
 
-**Sin task, porque la API todavía no lo soporta:** checkout, seguimiento y panel de pedidos (`/m/[slug]/pedido`, `/pedido/[token]`, `/app`) esperan a T21–T23; los avisos por WhatsApp, a T24–T25. Siguen simulados en `demo.ts`. Cuando el backend los entregue, se agregan sus tasks de paridad con el mismo criterio.
+**Sin task, porque la API todavía no lo soporta:** checkout, seguimiento y panel de pedidos (`/m/[slug]/pedido`, `/pedido/[token]`, `/app`) esperan a T21–T23; los avisos por WhatsApp, a T24–T25. Siguen simulados en `demo.ts`. Cuando el backend entregue cada fase, sus tasks de paridad se generan con [`PROMPT-PARIDAD.md`](PROMPT-PARIDAD.md).
 
 [^task-13]: Integrada en el [PR #52](https://github.com/Draggodeidad/menu-max/pull/52) (`feat/t13-pantalla-invitacion`). La task-08 se integró en el PR #29.
 
