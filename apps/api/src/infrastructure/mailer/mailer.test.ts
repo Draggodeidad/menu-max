@@ -17,6 +17,30 @@ const mails = {
     data: { url, organizationName: "Tacos <El Güero>", inviterName: "Luis & Co" },
   },
   "password-changed": { to: "ana@example.com", template: "password-changed", data: { url } },
+  "trial-ending": {
+    to: "ana@example.com",
+    template: "trial-ending",
+    data: {
+      url,
+      planName: "Gratis",
+      limits: { maxBranches: 1, maxProducts: 50, maxMembers: 3 },
+      features: { customTheme: false, removeBranding: false },
+      usage: { branches: 3, products: 12, members: 3 },
+      trialEndsAt: "2027-02-17T20:00:00.000Z",
+      daysLeft: 15,
+    },
+  },
+  "trial-ended": {
+    to: "ana@example.com",
+    template: "trial-ended",
+    data: {
+      url,
+      planName: "Gratis",
+      limits: { maxBranches: 1, maxProducts: 50, maxMembers: 3 },
+      features: { customTheme: false, removeBranding: false },
+      usage: { branches: 1, products: 80, members: 1 },
+    },
+  },
 } satisfies { [Template in EmailTemplate]: Extract<Mail, { template: Template }> };
 
 function fakeFetch(respond: (init: RequestInit) => Promise<Response>) {
@@ -57,6 +81,56 @@ describe("renderEmail", () => {
     expect(html).toContain("Tacos &lt;El Güero&gt;");
     expect(html).toContain("Luis &amp; Co");
     expect(html).not.toContain("<El Güero>");
+  });
+});
+
+describe("correos de fin de prueba", () => {
+  it("trial-ending dice cuántos días faltan, la fecha y los límites del plan que trae", () => {
+    const { subject, text } = renderEmail(mails["trial-ending"]);
+
+    expect(subject).toBe("Tu prueba gratis de MenusMax termina en 15 días");
+    expect(text).toContain("termina el 17 de febrero de 2027");
+    expect(text).toContain("plan Gratis");
+    expect(text).toContain("hasta 1 sucursal, 50 productos y 3 miembros del equipo");
+    expect(text).toContain("el sello de MenusMax");
+  });
+
+  it("solo avisa que conserva lo que ya alcanzó o superó el límite", () => {
+    const ending = renderEmail(mails["trial-ending"]).text;
+    expect(ending).toContain("Conservas tus sucursales actuales. Para agregar otra necesitas Pro.");
+    expect(ending).toContain("Conservas a tus miembros actuales.");
+    expect(ending).not.toContain("Conservas tus productos actuales.");
+
+    // 1 sucursal de 1: ya no puede agregar otra, así que también se avisa.
+    const ended = renderEmail(mails["trial-ended"]).text;
+    expect(ended).toContain("Conservas tus productos actuales. Para agregar otro necesitas Pro.");
+    expect(ended).toContain("Conservas tus sucursales actuales.");
+    expect(ended).not.toContain("Conservas a tus miembros actuales.");
+  });
+
+  it("los límites y capacidades salen de los datos, no de la plantilla", () => {
+    const { subject, text } = renderEmail({
+      ...mails["trial-ended"],
+      data: {
+        ...mails["trial-ended"].data,
+        planName: "Básico",
+        limits: { maxBranches: 2, maxProducts: 120, maxMembers: 1 },
+        features: { customTheme: true, removeBranding: true },
+      },
+    });
+
+    expect(subject).toBe("Tu cuenta de MenusMax pasó al plan Básico");
+    expect(text).toContain("hasta 2 sucursales, 120 productos y 1 miembro del equipo");
+    expect(text).not.toContain("sello de MenusMax");
+    expect(text).not.toContain("son parte de Pro");
+  });
+
+  it("en singular cuando falta un día", () => {
+    const { subject } = renderEmail({
+      ...mails["trial-ending"],
+      data: { ...mails["trial-ending"].data, daysLeft: 1 },
+    });
+    expect(subject).toBe("Tu prueba gratis de MenusMax termina en 1 día");
   });
 });
 

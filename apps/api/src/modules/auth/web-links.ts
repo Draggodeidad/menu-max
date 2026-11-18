@@ -7,6 +7,7 @@ export const WEB_ROUTES = {
   verifyEmail: "/verificar-correo",
   resetPassword: "/restablecer",
   invitation: "/invitacion",
+  settings: "/app/ajustes",
 } as const;
 
 function webLink(env: Pick<Env, "WEB_ORIGIN">, path: string, token?: string): string {
@@ -28,4 +29,9 @@ export function resetPasswordLink(env: Pick<Env, "WEB_ORIGIN">, token?: string):
 /** `${WEB_ORIGIN}/invitacion?token=…` */
 export function invitationLink(env: Pick<Env, "WEB_ORIGIN">, token: string): string {
   return webLink(env, WEB_ROUTES.invitation, token);
+}
+
+/** `${WEB_ORIGIN}/app/ajustes`: plan y límites de la organización (correos de fin de prueba, T20b). */
+export function settingsLink(env: Pick<Env, "WEB_ORIGIN">): string {
+  return webLink(env, WEB_ROUTES.settings);
 }

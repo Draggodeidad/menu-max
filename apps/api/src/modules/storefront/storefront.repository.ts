@@ -17,7 +17,7 @@ import {
   subscriptions,
   users,
 } from "@menu-max/database";
-import { and, asc, eq, isNull, like, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, like, or, sql, type SQL } from "drizzle-orm";
 import { alias, type SQLiteColumn } from "drizzle-orm/sqlite-core";
 import type { Db } from "../../infrastructure/db";
 import type { TenantContext } from "../../types";
@@ -185,6 +185,14 @@ export async function bumpMenusOwnedBy(db: Db, userId: string) {
         eq(organizationMembers.status, "active"),
       )})`,
     );
+}
+
+/** Sentencia que sube `menu_version` de todos los menús de varias organizaciones (sin tenant). */
+export function bumpMenusOfOrganizations(db: Db, orgIds: string[]) {
+  return db
+    .update(menus)
+    .set({ menuVersion: sql`${menus.menuVersion} + 1` })
+    .where(inArray(menus.organizationId, orgIds));
 }
 
 // Tema --------------------------------------------------------------------------------------

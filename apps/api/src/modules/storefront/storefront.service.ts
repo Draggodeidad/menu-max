@@ -30,6 +30,7 @@ import { assertFeature } from "../subscriptions/limits";
 import { acceptingOrders } from "./acceptance";
 import {
   assignSlug,
+  bumpMenusOfOrganizations,
   bumpMenusOwnedBy,
   findAssetKeys,
   findBusinessNameOfBranch,
@@ -435,6 +436,15 @@ function publicProducts(deps: PublicStorefrontDeps, read: PublicRead) {
  */
 export function refreshMenusOfOwner(db: Db, userId: string) {
   return bumpMenusOwnedBy(db, userId);
+}
+
+/**
+ * Sentencia que sube `menuVersion` de los menús de varias organizaciones, para el `db.batch` que
+ * les cambia el plan (T20b): el tema que ve el comensal depende de las capacidades del plan, así
+ * que la caché de WEB (ADR-014) debe refrescarse.
+ */
+export function menusVersionBumpStatement(db: Db, orgIds: string[]) {
+  return bumpMenusOfOrganizations(db, orgIds);
 }
 
 /**

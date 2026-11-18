@@ -79,7 +79,44 @@ pnpm exec wrangler d1 execute DB --env staging --remote --command "
   WHERE organization_id = '<ORG_ID>';"
 ```
 
-## 4. Verificar
+## 4. Extender una prueba
+
+Toda organización nueva opera 90 días con `pro` + `trialing` (T20). El Cron diario (`0 9 * * *`, 3:00 en Ciudad de México) avisa al dueño a 15 y a 3 días del fin y, al vencer, la pasa sola a `free` + `active` (T20b). Para dar más días:
+
+1. Calcula el nuevo fin en milisegundos UTC. Ej.: 1 de marzo de 2027 a las 00:00 de Ciudad de México = `1803880800000`.
+2. Mueve `current_period_end` y limpia los avisos previos, para que el Cron los vuelva a mandar contra la fecha nueva:
+
+   ```bash
+   pnpm exec wrangler d1 execute DB --env staging --remote --command "
+     UPDATE subscriptions
+     SET current_period_end = 1803880800000,
+         trial_notice_15_sent_at = NULL,
+         trial_notice_3_sent_at = NULL,
+         updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+     WHERE organization_id = '<ORG_ID>' AND status = 'trialing';"
+   ```
+
+   - Con `changes: 0`, la prueba ya terminó o el id está mal (ver abajo).
+   - Si faltan menos de 15 días para el nuevo fin, solo saldrá el aviso de 3 días.
+
+3. Revisa las columnas con la consulta del paso 1 agregando `s.trial_notice_15_sent_at, s.trial_notice_3_sent_at, s.trial_ended_notice_pending_at`.
+
+**Si la prueba ya pasó a `free`**, vuelve a darla en un solo `UPDATE` y quita el aviso de fin pendiente (si todavía no salió, ya no aplica):
+
+```bash
+pnpm exec wrangler d1 execute DB --env staging --remote --command "
+  UPDATE subscriptions
+  SET plan_id = 'pro', status = 'trialing', current_period_end = 1803880800000,
+      trial_notice_15_sent_at = NULL, trial_notice_3_sent_at = NULL,
+      trial_ended_notice_pending_at = NULL,
+      updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+  WHERE organization_id = '<ORG_ID>';"
+```
+
+- El tema público depende del plan: el menú se ve con el de `pro` cuando vence la caché de WEB (ADR-014).
+- Una suscripción `suspended` durante la prueba no pasa a `free` sola: reactívala con el paso 3 (`status = 'trialing'` si sigue en prueba, `'active'` si no).
+
+## 5. Verificar
 
 1. Repite la consulta del paso 1.
 2. El cambio aplica en la siguiente petición: `requireMembership` lee el plan en cada una; no hay caché que purgar.
@@ -88,5 +125,5 @@ pnpm exec wrangler d1 execute DB --env staging --remote --command "
 ## Lo que este runbook no cubre
 
 - **Cambiar las capacidades de un plan** (`plans.custom_theme`, `plans.remove_branding`): afecta a todas las organizaciones con ese plan. Se hace con una migración revisada, igual que los límites.
-- **Cambiar los límites de un plan** (`plans.max_*`): afecta a todas las organizaciones con ese plan. Se hace con una migración revisada en un PR, nunca con `wrangler d1 execute`.
+- **Cambiar los límites de un plan** (`plans.max_*`): afecta a todas las organizaciones con ese plan. Se hace con una migración revisada en un PR, nunca con `wrangler d1 execute`. Los correos de fin de prueba leen los límites y capacidades de `free` de esa tabla al encolarse.
 - Cobros, facturas o pasarelas de pago: fuera del MVP.

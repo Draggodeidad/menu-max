@@ -28,7 +28,11 @@ export type AuthRequestOptions = {
   skipVerificationEmail?: boolean;
 };
 
-type AuthEmail = { to: string; template: Exclude<EmailTemplate, "invitation">; url: string };
+type AuthEmail = {
+  to: string;
+  template: Exclude<EmailTemplate, "invitation" | "trial-ending" | "trial-ended">;
+  url: string;
+};
 
 /**
  * Encola un correo de auth (ADR-011). Una falla al encolar no rompe el flujo: se registra y el
