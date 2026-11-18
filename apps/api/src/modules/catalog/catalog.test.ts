@@ -6,6 +6,7 @@ import {
   MAX_ABOVE_OPTIONS,
   MIN_ABOVE_MAX,
   OptionGroupInput,
+  MediaAssetDto,
   MenuDto,
   ProductDto,
   ReorderResultDto,
@@ -23,14 +24,21 @@ import {
 import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { addMember, createBranch, createOrg, createUser } from "../../../test/factories";
+import {
+  addMember,
+  createBranch,
+  createOrg,
+  createUser,
+  jpegBytes,
+  pngBytes,
+} from "../../../test/factories";
 import { callApi, expectNotFoundForOtherTenant } from "../../../test/isolation";
 import { getEnv, type Env } from "../../env";
 import { createDb } from "../../infrastructure/db";
 import { newId } from "../../shared/ids";
 import { loadTenant } from "../organizations/organizations.service";
 import { guardFailure, updateProduct as updateProductRow } from "./catalog.repository";
-import { CATEGORY_IN_USE, ORDER_CONFLICT } from "./catalog.service";
+import { CATEGORY_IN_USE, IMAGE_NOT_FOUND, ORDER_CONFLICT } from "./catalog.service";
 
 const db = () => createDb(getEnv(env));
 
@@ -696,6 +704,149 @@ describe("menu_version", () => {
     await readMenu(menu, owner.cookie);
     expect(await menuVersion(branchId)).toBe(expected);
     expect((await readMenu(menu, owner.cookie)).menuVersion).toBe(expected);
+  });
+});
+
+async function uploadImage(orgId: string, cookie: string, bytes = jpegBytes(1200, 800)) {
+  const response = await callApi("POST", `/v1/orgs/${orgId}/media`, {
+    cookie,
+    rawBody: bytes,
+    headers: { "content-type": "image/jpeg" },
+  });
+  expect(response.status).toBe(201);
+  return MediaAssetDto.parse(await response.json());
+}
+
+describe("imagen del producto (T17)", () => {
+  it("PATCH liga la imagen: el DTO y GET /menu traen URL y dimensiones; null la quita", async () => {
+    const { owner, org, branchId, menu } = await setup();
+    const tacos = await addCategory(menu, owner.cookie);
+    const product = await addProduct(menu, owner.cookie, tacos.id);
+    expect(product).toMatchObject({ imageUrl: null, imageWidth: null, imageHeight: null });
+    const asset = await uploadImage(org.orgId, owner.cookie);
+
+    const before = await menuVersion(branchId);
+    const patched = await callApi("PATCH", `${menu}/products/${product.id}`, {
+      cookie: owner.cookie,
+      body: { version: 1, imageAssetId: asset.id },
+    });
+    expect(patched.status).toBe(200);
+    expect(ProductDto.parse(await patched.json())).toMatchObject({
+      version: 2,
+      imageUrl: asset.url,
+      imageWidth: 1200,
+      imageHeight: 800,
+    });
+    expect(await menuVersion(branchId)).toBe((before ?? 0) + 1);
+
+    const listed = (await readMenu(menu, owner.cookie)).categories[0]?.products[0];
+    expect(listed).toMatchObject({ imageUrl: asset.url, imageWidth: 1200, imageHeight: 800 });
+
+    // Otra imagen la reemplaza; `null` la quita. Ambos suben `menu_version`.
+    const other = await uploadImage(org.orgId, owner.cookie, pngBytes(500, 500));
+    const replaced = await callApi("PATCH", `${menu}/products/${product.id}`, {
+      cookie: owner.cookie,
+      body: { version: 2, imageAssetId: other.id },
+    });
+    expect(ProductDto.parse(await replaced.json())).toMatchObject({
+      imageUrl: other.url,
+      imageWidth: 500,
+    });
+    const removed = await callApi("PATCH", `${menu}/products/${product.id}`, {
+      cookie: owner.cookie,
+      body: { version: 3, imageAssetId: null },
+    });
+    expect(ProductDto.parse(await removed.json())).toMatchObject({
+      imageUrl: null,
+      imageWidth: null,
+      imageHeight: null,
+    });
+    expect(await menuVersion(branchId)).toBe((before ?? 0) + 3);
+
+    // Un PATCH sin `imageAssetId` no la toca.
+    await callApi("PATCH", `${menu}/products/${product.id}`, {
+      cookie: owner.cookie,
+      body: { version: 4, imageAssetId: asset.id },
+    });
+    const renamed = await callApi("PATCH", `${menu}/products/${product.id}`, {
+      cookie: owner.cookie,
+      body: { version: 5, name: "Taco de suadero" },
+    });
+    expect(ProductDto.parse(await renamed.json()).imageUrl).toBe(asset.url);
+  });
+
+  it("imageAssetId de otra organización → 404 sin cambiar el producto", async () => {
+    const { owner, menu, branchId } = await setup();
+    const tacos = await addCategory(menu, owner.cookie);
+    const product = await addProduct(menu, owner.cookie, tacos.id);
+    const other = await setup();
+    const foreign = await uploadImage(other.org.orgId, other.owner.cookie);
+
+    const before = await menuVersion(branchId);
+    const error = await expectError(
+      await callApi("PATCH", `${menu}/products/${product.id}`, {
+        cookie: owner.cookie,
+        body: { version: 1, imageAssetId: foreign.id },
+      }),
+      404,
+      "NOT_FOUND",
+    );
+    expect(error.message).toBe(IMAGE_NOT_FOUND);
+    expect(error.fieldErrors).toEqual({ imageAssetId: [IMAGE_NOT_FOUND] });
+    expect(await menuVersion(branchId)).toBe(before);
+    const [row] = await db().select().from(products).where(eq(products.id, product.id));
+    expect(row).toMatchObject({ version: 1, imageAssetId: null });
+  });
+
+  it("una imagen borrada → 404", async () => {
+    const { owner, org, menu } = await setup();
+    const tacos = await addCategory(menu, owner.cookie);
+    const product = await addProduct(menu, owner.cookie, tacos.id);
+    const asset = await uploadImage(org.orgId, owner.cookie);
+    await callApi("DELETE", `/v1/orgs/${org.orgId}/media/${asset.id}`, { cookie: owner.cookie });
+    await expectError(
+      await callApi("PATCH", `${menu}/products/${product.id}`, {
+        cookie: owner.cookie,
+        body: { version: 1, imageAssetId: asset.id },
+      }),
+      404,
+      "NOT_FOUND",
+    );
+  });
+
+  it("la guarda del batch aborta si la imagen se borró después de validarla", async () => {
+    const { owner, org, menu } = await setup();
+    const tacos = await addCategory(menu, owner.cookie);
+    const product = await addProduct(menu, owner.cookie, tacos.id);
+    const asset = await uploadImage(org.orgId, owner.cookie);
+    await callApi("DELETE", `/v1/orgs/${org.orgId}/media/${asset.id}`, { cookie: owner.cookie });
+
+    const tenant = await loadTenant(db(), org.orgId, owner.id, "test");
+    if (!tenant) throw new Error("sin tenant");
+    const [menuRow] = await db().select().from(menus).where(eq(menus.organizationId, org.orgId));
+    const failure = await updateProductRow(db(), tenant, menuRow?.id ?? "", product.id, 1, {
+      changes: { imageAssetId: asset.id },
+    }).then(
+      () => undefined,
+      (error: unknown) => guardFailure(error),
+    );
+    expect(failure).toBe("asset_missing");
+    const [row] = await db().select().from(products).where(eq(products.id, product.id));
+    expect(row?.imageAssetId).toBeNull();
+  });
+
+  it("imageAssetId mal formado → 400", async () => {
+    const { owner, menu } = await setup();
+    const tacos = await addCategory(menu, owner.cookie);
+    const product = await addProduct(menu, owner.cookie, tacos.id);
+    await expectError(
+      await callApi("PATCH", `${menu}/products/${product.id}`, {
+        cookie: owner.cookie,
+        body: { version: 1, imageAssetId: "foto.jpg" },
+      }),
+      400,
+      "VALIDATION_FAILED",
+    );
   });
 });
 

@@ -945,6 +945,41 @@
               "$ref": "#/components/schemas/OptionGroupDto"
             }
           },
+          "imageUrl": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "imageWidth": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "imageHeight": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -967,6 +1002,9 @@
           "version",
           "variants",
           "optionGroups",
+          "imageUrl",
+          "imageWidth",
+          "imageHeight",
           "createdAt",
           "updatedAt"
         ],
@@ -1123,6 +1161,32 @@
           }
         },
         "required": ["items"],
+        "additionalProperties": false
+      },
+      "MediaAssetDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "width": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "height": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["id", "url", "width", "height"],
         "additionalProperties": false
       }
     }
@@ -5566,7 +5630,7 @@
         "operationId": "patchV1OrgsByOrgIdBranchesByBranchIdMenuProductsByProductId",
         "tags": ["Catálogo"],
         "summary": "Editar un producto",
-        "description": "Cambios parciales con `version` obligatorio. `variants` y `optionGroups`, si se envían, reemplazan la lista completa (sus ids cambian). Otra `categoryId` mueve el producto al final de esa categoría.",
+        "description": "Cambios parciales con `version` obligatorio. `variants` y `optionGroups`, si se envían, reemplazan la lista completa (sus ids cambian). Otra `categoryId` mueve el producto al final de esa categoría. `imageAssetId` liga una imagen subida con `POST /v1/orgs/{orgId}/media`; `null` la quita.",
         "security": [
           {
             "InternalToken": [],
@@ -5647,7 +5711,7 @@
             }
           },
           "404": {
-            "description": "La organización, la sucursal o el producto no existen (o el producto ya se borró).",
+            "description": "La organización, la sucursal, el producto, la categoría destino o la imagen no existen (o ya se borraron).",
             "content": {
               "application/json": {
                 "schema": {
@@ -5801,6 +5865,18 @@
                       "required": ["name", "minSelect", "maxSelect", "options"],
                       "additionalProperties": false
                     }
+                  },
+                  "imageAssetId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": ["version"],
@@ -6054,6 +6130,238 @@
                 },
                 "required": ["version", "available"],
                 "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/orgs/{orgId}/media": {
+      "post": {
+        "operationId": "postV1OrgsByOrgIdMedia",
+        "tags": ["Imágenes"],
+        "summary": "Subir una imagen",
+        "description": "Cuerpo binario de hasta 5 MB. El tipo real se decide por los primeros bytes del archivo (JPEG, PNG o WebP), no por el `content-type`; el ancho y el alto se leen de la cabecera y no pueden pasar de 6000 px por lado. Hasta 60 subidas por hora por organización. Para usarla en un producto, envía su `id` como `imageAssetId` en `PATCH …/menu/products/:productId`.",
+        "security": [
+          {
+            "InternalToken": [],
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "description": "Id (UUIDv7) de la organización.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "image/jpeg": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/png": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/webp": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Imagen subida, con su URL pública y dimensiones.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaAssetDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La sesión falta o ya no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tu rol no tiene el permiso, o la suscripción está suspendida y solo admite lecturas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "La organización no existe o no eres miembro activo. Sin token interno, la respuesta no tiene cuerpo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "La imagen pesa más de 5 MB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP o se agotó el cupo de subidas de la hora. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ocurrió un error interno.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/orgs/{orgId}/media/{mediaId}": {
+      "delete": {
+        "operationId": "deleteV1OrgsByOrgIdMediaByMediaId",
+        "tags": ["Imágenes"],
+        "summary": "Borrar una imagen",
+        "description": "Borrado lógico. Una imagen que usa un producto activo no se puede borrar: primero quítala del producto.",
+        "security": [
+          {
+            "InternalToken": [],
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "description": "Id (UUIDv7) de la organización.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "mediaId",
+            "in": "path",
+            "required": true,
+            "description": "Id (UUIDv7) de la imagen.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Imagen borrada."
+          },
+          "401": {
+            "description": "La sesión falta o ya no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tu rol no tiene el permiso, o la suscripción está suspendida y solo admite lecturas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "La organización o la imagen no existen (o la imagen ya se borró).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Un producto activo usa la imagen.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ocurrió un error interno.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
               }
             }
           }

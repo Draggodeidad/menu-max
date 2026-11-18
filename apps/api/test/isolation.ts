@@ -12,18 +12,27 @@ function randomIp() {
   return `2001:db8::${a?.slice(0, 4)}:${b}`;
 }
 
-/** Petición a la API completa con token interno, IP propia (evita el rate limit) y sesión. */
+/**
+ * Petición a la API completa con token interno, IP propia (evita el rate limit) y sesión.
+ * `body` viaja como JSON; `rawBody` tal cual, con el `content-type` que traiga `headers`.
+ */
 export function callApi(
   method: string,
   path: string,
-  options: { cookie?: string; body?: unknown; headers?: HeadersInit; bindings?: Env } = {},
+  options: {
+    cookie?: string;
+    body?: unknown;
+    rawBody?: Uint8Array;
+    headers?: HeadersInit;
+    bindings?: Env;
+  } = {},
 ) {
   const bindings = options.bindings ?? getEnv(env);
   const headers = new Headers(options.headers);
   headers.set("x-mm-internal", bindings.INTERNAL_TOKEN);
   if (!headers.has("x-client-ip")) headers.set("x-client-ip", randomIp());
   if (options.cookie) headers.set("cookie", options.cookie);
-  let body: string | undefined;
+  let body: string | Uint8Array | undefined = options.rawBody;
   if (options.body !== undefined) {
     headers.set("content-type", "application/json");
     body = JSON.stringify(options.body);

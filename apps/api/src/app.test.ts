@@ -35,6 +35,7 @@ async function expectApiError(response: Response, status: number, code: ErrorRes
 const fakeDb = { prepare: () => null };
 const fakeQueue = { send: () => null, sendBatch: () => null };
 const fakeRateLimit = { limit: () => null };
+const fakeBucket = { put: () => null, delete: () => null };
 
 describe("GET /v1/health", () => {
   it("responde 200 con el entorno", async () => {
@@ -310,6 +311,8 @@ describe("getEnv", () => {
     RL_AUTH: fakeRateLimit,
     RL_PUBLIC: fakeRateLimit,
     RL_PRIVATE: fakeRateLimit,
+    MEDIA_PUBLIC_BASE_URL: "https://img.menusmax.example",
+    MEDIA: fakeBucket,
   };
 
   it("acepta una configuración válida", () => {
@@ -334,7 +337,7 @@ describe("getEnv", () => {
     },
   );
 
-  it.each(["JOBS", "JOBS_DLQ", "RL_AUTH", "RL_PUBLIC", "RL_PRIVATE"])(
+  it.each(["JOBS", "JOBS_DLQ", "RL_AUTH", "RL_PUBLIC", "RL_PRIVATE", "MEDIA"])(
     "lanza un error claro si falta el binding %s",
     (name) => {
       const { [name as "JOBS"]: _missing, ...rest } = validBindings;
@@ -350,6 +353,26 @@ describe("getEnv", () => {
       );
     },
   );
+
+  it.each([
+    undefined,
+    "",
+    "img.menusmax.example",
+    "https://img.menusmax.example/",
+    "https://img.menusmax.example?v=1",
+    "ftp://img.menusmax.example",
+  ])("rechaza MEDIA_PUBLIC_BASE_URL faltante o mal formada (caso %#)", (url) => {
+    expect(() => getEnv({ ...validBindings, MEDIA_PUBLIC_BASE_URL: url })).toThrow(
+      /MEDIA_PUBLIC_BASE_URL/,
+    );
+  });
+
+  it("acepta MEDIA_PUBLIC_BASE_URL con ruta, sin diagonal final", () => {
+    const url = "https://cdn.menusmax.example/media";
+    expect(getEnv({ ...validBindings, MEDIA_PUBLIC_BASE_URL: url }).MEDIA_PUBLIC_BASE_URL).toBe(
+      url,
+    );
+  });
 
   it.each([undefined, ""])("lanza un error claro si falta RESEND_API_KEY (caso %#)", (key) => {
     expect(() => getEnv({ ...validBindings, RESEND_API_KEY: key })).toThrow(/RESEND_API_KEY/);

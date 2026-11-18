@@ -152,3 +152,74 @@ export async function createPlan(
     });
   return id;
 }
+
+// Imágenes mínimas para T17: solo la cabecera que lee `sniffImage`, más unos bytes de relleno.
+// No son imágenes decodificables; la API nunca las decodifica.
+
+function u16be(value: number) {
+  return [(value >> 8) & 0xff, value & 0xff];
+}
+
+function u16le(value: number) {
+  return [value & 0xff, (value >> 8) & 0xff];
+}
+
+function u24le(value: number) {
+  return [value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff];
+}
+
+function u32be(value: number) {
+  return [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];
+}
+
+function u32le(value: number) {
+  return [value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff];
+}
+
+function ascii(text: string) {
+  return [...text].map((char) => char.charCodeAt(0));
+}
+
+/** JPEG con APP0 (JFIF), un SOF (`0xC0` baseline o `0xC2` progresivo), SOS y EOI. */
+export function jpegBytes(width: number, height: number, sof = 0xc0): Uint8Array {
+  const soi = [0xff, 0xd8];
+  const app0 = [0xff, 0xe0, ...u16be(16), ...ascii("JFIF"), 0, 1, 1, 0, 0, 1, 0, 1, 0, 0];
+  const components = [1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1];
+  const frame = [0xff, sof, ...u16be(17), 8, ...u16be(height), ...u16be(width), 3, ...components];
+  const scan = [0xff, 0xda, ...u16be(8), 1, 1, 0, 0, 0x3f, 0, 0x12, 0x34, 0x56];
+  const eoi = [0xff, 0xd9];
+  return new Uint8Array([...soi, ...app0, ...frame, ...scan, ...eoi]);
+}
+
+/** PNG con firma, IHDR e IEND (CRC en cero: la API no los valida). */
+export function pngBytes(width: number, height: number): Uint8Array {
+  const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  // Profundidad 8, RGBA, sin entrelazado.
+  const ihdr = [...u32be(width), ...u32be(height), 8, 6, 0, 0, 0];
+  return new Uint8Array([
+    ...signature,
+    ...u32be(13),
+    ...ascii("IHDR"),
+    ...ihdr,
+    ...u32be(0),
+    ...u32be(0),
+    ...ascii("IEND"),
+    ...u32be(0),
+  ]);
+}
+
+/** WebP con un fragmento `VP8 ` (lossy), `VP8L` (lossless) o `VP8X` (extendido). */
+export function webpBytes(
+  width: number,
+  height: number,
+  kind: "VP8 " | "VP8L" | "VP8X" = "VP8 ",
+): Uint8Array {
+  const chunk =
+    kind === "VP8 "
+      ? [0x50, 0x01, 0x00, 0x9d, 0x01, 0x2a, ...u16le(width), ...u16le(height), 0, 0]
+      : kind === "VP8L"
+        ? [0x2f, ...u32le(((width - 1) | ((height - 1) << 14)) >>> 0), 0, 0, 0]
+        : [0x10, 0, 0, 0, ...u24le(width - 1), ...u24le(height - 1)];
+  const body = [...ascii("WEBP"), ...ascii(kind), ...u32le(chunk.length), ...chunk];
+  return new Uint8Array([...ascii("RIFF"), ...u32le(body.length), ...body]);
+}

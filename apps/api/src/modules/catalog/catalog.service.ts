@@ -15,7 +15,9 @@ import {
   type VariantDto,
   type VariantInput,
 } from "@menu-max/contracts";
+import type { Env } from "../../env";
 import type { Db } from "../../infrastructure/db";
+import { publicUrl } from "../../infrastructure/storage";
 import { canAccessBranch } from "../../shared/authz/policies";
 import { assertAllowed } from "../../shared/authz/result";
 import { AppError } from "../../shared/errors";
@@ -50,11 +52,18 @@ import {
   type MenuView,
   type ProductChanges,
   type ProductChildren,
+  type ProductImageView,
   type ProductView,
 } from "./catalog.repository";
+import { findActiveAsset } from "./media.repository";
 
 /** Dependencias de un servicio con tenant; las arma `deps(c)` en las rutas. */
-export type CatalogDeps = { db: Db; tenant: TenantContext; requestId: string };
+export type CatalogDeps = {
+  db: Db;
+  env: Pick<Env, "MEDIA_PUBLIC_BASE_URL">;
+  tenant: TenantContext;
+  requestId: string;
+};
 
 export const CATEGORY_VERSION_CONFLICT =
   "Alguien más cambió esta categoría mientras la editabas. Actualiza la página y vuelve a intentarlo.";
@@ -65,6 +74,7 @@ export const ORDER_CONFLICT =
 export const CATEGORY_IN_USE =
   "Esta categoría todavía tiene productos. Muévelos a otra categoría o bórralos antes de borrarla.";
 export const CATEGORY_NOT_FOUND = "La categoría no existe o ya se borró. Elige otra.";
+export const IMAGE_NOT_FOUND = "La imagen no existe o ya se borró. Sube otra.";
 export const CATEGORIES_LIMIT_MESSAGE = `Un menú admite hasta ${MAX_CATEGORIES_PER_MENU} categorías. Junta productos en menos categorías.`;
 
 // Menú de la sucursal ------------------------------------------------------------------------
@@ -134,7 +144,9 @@ function toCategoryDto(row: CategoryView): CategoryDto {
 }
 
 function toProductDto(
+  deps: CatalogDeps,
   row: ProductView,
+  image: ProductImageView | undefined,
   variants: VariantDto[],
   optionGroups: OptionGroupDto[],
 ): ProductDto {
@@ -149,6 +161,9 @@ function toProductDto(
     version: row.version,
     variants,
     optionGroups,
+    imageUrl: image ? publicUrl(deps.env, image.key) : null,
+    imageWidth: image?.width ?? null,
+    imageHeight: image?.height ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -189,23 +204,29 @@ export async function getMenu(deps: CatalogDeps, branchId: string): Promise<Menu
   const menu = tree.menu ?? (await ensureMenu(deps, branchId));
 
   const variantsByProduct = new Map<string, VariantDto[]>();
-  const productRows: ProductView[] = [];
-  for (const { product, variant } of tree.productRows) {
+  const productRows: { product: ProductView; image: ProductImageView | undefined }[] = [];
+  for (const { product, variant, image } of tree.productRows) {
     let variants = variantsByProduct.get(product.id);
     if (!variants) {
       variants = [];
       variantsByProduct.set(product.id, variants);
-      productRows.push(product);
+      productRows.push({ product, image });
     }
     if (variant) variants.push(variant);
   }
   const groups = groupsByProduct(tree.groupRows);
 
   const productsByCategory = new Map<string, ProductDto[]>();
-  for (const product of productRows) {
+  for (const { product, image } of productRows) {
     const list = productsByCategory.get(product.categoryId) ?? [];
     list.push(
-      toProductDto(product, variantsByProduct.get(product.id) ?? [], groups.get(product.id) ?? []),
+      toProductDto(
+        deps,
+        product,
+        image,
+        variantsByProduct.get(product.id) ?? [],
+        groups.get(product.id) ?? [],
+      ),
     );
     productsByCategory.set(product.categoryId, list);
   }
@@ -378,11 +399,13 @@ async function productDto(deps: CatalogDeps, menuId: string, productId: string) 
   const found = await readProduct(deps.db, deps.tenant, menuId, productId);
   if (!found) throw new AppError("NOT_FOUND");
   const groups = groupsByProduct(found.groupRows).get(productId) ?? [];
-  return toProductDto(found.product, found.variantRows, groups);
+  return toProductDto(deps, found.product, found.image, found.variantRows, groups);
 }
 
 const categoryMissing = () =>
   new AppError("NOT_FOUND", CATEGORY_NOT_FOUND, { categoryId: [CATEGORY_NOT_FOUND] });
+const imageMissing = () =>
+  new AppError("NOT_FOUND", IMAGE_NOT_FOUND, { imageAssetId: [IMAGE_NOT_FOUND] });
 
 /** Producto nuevo al final de su categoría. Respeta el límite de productos del plan. */
 export async function createProduct(
@@ -424,6 +447,7 @@ export async function createProduct(
 /**
  * Cambios parciales con concurrencia optimista. `variants` y `optionGroups` presentes reemplazan
  * la lista completa; otra `categoryId` mueve el producto al final de esa categoría.
+ * `imageAssetId` debe ser una imagen no borrada de la misma organización; `null` la quita.
  */
 export async function updateProduct(
   deps: CatalogDeps,
@@ -444,12 +468,17 @@ export async function updateProduct(
   if (moveTo && !(await findCategory(deps.db, deps.tenant, menu.id, moveTo))) {
     throw categoryMissing();
   }
+  // Imagen de otra organización o borrada → no existe para quien pregunta.
+  if (input.imageAssetId && !(await findActiveAsset(deps.db, deps.tenant, input.imageAssetId))) {
+    throw imageMissing();
+  }
 
   const changes: ProductChanges = {
     name: input.name,
     description: input.description === undefined ? undefined : descriptionValue(input.description),
     priceCents: input.priceCents,
     available: input.available,
+    imageAssetId: input.imageAssetId,
   };
   await guarded(
     updateProductRow(deps.db, deps.tenant, menu.id, productId, input.version, {
@@ -458,7 +487,7 @@ export async function updateProduct(
       variants: input.variants ? variantRows(productId, input.variants) : undefined,
       optionGroups: input.optionGroups ? optionGroupRows(productId, input.optionGroups) : undefined,
     }),
-    { version: conflict, missing: categoryMissing() },
+    { version: conflict, missing: categoryMissing(), asset_missing: imageMissing() },
   );
   logEvent(deps, "catalog.product_updated", { branchId, productId });
   return productDto(deps, menu.id, productId);

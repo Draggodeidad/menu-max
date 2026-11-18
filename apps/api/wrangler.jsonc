@@ -6,6 +6,10 @@
 // cuenta. Los límites (10, 60 y 300 por minuto) son provisionales (ADR-010).
 // `RESEND_API_KEY` (ADR-020) y `TURNSTILE_SECRET_KEY` (ADR-010) son secretos: van en `.dev.vars`
 // y en los secretos de cada entorno, nunca en `vars`.
+// Los buckets R2 `menusmax-media*` (binding `MEDIA`, T17) los crea un humano en clase Standard, con
+// dominio propio y caché (nunca r2.dev en producción) y lifecycle para abortar multipart
+// incompletos. `MEDIA_PUBLIC_BASE_URL` es ese dominio: en staging y production lo inyecta
+// `scripts/deploy.mjs` desde las variables de GitHub Actions.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "menusmax-api-dev",
@@ -15,6 +19,7 @@
   "workers_dev": false,
   "observability": { "enabled": true },
   "vars": { "ENVIRONMENT": "development" },
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "menusmax-media-dev" }],
   "d1_databases": [
     {
       "binding": "DB",
@@ -49,6 +54,7 @@
       "name": "menusmax-api-staging",
       "workers_dev": false,
       "vars": { "ENVIRONMENT": "staging" },
+      "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "menusmax-media-staging" }],
       "d1_databases": [
         {
           "binding": "DB",
@@ -83,6 +89,7 @@
       "name": "menusmax-api",
       "workers_dev": false,
       "vars": { "ENVIRONMENT": "production" },
+      "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "menusmax-media" }],
       "d1_databases": [
         {
           "binding": "DB",

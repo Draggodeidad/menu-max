@@ -18,6 +18,7 @@ export default defineConfig({
           WEB_ORIGIN: "http://localhost:5173",
           EMAIL_FROM: "MenusMax <no-responder@example.com>",
           RESEND_API_KEY: "vitest-resend-placeholder",
+          MEDIA_PUBLIC_BASE_URL: "https://img.example.com",
           // Clave de prueba de Cloudflare que siempre pasa; siteverify se simula en las pruebas.
           TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA",
           TEST_MIGRATIONS: migrations,

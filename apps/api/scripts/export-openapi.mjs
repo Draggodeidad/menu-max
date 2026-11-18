@@ -9,6 +9,7 @@ const server = createTestHarness({
         ENVIRONMENT: "development",
         WEB_ORIGIN: "http://localhost:5173",
         EMAIL_FROM: "MenusMax <no-responder@example.com>",
+        MEDIA_PUBLIC_BASE_URL: "https://img.example.com",
       },
       // Valor ficticio para validar los bindings del Worker local.
       secrets: {
