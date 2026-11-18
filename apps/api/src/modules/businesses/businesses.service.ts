@@ -26,6 +26,7 @@ import { newId } from "../../shared/ids";
 import { log } from "../../shared/log";
 import type { TenantContext } from "../../types";
 import { menuVersionBumpStatement, newMenuStatement } from "../catalog/catalog.service";
+import { withAvailableSlug } from "../storefront/storefront.service";
 import { assertWithinLimit } from "../subscriptions/limits";
 import {
   findBranch,
@@ -131,7 +132,8 @@ export async function getBranch(deps: BusinessDeps, branchId: string): Promise<B
 }
 
 /**
- * Sucursal nueva del negocio de la organización, con su menú vacío en el mismo batch (T16).
+ * Sucursal nueva del negocio de la organización, con su menú vacío y su slug en el mismo batch
+ * (T16, T18).
  * Respeta el límite del plan (`branches`); guardar `alertWhatsapp` registra `alertOptInAt` (quien
  * lo captura confirma que el número acepta avisos).
  */
@@ -147,22 +149,25 @@ export async function createBranch(
 
   const alertWhatsapp = input.alertWhatsapp ?? null;
   const branchId = newId();
-  const row = await insertBranch(
-    deps.db,
-    deps.tenant,
-    {
-      id: branchId,
-      businessId: business.id,
-      name: input.name,
-      timezone: input.timezone,
-      contactPhone: input.contactPhone ?? null,
-      ...modeColumns(input.modes),
-      tableCount,
-      maxOrderTotalCents: input.maxOrderTotalCents ?? null,
-      alertWhatsapp,
-      alertOptInAt: alertWhatsapp ? now : null,
-    },
-    [newMenuStatement(deps.db, deps.tenant, branchId)],
+  // El menú nace con el slug del nombre del negocio (T18); si otro lo toma a la vez, se recalcula.
+  const row = await withAvailableSlug(deps.db, business.name, (slug) =>
+    insertBranch(
+      deps.db,
+      deps.tenant,
+      {
+        id: branchId,
+        businessId: business.id,
+        name: input.name,
+        timezone: input.timezone,
+        contactPhone: input.contactPhone ?? null,
+        ...modeColumns(input.modes),
+        tableCount,
+        maxOrderTotalCents: input.maxOrderTotalCents ?? null,
+        alertWhatsapp,
+        alertOptInAt: alertWhatsapp ? now : null,
+      },
+      [newMenuStatement(deps.db, deps.tenant, branchId, slug)],
+    ),
   );
   if (!row) throw new AppError("INTERNAL");
   log.info("branch.created", {

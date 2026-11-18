@@ -32,7 +32,7 @@ const HOUR_MS = 60 * 60 * 1000;
 export const UNSUPPORTED_IMAGE = "Sube una imagen JPG, PNG o WebP.";
 export const IMAGE_TOO_LARGE = `La imagen mide más de ${MAX_MEDIA_SIDE} px por lado. Redúcela e inténtalo de nuevo.`;
 export const IMAGE_IN_USE =
-  "Esta imagen la usa un producto. Quítala del producto antes de borrarla.";
+  "Esta imagen la usa un producto o el tema del menú. Quítala de ahí antes de borrarla.";
 
 function invalidImage(message: string) {
   return new AppError("VALIDATION_FAILED", message, { file: [message] });
