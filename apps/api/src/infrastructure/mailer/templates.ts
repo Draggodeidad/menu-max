@@ -2,15 +2,27 @@ import type { Mail } from "./mailer";
 
 // Plantillas puras en español de México: texto plano + HTML simple, sin imágenes remotas ni tracking.
 
-export type RenderedEmail = { subject: string; text: string; html: string };
+export type RenderedEmail = {
+  subject: string;
+  text: string;
+  html: string;
+  /** Enlaces del correo, en orden. El adaptador de consola los imprime en development. */
+  links: string[];
+};
+
+type Action = {
+  /** Frase antes del enlace, en el mismo párrafo: "Si fuiste tú, entra…: [Entrar]". */
+  lead?: string;
+  label: string;
+  url: string;
+};
 
 type Content = {
   subject: string;
-  /** Párrafos antes del enlace. */
+  /** Párrafos antes de los enlaces. */
   intro: string[];
-  action: string;
-  url: string;
-  /** Párrafos después del enlace. */
+  actions: [Action, ...Action[]];
+  /** Párrafos después de los enlaces. */
   outro: string[];
 };
 
@@ -74,8 +86,7 @@ function contentFor(mail: Mail): Content {
       return {
         subject: "Confirma tu correo en MenusMax",
         intro: ["Confirma tu correo para que tu menú pueda recibir pedidos."],
-        action: "Confirmar correo",
-        url: mail.data.url,
+        actions: [{ label: "Confirmar correo", url: mail.data.url }],
         outro: [
           "El enlace vence en 24 horas.",
           "Si no creaste una cuenta en MenusMax, ignora este correo.",
@@ -87,8 +98,7 @@ function contentFor(mail: Mail): Content {
         intro: [
           "Recibimos una solicitud para restablecer tu contraseña. Abre el enlace para elegir una nueva.",
         ],
-        action: "Restablecer contraseña",
-        url: mail.data.url,
+        actions: [{ label: "Restablecer contraseña", url: mail.data.url }],
         outro: [
           "El enlace vence en 1 hora.",
           "Si no lo pediste, ignora este correo: tu contraseña no cambiará.",
@@ -100,16 +110,14 @@ function contentFor(mail: Mail): Content {
         intro: [
           `${mail.data.inviterName} te invitó a colaborar en ${mail.data.organizationName} en MenusMax.`,
         ],
-        action: "Aceptar invitación",
-        url: mail.data.url,
+        actions: [{ label: "Aceptar invitación", url: mail.data.url }],
         outro: ["Si no esperabas esta invitación, ignora este correo."],
       };
     case "password-changed":
       return {
         subject: "Tu contraseña de MenusMax cambió",
         intro: ["La contraseña de tu cuenta cambió y cerramos tus otras sesiones."],
-        action: "Restablecer contraseña",
-        url: mail.data.url,
+        actions: [{ label: "Restablecer contraseña", url: mail.data.url }],
         outro: ["Si no fuiste tú, restablece tu contraseña ahora con el enlace."],
       };
     case "trial-ending":
@@ -119,8 +127,7 @@ function contentFor(mail: Mail): Content {
           `Tu prueba gratis con todas las funciones termina el ${formatDate(mail.data.trialEndsAt)}. Después, tu cuenta pasa sola al plan ${mail.data.planName} y tu menú sigue funcionando: no tienes que hacer nada.`,
           ...planParagraphs(mail.data),
         ],
-        action: "Revisar mi plan",
-        url: mail.data.url,
+        actions: [{ label: "Revisar mi plan", url: mail.data.url }],
         outro: ["Nada se borra: tu menú, tus productos y tu equipo se quedan como están."],
       };
     case "trial-ended":
@@ -130,9 +137,30 @@ function contentFor(mail: Mail): Content {
           `Terminó tu prueba gratis y tu cuenta pasó al plan ${mail.data.planName}. Tu menú sigue funcionando y nada se borró.`,
           ...planParagraphs(mail.data),
         ],
-        action: "Revisar mi plan",
-        url: mail.data.url,
+        actions: [{ label: "Revisar mi plan", url: mail.data.url }],
         outro: [],
+      };
+    case "account-exists":
+      // Sin datos del intento (negocio, IP, productos): el correo no debe servir para hacerle
+      // llegar texto arbitrario a un tercero (T20c).
+      return {
+        subject: "Alguien intentó crear una cuenta con tu correo en MenusMax",
+        intro: [
+          "Alguien intentó crear un menú en MenusMax con este correo, que ya tiene una cuenta.",
+        ],
+        actions: [
+          {
+            lead: "Si fuiste tú, entra para publicar tu menú",
+            label: "Entrar",
+            url: mail.data.signInUrl,
+          },
+          {
+            lead: "Si no recuerdas tu contraseña, restablécela",
+            label: "Restablecer contraseña",
+            url: mail.data.resetUrl,
+          },
+        ],
+        outro: ["Si no fuiste tú, no tienes que hacer nada: tu cuenta sigue igual."],
       };
   }
 }
@@ -149,26 +177,41 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => HTML_ESCAPES[char] ?? char);
 }
 
-export function renderEmail(mail: Mail): RenderedEmail {
-  const { subject, intro, action, url, outro } = contentFor(mail);
+/** Dirección en claro por si el enlace no abre; con varios, dice a cuál corresponde cada una. */
+function fallback(actions: Content["actions"]) {
+  if (actions.length === 1) {
+    return `<p>Si el enlace no abre, copia esta dirección en tu navegador:<br>${escapeHtml(actions[0].url)}</p>`;
+  }
+  const lines = actions.map(({ label, url }) => `${escapeHtml(label)}: ${escapeHtml(url)}`);
+  return `<p>Si un enlace no abre, copia su dirección en tu navegador:<br>${lines.join("<br>")}</p>`;
+}
 
-  const text = [...intro, `${action}: ${url}`, ...outro, "— MenusMax"].join("\n\n");
+export function renderEmail(mail: Mail): RenderedEmail {
+  const { subject, intro, actions, outro } = contentFor(mail);
+
+  const text = [
+    ...intro,
+    ...actions.map(({ lead, label, url }) => `${lead ?? label}: ${url}`),
+    ...outro,
+    "— MenusMax",
+  ].join("\n\n");
 
   const paragraph = (value: string) => `<p>${escapeHtml(value)}</p>`;
-  const link = escapeHtml(url);
+  const button = ({ lead, label, url }: Action) =>
+    `<p>${lead === undefined ? "" : `${escapeHtml(lead)}: `}<a href="${escapeHtml(url)}" style="color:#1f1f1f;font-weight:600">${escapeHtml(label)}</a></p>`;
   const html = [
     "<!doctype html>",
     '<html lang="es-MX">',
     '<head><meta charset="utf-8"><title>' + escapeHtml(subject) + "</title></head>",
     '<body style="font-family:system-ui,sans-serif;line-height:1.5;color:#1f1f1f;max-width:560px;margin:0 auto;padding:24px">',
     ...intro.map(paragraph),
-    `<p><a href="${link}" style="color:#1f1f1f;font-weight:600">${escapeHtml(action)}</a></p>`,
-    `<p>Si el enlace no abre, copia esta dirección en tu navegador:<br>${link}</p>`,
+    ...actions.map(button),
+    fallback(actions),
     ...outro.map(paragraph),
     "<p>— MenusMax</p>",
     "</body>",
     "</html>",
   ].join("\n");
 
-  return { subject, text, html };
+  return { subject, text, html, links: actions.map(({ url }) => url) };
 }

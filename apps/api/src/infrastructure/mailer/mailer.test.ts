@@ -7,6 +7,7 @@ import { classifyResendStatus, createResendMailer } from "./resend";
 import { renderEmail } from "./templates";
 
 const url = "https://menusmax.example/verificar-correo?token=abc&x=1";
+const resetUrl = "https://menusmax.example/restablecer";
 
 const mails = {
   "verify-email": { to: "ana@example.com", template: "verify-email", data: { url } },
@@ -40,6 +41,11 @@ const mails = {
       features: { customTheme: false, removeBranding: false },
       usage: { branches: 1, products: 80, members: 1 },
     },
+  },
+  "account-exists": {
+    to: "ana@example.com",
+    template: "account-exists",
+    data: { signInUrl: url, resetUrl },
   },
 } satisfies { [Template in EmailTemplate]: Extract<Mail, { template: Template }> };
 
@@ -134,6 +140,40 @@ describe("correos de fin de prueba", () => {
   });
 });
 
+describe("aviso de cuenta existente", () => {
+  it("dice qué pasó y ofrece entrar o restablecer, sin datos del intento", () => {
+    const { subject, text, html, links } = renderEmail(mails["account-exists"]);
+
+    expect(subject).toBe("Alguien intentó crear una cuenta con tu correo en MenusMax");
+    expect(links).toEqual([url, resetUrl]);
+    expect(text).toBe(
+      [
+        "Alguien intentó crear un menú en MenusMax con este correo, que ya tiene una cuenta.",
+        `Si fuiste tú, entra para publicar tu menú: ${url}`,
+        `Si no recuerdas tu contraseña, restablécela: ${resetUrl}`,
+        "Si no fuiste tú, no tienes que hacer nada: tu cuenta sigue igual.",
+        "— MenusMax",
+      ].join("\n\n"),
+    );
+    expect(html).toContain(
+      `Si fuiste tú, entra para publicar tu menú: <a href="${url.replaceAll("&", "&amp;")}"`,
+    );
+    expect(html).toContain(
+      `<a href="${resetUrl}" style="color:#1f1f1f;font-weight:600">Restablecer contraseña</a>`,
+    );
+    expect(html).toContain(`Restablecer contraseña: ${resetUrl}`);
+  });
+
+  it("en development imprime los dos enlaces", async () => {
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    await createMailer(bindings({ ENVIRONMENT: "development" })).send(mails["account-exists"]);
+
+    const output = String(consoleInfo.mock.calls[0]?.[0]);
+    expect(output).toContain(`Enlace: ${url}\nEnlace: ${resetUrl}`);
+  });
+});
+
 describe("createMailer", () => {
   it("en development usa el adaptador de consola y no llama a Resend", async () => {
     const fetchSpy = fakeFetch(accepted);
@@ -174,10 +214,13 @@ describe("createResendMailer", () => {
     expect(init?.method).toBe("POST");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer resend-test-placeholder");
     expect(new Headers(init?.headers).get("content-type")).toBe("application/json");
+    const { subject, text, html } = renderEmail(mails.invitation);
     expect(JSON.parse(String(init?.body))).toEqual({
       from: "MenusMax <avisos@example.com>",
       to: ["ana@example.com"],
-      ...renderEmail(mails.invitation),
+      subject,
+      text,
+      html,
     });
     expect(init?.signal).toBeInstanceOf(AbortSignal);
   });
