@@ -521,3 +521,23 @@ export function claimInvitationStatements(db: Db, claim: InvitationClaim, member
     ),
   ] as const;
 }
+
+/**
+ * Correo de los `owner` activos de varias organizaciones, sin los que el proveedor marcó como no
+ * entregables (ADR-008). Sin tenant: lo usa el Cron de fin de prueba (T20b), que no tiene actor.
+ */
+export function findOwnerRecipients(db: Db, orgIds: string[]) {
+  return db
+    .select({ organizationId: organizationMembers.organizationId, email: users.email })
+    .from(organizationMembers)
+    .innerJoin(users, eq(users.id, organizationMembers.userId))
+    .where(
+      and(
+        inArray(organizationMembers.organizationId, orgIds),
+        eq(organizationMembers.role, "owner"),
+        eq(organizationMembers.status, "active"),
+        eq(users.emailStatus, "ok"),
+      ),
+    )
+    .orderBy(asc(organizationMembers.organizationId), asc(organizationMembers.id));
+}

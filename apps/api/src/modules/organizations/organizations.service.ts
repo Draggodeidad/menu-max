@@ -51,6 +51,7 @@ import {
   findMembershipOfUser,
   findOrganization,
   findOrgBranchIds,
+  findOwnerRecipients,
   findPendingInvitation,
   insertInvitation,
   invitationClaimed,
@@ -477,4 +478,20 @@ export async function acceptInvitation(
   }
   log.info("invitation.accepted", { requestId: deps.requestId, orgId: invitation.orgId });
   return { orgId: invitation.orgId, setCookies };
+}
+
+/**
+ * Correos de los `owner` activos y entregables de cada organización (T20b), agrupados por
+ * organización. Una organización sin dueños entregables no aparece en el mapa.
+ */
+export async function listOwnerRecipients(
+  db: Db,
+  orgIds: string[],
+): Promise<Map<string, string[]>> {
+  const recipients = new Map<string, string[]>();
+  if (orgIds.length === 0) return recipients;
+  for (const { organizationId, email } of await findOwnerRecipients(db, orgIds)) {
+    recipients.set(organizationId, [...(recipients.get(organizationId) ?? []), email]);
+  }
+  return recipients;
 }
