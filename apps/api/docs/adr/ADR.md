@@ -244,7 +244,7 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 - **Cuándo vence:** al terminar ese plazo, si ningún `owner` activo de la organización tiene el correo verificado. Es la misma condición que `acceptingOrders` usa para el motivo `unverified` (T18).
 - **Durante la gracia** no cambia nada respecto a T18: el menú publicado se ve, pero `acceptingOrders` es `false` con motivo `unverified`.
 - **Con la gracia vencida:**
-  - la lectura pública (`GET /v1/public/menus/:slug`) responde el menú como inactivo, sin categorías ni productos;
+  - la lectura pública (`GET /v1/public/menus/:slug`) responde `acceptingOrders: false`, `notAcceptingReason: "inactive"` y ninguna categoría;
   - WEB muestra «Este menú aún no está activo» (`DESIGN.md §7.2`);
   - el panel sigue funcionando: el dueño entra, edita y pide reenvío.
 - **No se borra nada:** al verificar el correo, el menú vuelve a mostrarse en la siguiente lectura, sin otra acción. La caché de WEB lo refleja porque verificar sube `menu_version` de los menús de la organización.
@@ -253,10 +253,11 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
   - el plazo da tres semanas a negocios pequeños que no revisan su correo a diario y se instalan el mismo día en que imprimen sus QR;
   - el reenvío ya está acotado (5 por día);
   - 21 días limitan cuánto tiempo puede estar publicado un menú de una cuenta falsa con datos de contacto inventados.
-- **Implementación:** pendiente en el backend, con su propia task o como ampliación de T18.
-  - La regla es una función pura junto a `acceptingOrders`.
-  - Necesita leer `organizations.created_at` en la consulta pública, la que ya calcula el dueño verificado.
-  - Necesita subir `menu_version` cuando un `owner` verifica su correo.
+- **Implementación (T18, #65):**
+  - `graceExpired` en `modules/storefront/acceptance.ts`, función pura junto a `acceptingOrders`;
+  - el plazo está en `UNVERIFIED_GRACE_DAYS` (`packages/contracts`);
+  - la consulta pública lee `organizations.created_at` en la misma cabecera que calcula al dueño verificado;
+  - `POST /v1/auth/verify-email` sube `menu_version` de los menús donde el usuario es `owner` activo.
 
 ---
 

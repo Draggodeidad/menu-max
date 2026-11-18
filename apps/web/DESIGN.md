@@ -385,7 +385,7 @@ El horario se ve antes de agregar nada. Si el negocio está cerrado, los botones
 
 - `closed`: lo de arriba (botones `+` deshabilitados y la hora a la que abre).
 - `unverified` o `suspended`: el menú se ve completo, los `+` se deshabilitan y la cabecera dice «Este menú todavía no recibe pedidos». No se explica el motivo al comensal.
-- Menú inactivo (gracia vencida, ADR-008): sin productos; una sola tarjeta centrada con «Este menú aún no está activo» y el teléfono del negocio, si existe.
+- `inactive` (gracia de 21 días vencida sin dueño verificado, ADR-008): la API no manda categorías; una sola tarjeta centrada con «Este menú aún no está activo» y el teléfono del negocio, si existe.
 
 **J · Pedido (checkout)**: resumen con −/+, modalidad (fija y oculta si viene `?mesa`), nombre, teléfono, dirección solo para domicilio, "Pagas en efectivo al recibir", "Recordar mis datos", botón fijo "Enviar pedido · $240". Idempotency key en input oculto generado en `load`.
 
