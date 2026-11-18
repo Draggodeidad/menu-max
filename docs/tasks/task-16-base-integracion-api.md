@@ -1,84 +1,89 @@
 # Task 16 — Base para integrar la API
 
 **Prioridad:** P0
-**Categoría:** Integración con la API
+**Categoría:** Paridad con la API
 **Depende de:** task-01 a task-15 (terminadas)
 
-> No confundir con la task T16 del backend (`apps/api/docs/STATUS.md`): los dos backlogs numeran por separado. Esta task usa lo que entregaron T05 (`$lib/server/api.ts`), T07 (Better Auth) y T09 (Turnstile) del backend.
+> No confundir con la task T16 del backend: los dos backlogs numeran por separado. Usa T05 (`$lib/server/api.ts`), T07 (Better Auth) y T09 (Turnstile). Regla y matriz: `PARIDAD-API.md`.
 
 ## Contexto
 
-Las tasks 01 a 15 dejaron todas las pantallas funcionando con datos simulados (`apps/web/AGENTS.md §0.1`). El backend ya expone identidad, onboarding, tenancy, catálogo, ajustes, menú público e invitaciones (`docs/api/openapi.json`). Le faltan los pedidos (T21–T23) y WhatsApp (T24–T25).
+Las tasks 01 a 15 dejaron las pantallas con datos simulados (`apps/web/AGENTS.md §0.1`). `#lib/server/api.ts` existe, pero ninguna pantalla lo usa. Hoy lanza `error(status)` ante cualquier respuesta que no sea 2xx: sirve en un `load`, no en una form action, que necesita `fail(400, { fieldErrors })`.
 
-`apps/web/src/lib/server/api.ts` ya existe (T05) y ninguna pantalla lo usa. Hoy lanza `error(status)` ante cualquier respuesta que no sea 2xx. Eso sirve en un `load`, pero no en una form action, que necesita devolver `fail(400, { fieldErrors })` para mostrar el error bajo el campo.
-
-Esta task prepara lo que comparten todas las pantallas que se conectan en las tasks 17 a 24. Todavía no conecta ninguna.
+Esta task deja lo que comparten las tasks 17 a 33. No conecta ninguna pantalla.
 
 ## Objetivo
 
-- Las reglas de `apps/web` describen la fase de integración y dejan de decir que no hay API.
-- Una form action puede llamar a la API y convertir sus errores en `fail()` sin repetir código.
-- Un desarrollador levanta WEB y la API en local con un solo comando, y Playwright puede correr pruebas contra esa API local.
-- El widget de Turnstile existe una sola vez y lo usan `/crear`, `/restablecer` e `/invitacion`.
+- Las reglas de `apps/web` adoptan la regla de `PARIDAD-API.md`: la API dicta el alcance.
+- Una form action llama a la API y convierte cualquier código del catálogo de errores en `fail()` sin repetir código.
+- Las validaciones salen de `@menu-max/contracts`.
+- WEB y la API corren juntas en local, y Playwright prueba contra la API local.
+
+## Lo que la base debe cubrir
+
+| Pieza        | Comportamiento                                                                                                                                                                                                                                                                                                    |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Errores      | Los 13 códigos de `packages/contracts/src/errors.ts`. `VALIDATION_FAILED` trae `fieldErrors` por ruta del campo (`account.password`, `products.2.name`). `RATE_LIMITED` trae `Retry-After`. `PLAN_LIMIT_REACHED`, `EMAIL_NOT_VERIFIED` y el `403` de suscripción suspendida se distinguen por `code` y `message`. |
+| Validación   | Las actions validan con el esquema del contrato antes de llamar. Cada mensaje del contrato llega intacto al campo.                                                                                                                                                                                                |
+| Concurrencia | Todo formulario que edita algo con `version` la lleva en un campo oculto. Un `409 CONFLICT` vuelve con los datos recién leídos.                                                                                                                                                                                   |
+| Paginación   | Las listas con `nextCursor` (sucursales, miembros, invitaciones) usan un helper común de «Ver más», con `limit` ≤ 100.                                                                                                                                                                                            |
+| Idempotencia | Helper para generar la llave en `load` y reenviarla en `Idempotency-Key`.                                                                                                                                                                                                                                         |
+| Turnstile    | `Turnstile.svelte` en `#lib/components` (lo usan `/crear`, `/restablecer` e `/invitacion`). El token viaja en `x-turnstile-token` y el widget se reinicia tras cada envío fallido.                                                                                                                                |
+| Cookies      | `set-cookie` se reenvía también en respuestas de error. El onboarding abre sesión aunque su batch falle.                                                                                                                                                                                                          |
 
 ## Archivos involucrados
 
-- `apps/web/AGENTS.md`: §0.1 (fase actual), §6.1 y §8 (pruebas).
-- `apps/web/DESIGN.md §8`: quitar «(cuando exista la API)» de `server/api.ts`.
+- `apps/web/AGENTS.md` (§0.1, §6.1, §8) y `apps/web/DESIGN.md §8`.
 - `apps/web/src/lib/server/api.ts` y `api.test.ts`.
-- `apps/web/src/lib/components/Turnstile.svelte` (nuevo: lo usan tres rutas).
-- `apps/web/.dev.vars.example` y `.env.example` (raíz): la clave pública de Turnstile.
-- `playwright.config.ts` y `e2e/fixtures.ts`: el proyecto de integración.
-- `README.md` (raíz): sección de desarrollo local con las dos apps.
+- `apps/web/src/lib/components/Turnstile.svelte` (nuevo).
+- `apps/web/.dev.vars.example` y `.env.example`: `PUBLIC_TURNSTILE_SITE_KEY`, con la clave de prueba de Cloudflare.
+- `playwright.config.ts` y `e2e/fixtures.ts`: proyecto `integracion`.
+- `README.md` (raíz): desarrollo local con las dos apps.
 
 ## Pasos sugeridos
 
-1. **Reglas de la fase.** En `AGENTS.md §0.1`, reemplazar «Fase actual: frontend con datos mock» por la fase de integración:
-   - una pantalla conectada lee y escribe solo por `#lib/server/api.ts`; sus mocks se borran de `demo.ts` en la misma task;
-   - lo que la API todavía no tiene (pedidos, seguimiento, WhatsApp) sigue en `demo.ts`, marcado `// TEMPORAL: sin API todavía (T21–T25)`;
-   - `demo.ts` se borra cuando ya nadie lo importe;
-   - los esquemas salen de `@menu-max/contracts`: ninguna action vuelve a escribir una validación que ya tiene el contrato.
-2. **`api.ts` para actions.** Agregar una función junto a `api()`, por ejemplo `apiAction(event, path, init, schema)`. Debe:
-   - validar el cuerpo de éxito con el DTO de `@menu-max/contracts` (`schema.parse`);
-   - con `400`, `401`, `402`, `403`, `404`, `409`, `422` o `429`, devolver `{ ok: false, status, code, message, fieldErrors, retryAfter }` en lugar de lanzar el error, para que la action lo convierta en `fail(status, …)`;
-   - con `5xx`, fallas de red o un error con otra forma, comportarse como `api()` (`502` con el mensaje de servicio no disponible);
-   - reenviar `set-cookie` también en las respuestas de error. El onboarding abre sesión aunque su batch falle (backend T20).
-3. **Turnstile.** Crear `Turnstile.svelte`:
-   - carga el script de `challenges.cloudflare.com` solo en las pantallas que lo usan;
-   - pone el token en un `<input type="hidden" name="turnstileToken">`;
-   - después de un envío fallido, el widget se reinicia, porque cada token sirve una sola vez.
+1. **Reglas.** `AGENTS.md §0.1` pasa a «Fase actual: integración». Debe decir:
+   - la regla de `PARIDAD-API.md`;
+   - una pantalla conectada borra sus mocks en la misma task;
+   - lo que la API no tiene y el backend sí tiene planeado sigue en `demo.ts` con `// TEMPORAL: sin API todavía (TNN)`.
 
-   La action lo reenvía en el header `x-turnstile-token`. La clave pública va en `PUBLIC_TURNSTILE_SITE_KEY`; en local se usa la clave de prueba de Cloudflare que siempre pasa.
+   §8 agrega el proyecto `integracion`: la API local con D1 local, nunca staging ni producción.
 
+2. **`apiAction`.** Junto a `api()`:
+   - valida el éxito con el DTO;
+   - devuelve `{ ok: false, status, code, message, fieldErrors, retryAfter }` para `4xx`;
+   - con `5xx` o fallas de red, se comporta como `api()`.
+
+   Agregar un helper que traduzca las rutas de `fieldErrors` a los `name` de cada formulario.
+
+3. **Helpers.** Paginación por cursor, llave de idempotencia, Turnstile.
 4. **Entorno local.** Documentar en `README.md`:
-   - copiar `apps/web/.dev.vars` y `apps/api/.dev.vars` con el mismo `INTERNAL_TOKEN`;
-   - correr `pnpm --filter api db:migrate:local`;
-   - levantar las dos apps con `pnpm dev`.
+   - el mismo `INTERNAL_TOKEN` en `apps/web/.dev.vars` y `apps/api/.dev.vars`;
+   - `pnpm --filter api db:migrate:local`;
+   - `pnpm dev`.
 
-   Verificar que el binding `API` del servidor de desarrollo de WEB llega al `wrangler dev` de `menusmax-api-dev`. Si `vite dev` no lo resuelve, documentar la alternativa que sí funcione. No se toca `wrangler.jsonc` sin preguntar.
+   Verificar que el binding `API` llega al `wrangler dev` de `menusmax-api-dev`; si `vite dev` no lo resuelve, documentar la alternativa. `wrangler.jsonc` no se toca sin preguntar.
 
-5. **Pruebas de integración.** Agregar a Playwright un proyecto `integracion`:
-   - levanta las dos apps con D1 local y las migraciones aplicadas;
-   - las fixtures pueden crear usuarios llamando a la API local con el token interno;
-   - nunca apunta a staging ni a producción.
-
-   Las pruebas actuales con mocks siguen en su proyecto hasta que su pantalla se conecte. Actualizar `AGENTS.md §8` con esta regla.
+5. **Playwright.** Agregar el proyecto `integracion`:
+   - levanta las dos apps con las migraciones aplicadas;
+   - sus fixtures crean usuarios, organizaciones e invitaciones con la API local y el token interno.
 
 ## Criterios de aceptación
 
-- [ ] `AGENTS.md` y `DESIGN.md §8` describen la fase de integración; ninguna regla vigente dice que no hay API.
-- [ ] Pruebas unitarias de `apiAction`:
-  - éxito validado contra su DTO;
-  - `400` con `fieldErrors`, `409` y `429` con `Retry-After` devueltos sin lanzar;
-  - `500` y falla de red → `502`;
+- [ ] `AGENTS.md` y `DESIGN.md §8` describen la fase de integración y la regla de paridad.
+- [ ] Pruebas de `apiAction`:
+  - éxito validado;
+  - cada código del catálogo devuelto sin lanzar;
+  - `fieldErrors` con rutas anidadas traducidos;
+  - `Retry-After` leído;
+  - `5xx` y falla de red → `502`;
   - `set-cookie` reenviado en éxito y en error.
-- [ ] Con `pnpm dev`, una petición desde el servidor de WEB a `/v1/health` por el binding responde `200`. Es el criterio de cierre de la fase B1 del backend.
-- [ ] El proyecto `integracion` de Playwright arranca las dos apps y corre al menos una prueba de humo.
-- [ ] `PUBLIC_TURNSTILE_SITE_KEY` está en `.dev.vars.example` y en `.env.example`, con la clave de prueba.
+- [ ] Con `pnpm dev`, `/v1/health` responde `200` desde el servidor de WEB por el binding. Es el cierre de la fase B1 del backend.
+- [ ] El proyecto `integracion` arranca las dos apps y corre una prueba de humo.
+- [ ] `PUBLIC_TURNSTILE_SITE_KEY` está en `.dev.vars.example` y en `.env.example`.
 - [ ] `pnpm --filter web check`, `lint` y `test` pasan.
 
 ## Fuera de alcance
 
-- Conectar pantallas: tasks 17 a 24.
+- Conectar pantallas (tasks 17 a 33).
 - Cambios en `apps/api`, `packages/contracts` o `wrangler.jsonc`.
-- Despliegues y secretos de staging o producción.
