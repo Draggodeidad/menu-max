@@ -27,7 +27,7 @@ import { isOpen, localWeekday, nextOpening, type HoursRange } from "../businesse
 import { menuOfBranch } from "../catalog/catalog.service";
 import { findMedia } from "../catalog/media.service";
 import { assertFeature } from "../subscriptions/limits";
-import { acceptingOrders } from "./acceptance";
+import { acceptingOrders, type Acceptance } from "./acceptance";
 import {
   assignSlug,
   bumpMenusOfOrganizations,
@@ -40,6 +40,7 @@ import {
   findTakenSlugs,
   findTheme,
   publishMenu,
+  readCheckout,
   readPublicMenu,
   saveTheme,
   unpublishMenu,
@@ -368,11 +369,13 @@ function isSubscriptionStatus(value: string | null): value is SubscriptionStatus
 
 type PublicRead = Awaited<ReturnType<typeof readPublicMenu>>;
 
-/** Filas de producto × variante (ya ordenadas) → productos con variantes, imagen y grupos. */
-function publicProducts(deps: PublicStorefrontDeps, read: PublicRead) {
+type OptionRow = PublicRead["groupRows"][number];
+
+/** Filas de grupo × opción (ya ordenadas) → grupos con sus opciones, por producto. */
+function optionGroupsByProduct(rows: readonly OptionRow[]) {
   const groupsByProduct = new Map<string, PublicProductDto["optionGroups"]>();
   const groupsById = new Map<string, PublicProductDto["optionGroups"][number]>();
-  for (const row of read.groupRows) {
+  for (const row of rows) {
     if (row.groupId === null || row.groupName === null) continue;
     let group = groupsById.get(row.groupId);
     if (!group) {
@@ -396,6 +399,12 @@ function publicProducts(deps: PublicStorefrontDeps, read: PublicRead) {
       });
     }
   }
+  return groupsByProduct;
+}
+
+/** Filas de producto × variante (ya ordenadas) → productos con variantes, imagen y grupos. */
+function publicProducts(deps: PublicStorefrontDeps, read: PublicRead) {
+  const groupsByProduct = optionGroupsByProduct(read.groupRows);
 
   const byCategory = new Map<string, PublicProductDto[]>();
   const byId = new Map<string, PublicProductDto>();
@@ -560,4 +569,98 @@ export async function getPublicMenuVersion(
   const row = await findPublicMenuVersion(deps.db, slug);
   if (!row) throw new AppError("NOT_FOUND", "Este menú no existe o no está publicado.");
   return { menuVersion: row.menuVersion };
+}
+
+// Checkout (T21) ------------------------------------------------------------------------------
+
+export type CheckoutProduct = {
+  id: string;
+  name: string;
+  priceCents: number;
+  variants: PublicProductDto["variants"];
+  optionGroups: PublicProductDto["optionGroups"];
+};
+
+/**
+ * Menú publicado visto por un pedido: ids internos (nunca salen en una respuesta), reglas de la
+ * sucursal, si recibe pedidos y por qué no (ADR-008), la zona que atiende el código postal y los
+ * productos pedidos que siguen disponibles, leídos de D1.
+ */
+export type CheckoutContext = {
+  orgId: string;
+  branchId: string;
+  menuId: string;
+  modes: { table: boolean; pickup: boolean; delivery: boolean };
+  tableCount: number;
+  maxOrderTotalCents: number | null;
+  hasVerifiedOwner: boolean;
+  acceptance: Acceptance;
+  zone: { id: string; feeCents: number } | null;
+  catalog: Map<string, CheckoutProduct>;
+};
+
+/** Contexto del pedido público por slug. Menú inexistente o sin publicar → `NOT_FOUND`. */
+export async function loadCheckout(
+  deps: Pick<PublicStorefrontDeps, "db" | "requestId">,
+  slug: string,
+  productIds: readonly string[],
+  postalCode: string | null,
+  now = new Date(),
+): Promise<CheckoutContext> {
+  const read = await readCheckout(deps.db, slug, productIds, postalCode);
+  const header = read.header;
+  if (!header) throw new AppError("NOT_FOUND", "Este menú no existe o no está publicado.");
+
+  if (header.subscriptionStatus === null) {
+    log.error("subscription.missing", { requestId: deps.requestId, orgId: header.orgId });
+  }
+  const hasVerifiedOwner = header.hasVerifiedOwner === 1;
+  const acceptance = acceptingOrders(
+    { status: "published" },
+    {
+      hasVerifiedOwner,
+      subscriptionStatus: isSubscriptionStatus(header.subscriptionStatus)
+        ? header.subscriptionStatus
+        : "suspended",
+      createdAt: new Date(header.orgCreatedAt ?? 0),
+    },
+    { hours: read.hourRows, timezone: header.timezone },
+    now,
+  );
+
+  const groupsByProduct = optionGroupsByProduct(read.groupRows);
+  const catalog = new Map<string, CheckoutProduct>();
+  for (const row of read.productRows) {
+    let product = catalog.get(row.id);
+    if (!product) {
+      product = {
+        id: row.id,
+        name: row.name,
+        priceCents: row.priceCents,
+        variants: [],
+        optionGroups: groupsByProduct.get(row.id) ?? [],
+      };
+      catalog.set(row.id, product);
+    }
+    if (row.variantId !== null && row.variantName !== null && row.variantPriceCents !== null) {
+      product.variants.push({
+        id: row.variantId,
+        name: row.variantName,
+        priceCents: row.variantPriceCents,
+      });
+    }
+  }
+
+  return {
+    orgId: header.orgId,
+    branchId: header.branchId,
+    menuId: header.menuId,
+    modes: { table: header.modeTable, pickup: header.modePickup, delivery: header.modeDelivery },
+    tableCount: header.tableCount,
+    maxOrderTotalCents: header.maxOrderTotalCents,
+    hasVerifiedOwner,
+    acceptance,
+    zone: read.zone ?? null,
+    catalog,
+  };
 }
