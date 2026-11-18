@@ -23,7 +23,11 @@ import {
   organizationRoutes,
   publicInvitationRoutes,
 } from "./modules/organizations/organizations.routes";
-import { publicMenuRoutes, storefrontRoutes } from "./modules/storefront/storefront.routes";
+import {
+  publicMenuRoutes,
+  qrRoutes,
+  storefrontRoutes,
+} from "./modules/storefront/storefront.routes";
 import { subscriptionRoutes } from "./modules/subscriptions/subscriptions.routes";
 import { AppError, notFound, onError } from "./shared/errors";
 import type { AppEnv, TenantEnv } from "./types";
@@ -98,6 +102,7 @@ export function createApp(environment?: Env["ENVIRONMENT"]) {
   orgScoped.route("/branches", branchRoutes);
   orgScoped.route("/branches/:branchId/menu", catalogRoutes);
   orgScoped.route("/branches/:branchId/menu", storefrontRoutes);
+  orgScoped.route("/branches/:branchId/qr", qrRoutes);
   orgScoped.route("/media", mediaRoutes);
   app.route("/v1/orgs/:orgId", orgScoped);
 

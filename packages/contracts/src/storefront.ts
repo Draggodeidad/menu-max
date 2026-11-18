@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BranchModes, HoursRangeDto } from "./businesses";
+import { BranchModes, HoursRangeDto, MAX_TABLE_COUNT } from "./businesses";
 import { MenuStatus } from "./catalog";
 
 // Storefront (T18, ADR-008, ADR-014): tema del menú público, enlace (slug), publicación y la
@@ -88,6 +88,17 @@ export const PublicMenuParams = z.strictObject({
 /** Solo mientras el menú nunca se ha publicado: después el enlace ya está en QR impresos. */
 export const UpdateSlugInput = z.strictObject({ slug: Slug });
 export type UpdateSlugInput = z.infer<typeof UpdateSlugInput>;
+
+// QR (T19, ADR-017) ----------------------------------------------------------------------------
+
+/**
+ * QR del menú (`/m/{slug}`) o de una mesa (`/m/{slug}?mesa={n}`). El tope real de `mesa` es el
+ * `tableCount` de la sucursal: lo valida el servicio.
+ */
+export const QrQuery = z.strictObject({
+  mesa: z.coerce.number().int().min(1).max(MAX_TABLE_COUNT).optional(),
+});
+export type QrQuery = z.infer<typeof QrQuery>;
 
 // Tema --------------------------------------------------------------------------------------
 

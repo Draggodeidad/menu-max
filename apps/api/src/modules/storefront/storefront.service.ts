@@ -13,12 +13,15 @@ import {
   type UpdateSlugInput,
   type UpdateThemeInput,
 } from "@menu-max/contracts";
+import { renderSVG } from "uqr";
 import type { Env } from "../../env";
 import type { Db } from "../../infrastructure/db";
 import { publicUrl } from "../../infrastructure/storage";
 import { AppError } from "../../shared/errors";
 import { newId } from "../../shared/ids";
 import { log } from "../../shared/log";
+import { canAccessBranch } from "../../shared/authz/policies";
+import { assertAllowed } from "../../shared/authz/result";
 import type { TenantContext } from "../../types";
 import { isOpen, localWeekday, nextOpening, type HoursRange } from "../businesses/hours";
 import { menuOfBranch } from "../catalog/catalog.service";
@@ -32,6 +35,7 @@ import {
   findBusinessNameOfBranch,
   findPublication,
   findPublicMenuVersion,
+  findQrTarget,
   findTakenSlugs,
   findTheme,
   publishMenu,
@@ -57,7 +61,7 @@ import {
 
 export type StorefrontDeps = {
   db: Db;
-  env: Pick<Env, "MEDIA_PUBLIC_BASE_URL">;
+  env: Pick<Env, "MEDIA_PUBLIC_BASE_URL" | "WEB_ORIGIN">;
   tenant: TenantContext;
   requestId: string;
 };
@@ -208,6 +212,47 @@ export async function unpublish(
   const current = row ?? (await findPublication(deps.db, deps.tenant, menu.id));
   if (!current) throw new AppError("NOT_FOUND");
   return toPublicationDto(current);
+}
+
+// QR ----------------------------------------------------------------------------------------
+
+export const QR_MENU_NOT_PUBLISHED = "Publica tu menú para descargar el QR.";
+export const QR_NO_TABLES =
+  "Esta sucursal no tiene mesas. Indica cuántas tiene en los datos de la sucursal.";
+
+/** ADR-017: corrección de errores nivel M y margen de 4 módulos (la zona silenciosa del estándar). */
+export const QR_OPTIONS = { ecc: "M", border: 4 } as const;
+
+function qrTableError(tableCount: number) {
+  const message = tableCount === 0 ? QR_NO_TABLES : `Elige una mesa de la 1 a la ${tableCount}.`;
+  return new AppError("VALIDATION_FAILED", message, { mesa: [message] });
+}
+
+/** Destino del QR: `/m/{slug}` o `/m/{slug}?mesa={n}` en WEB. */
+export function qrUrl(webOrigin: string, slug: string, mesa?: number): string {
+  const url = new URL(`/m/${slug}`, webOrigin);
+  if (mesa !== undefined) url.searchParams.set("mesa", String(mesa));
+  return url.href;
+}
+
+/**
+ * SVG del QR del menú publicado o de una de sus mesas (ADR-017). Se genera al pedirlo: solo
+ * depende del slug, que no cambia tras publicar, así que el QR impreso y el del panel coinciden.
+ * Menú no publicado (borrador o despublicado) → `BUSINESS_RULE`.
+ */
+export async function getMenuQr(
+  deps: StorefrontDeps,
+  branchId: string,
+  mesa?: number,
+): Promise<string> {
+  assertAllowed(canAccessBranch(deps.tenant, branchId));
+  const target = await findQrTarget(deps.db, deps.tenant, branchId);
+  if (!target) throw new AppError("NOT_FOUND");
+  if (mesa !== undefined && mesa > target.tableCount) throw qrTableError(target.tableCount);
+  if (target.status !== "published" || target.slug === null) {
+    throw new AppError("BUSINESS_RULE", QR_MENU_NOT_PUBLISHED);
+  }
+  return renderSVG(qrUrl(deps.env.WEB_ORIGIN, target.slug, mesa), QR_OPTIONS);
 }
 
 // Tema --------------------------------------------------------------------------------------
