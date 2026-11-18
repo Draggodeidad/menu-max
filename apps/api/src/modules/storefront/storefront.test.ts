@@ -10,9 +10,18 @@ import {
   SLUG_RESERVED_MESSAGE,
   THEME_PRESET_COLORS,
   ThemeDto,
+  UNVERIFIED_GRACE_DAYS,
   UpdateSlugInput,
 } from "@menu-max/contracts";
-import { businesses, menus, storefrontThemes, subscriptions, users } from "@menu-max/database";
+import {
+  businesses,
+  menus,
+  organizations,
+  storefrontThemes,
+  subscriptions,
+  users,
+} from "@menu-max/database";
+import { createEmailVerificationToken } from "better-auth/api";
 import { env } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
@@ -24,6 +33,7 @@ import { IMAGE_IN_USE } from "../catalog/media.service";
 import { NO_AVAILABLE_PRODUCTS, SLUG_LOCKED, SLUG_TAKEN } from "./storefront.service";
 
 const db = () => createDb(getEnv(env));
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 async function expectError(response: Response, status: number, code: ErrorResponse["code"]) {
   expect(response.status).toBe(status);
@@ -749,6 +759,54 @@ describe("GET /v1/public/menus/:slug", () => {
     const unverified = await published({ ownerVerified: false });
     await db().update(users).set({ emailVerified: true }).where(eq(users.id, unverified.owner.id));
     expect((await publicMenu(unverified.slug)).acceptingOrders).toBe(true);
+  });
+
+  it("con la gracia vencida (21 días) queda inactivo sin productos; al verificar vuelve", async () => {
+    const context = await published({ ownerVerified: false });
+    const { org, owner, branchId, slug } = context;
+    const old = new Date(Date.now() - (UNVERIFIED_GRACE_DAYS + 1) * DAY_MS);
+    await db().update(organizations).set({ createdAt: old }).where(eq(organizations.id, org.orgId));
+
+    const inactive = await publicMenu(slug);
+    expect(inactive).toMatchObject({
+      acceptingOrders: false,
+      notAcceptingReason: "inactive",
+      categories: [],
+      business: { name: expect.any(String) },
+    });
+
+    // Verificar el correo por el flujo real sube menuVersion y el menú vuelve a mostrarse.
+    const before = (await menuRow(branchId))?.menuVersion ?? 0;
+    const token = await createEmailVerificationToken(
+      getEnv(env).BETTER_AUTH_SECRET,
+      owner.email,
+      undefined,
+      60,
+      { userId: owner.id },
+    );
+    const verified = await callApi(
+      "GET",
+      `/v1/auth/verify-email?${new URLSearchParams({ token })}`,
+    );
+    expect(verified.status).toBe(200);
+    expect((await menuRow(branchId))?.menuVersion).toBe(before + 1);
+
+    const active = await publicMenu(slug);
+    expect(active).toMatchObject({ acceptingOrders: true, notAcceptingReason: null });
+    expect(active.menuVersion).toBe(before + 1);
+    expect(active.categories.flatMap((category) => category.products)).toHaveLength(1);
+  });
+
+  it("dentro de la gracia el menú se ve completo pero sin pedidos (unverified)", async () => {
+    const { org, slug } = await published({ ownerVerified: false });
+    const recent = new Date(Date.now() - (UNVERIFIED_GRACE_DAYS - 1) * DAY_MS);
+    await db()
+      .update(organizations)
+      .set({ createdAt: recent })
+      .where(eq(organizations.id, org.orgId));
+    const dto = await publicMenu(slug);
+    expect(dto.notAcceptingReason).toBe("unverified");
+    expect(dto.categories).toHaveLength(1);
   });
 
   it("lee todo el menú en un solo db.batch", async () => {
