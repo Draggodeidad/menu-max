@@ -15,7 +15,7 @@ import { newId } from "../../shared/ids";
 import { log } from "../../shared/log";
 import { hit } from "../../shared/rate-counters";
 import type { AuthUser } from "../auth/auth";
-import { createOwnerAccount } from "../auth/auth.service";
+import { createOwnerAccount, notifyExistingAccount } from "../auth/auth.service";
 import { listMemberships } from "../organizations/organizations.service";
 import { qrUrl, withAvailableSlug } from "../storefront/storefront.service";
 import { planMaxProducts } from "../subscriptions/subscriptions.service";
@@ -87,6 +87,15 @@ async function consumeSignupQuota(deps: OnboardingDeps) {
   throw new AppError("RATE_LIMITED", SIGNUP_LIMIT_MESSAGE, undefined, quota.retryAfterMs / 1000);
 }
 
+/**
+ * Correo ya registrado: avisa a su dueño (T20c, sujeto a su cuota y después de responder) y
+ * devuelve el mismo `409` que T20, que no dice si el aviso salió.
+ */
+function rejectExistingAccount(deps: OnboardingDeps, email: string) {
+  notifyExistingAccount(deps, email);
+  return new AppError("CONFLICT", ACCOUNT_ALREADY_EXISTS_MESSAGE);
+}
+
 function replay(deps: OnboardingDeps, stored: { statusCode: number; body: unknown }) {
   log.info("onboarding.replayed", { requestId: deps.requestId });
   return { statusCode: stored.statusCode, body: stored.body as OnboardingDto, replayed: true };
@@ -105,7 +114,8 @@ function replay(deps: OnboardingDeps, stored: { statusCode: number; body: unknow
  *    sesión; misma llave y mismo cuerpo → la misma respuesta; si la cuenta ya tiene organización
  *    → `CONFLICT`. Sin sesión: la llave ya registrada → `CONFLICT` (la cuenta existe; no se
  *    entrega la respuesta sin sesión); si no, Better Auth crea la cuenta y encola `verify-email`,
- *    y un correo ya registrado → `CONFLICT`.
+ *    y un correo ya registrado → `CONFLICT`. En los dos `CONFLICT` sin sesión se avisa al correo
+ *    registrado (`account-exists`, T20c).
  * 5. Un solo `db.batch` con todo y el registro de la llave. Si falla, la cuenta queda con sesión
  *    y sin organización: el reintento con la misma llave entra por el paso 4 con sesión.
  */
@@ -139,13 +149,19 @@ export async function onboard(
   } else {
     // Sin sesión no se entrega una respuesta guardada: la cuenta de esa llave ya existe.
     if (await findStoredResponse(deps.db, idempotencyKey, ONBOARDING_SCOPE, hash)) {
-      throw new AppError("CONFLICT", ACCOUNT_ALREADY_EXISTS_MESSAGE);
+      throw rejectExistingAccount(deps, email);
     }
     const account = await createOwnerAccount(
       { env: deps.env, requestId: deps.requestId, waitUntil: deps.waitUntil },
       deps.headers,
       { email, name: input.businessName, password: input.account.password },
-    );
+    ).catch((error: unknown) => {
+      // `createOwnerAccount` solo responde `CONFLICT` cuando el correo ya está registrado.
+      if (error instanceof AppError && error.code === "CONFLICT") {
+        throw rejectExistingAccount(deps, email);
+      }
+      throw error;
+    });
     deps.onSession(account.setCookies);
     userId = account.userId;
     log.info("onboarding.account_created", { requestId: deps.requestId });
