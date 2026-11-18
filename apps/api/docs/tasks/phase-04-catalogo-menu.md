@@ -344,6 +344,14 @@ Cuando se cumplen los 3 meses de prueba, la organización pasa sola al plan `fre
 - Si los límites de `free` cambian después de fusionar T14, van en una migración nueva (no se edita `0005`).
 - Antes del lanzamiento comercial (Release 2) se decide si las sucursales que exceden el plan pasan a modo consulta. En el piloto siguen operando.
 - ADR-011 reserva el outbox para pedidos y encola `email.send` directo porque el usuario puede pedir reenvío. Aquí nadie puede pedirlo, por eso el estado del aviso vive en `subscriptions`; no se crea una tabla de outbox nueva.
+- **Decisiones al implementar (acordadas el 2026-11-17):**
+  - Ventanas: el aviso de 15 días sale si faltan más de 3 y hasta 15 días **y** la prueba duró al menos 15 días (`created_at <= current_period_end − 15 d`); el de 3, si faltan más de 0 y hasta 3. Así una prueba creada con menos de 15 días recibe solo el de 3, y un aviso que falló se reintenta al día siguiente.
+  - Días restantes = `ceil((current_period_end − now) / 1 día)`; la fecha del correo se muestra en `America/Mexico_City`.
+  - "Conservas tus … actuales. Para agregar otro necesitas Pro." solo aparece por cada recurso cuyo uso ya alcanza o supera el límite de `free`; los límites y capacidades de `free` se listan siempre, leídos de `plans`.
+  - Sin `owner` activo con correo entregable, el aviso se da por resuelto y se registra `subscription.trial_notice_skipped` (no hay a quién reintentar). Los destinatarios no necesitan el correo verificado.
+  - El paso a `free` sube `menu_version` de los menús de la organización en el mismo `db.batch`: el tema público depende de las capacidades del plan (ADR-014).
+  - Lotes de 50 suscripciones: D1 admite 100 parámetros por sentencia y las que llevan `inArray(ids)` suman algunos más.
+  - Las tareas del Cron corren con `Promise.allSettled`; si alguna falla, se registra `cron.task_failed` y la corrida falla al final para que se vea en Cloudflare.
 
 ---
 
