@@ -90,6 +90,11 @@ function fromLocal(year: number, month: number, day: number, minutes: number, ti
   return new Date(utcMs);
 }
 
+/** Día de la semana (0 = domingo) de `now` en la zona horaria de la sucursal. */
+export function localWeekday(timeZone: string, now: Date): number {
+  return localDateTime(now, timeZone).weekday;
+}
+
 /** ¿La sucursal atiende en `now`? Sin rangos, nunca está abierta. */
 export function isOpen(hours: readonly HoursRange[], timeZone: string, now: Date): boolean {
   const local = localDateTime(now, timeZone);

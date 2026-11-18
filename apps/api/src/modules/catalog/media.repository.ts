@@ -1,5 +1,5 @@
-import { mediaAssets, products } from "@menu-max/database";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { mediaAssets, products, storefrontThemes } from "@menu-max/database";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "../../infrastructure/db";
 import type { TenantContext } from "../../types";
 import { assetGuard } from "./catalog.repository";
@@ -38,39 +38,33 @@ export function findActiveAsset(db: Db, tenant: TenantContext, assetId: string) 
     .get();
 }
 
-/** Ningún producto activo usa la imagen. */
-function unusedAsset(tenant: TenantContext, assetId: string) {
-  return sql`not exists (select 1 from ${products} where ${and(
+/** Algún producto activo o el tema de un menú (logo o portada, T18) usa la imagen. */
+function assetUsed(tenant: TenantContext, assetId: string) {
+  const byProduct = sql`exists (select 1 from ${products} where ${and(
     eq(products.organizationId, tenant.orgId),
     eq(products.imageAssetId, assetId),
     isNull(products.deletedAt),
   )})`;
+  const byTheme = sql`exists (select 1 from ${storefrontThemes} where ${and(
+    eq(storefrontThemes.organizationId, tenant.orgId),
+    or(eq(storefrontThemes.logoAssetId, assetId), eq(storefrontThemes.coverAssetId, assetId)),
+  )})`;
+  return sql`(${byProduct} or ${byTheme})`;
 }
 
 /**
- * Borrado lógico. La guarda aborta el batch (`asset_in_use`) si un producto activo empezó a usar
+ * Borrado lógico. La guarda aborta el batch (`asset_in_use`) si un producto o un tema empezó a usar
  * la imagen después de la lectura del servicio. El objeto de R2 lo elimina el Cron de T26.
  */
 export async function softDeleteAsset(db: Db, tenant: TenantContext, assetId: string, now: Date) {
   await db.batch([
-    assetGuard(db, tenant, assetId, "asset_in_use", unusedAsset(tenant, assetId)),
+    assetGuard(db, tenant, assetId, "asset_in_use", sql`not ${assetUsed(tenant, assetId)}`),
     db.update(mediaAssets).set({ deletedAt: now }).where(activeAssetCondition(tenant, assetId)),
   ]);
 }
 
-/** ¿Algún producto activo usa la imagen? */
+/** ¿Algún producto activo o el tema de un menú usa la imagen? */
 export async function assetInUse(db: Db, tenant: TenantContext, assetId: string) {
-  const row = await db
-    .select({ id: products.id })
-    .from(products)
-    .where(
-      and(
-        eq(products.organizationId, tenant.orgId),
-        eq(products.imageAssetId, assetId),
-        isNull(products.deletedAt),
-      ),
-    )
-    .limit(1)
-    .get();
-  return row !== undefined;
+  const row = await db.get<{ used: number }>(sql`select ${assetUsed(tenant, assetId)} as used`);
+  return row.used === 1;
 }

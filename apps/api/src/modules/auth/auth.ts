@@ -19,8 +19,8 @@ export type AuthRequestOptions = {
   requestId?: string;
   /** Si existe, los correos se encolan después de responder (`ctx.waitUntil`). */
   waitUntil?: (promise: Promise<unknown>) => void;
-  /** Se llama solo si esta petición marcó el correo como verificado. */
-  onEmailVerified?: () => void;
+  /** Se llama solo si esta petición marcó el correo como verificado, con el id del usuario. */
+  onEmailVerified?: (userId: string) => void;
   /**
    * No envía `verify-email` al registrarse: la cuenta nace de un enlace de invitación, que ya
    * probó el correo, y se marca verificada en el mismo batch que la membresía (T13).
@@ -97,8 +97,8 @@ export function createAuth(env: Env, options: AuthRequestOptions = {}) {
           template: "verify-email",
           url: verifyEmailLink(env, token),
         }),
-      afterEmailVerification: () => {
-        options.onEmailVerified?.();
+      afterEmailVerification: (user) => {
+        options.onEmailVerified?.(user.id);
         return Promise.resolve();
       },
     },

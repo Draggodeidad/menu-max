@@ -9,6 +9,7 @@ import { verifyTurnstile, TURNSTILE_HEADER } from "../../infrastructure/turnstil
 import { normalizeEmail } from "../../shared/email-checks";
 import { hit, peek } from "../../shared/rate-counters";
 import { listMemberships } from "../organizations/organizations.service";
+import { refreshMenusOfOwner } from "../storefront/storefront.service";
 import { createAuth, sendAuthEmail, type AuthRequestOptions, type AuthUser } from "./auth";
 import { findEmailState, findUserIdByEmail, markEmailVerified } from "./auth.repository";
 import { resetPasswordLink } from "./web-links";
@@ -153,17 +154,25 @@ async function consumeQuota(
 
 /**
  * Canjea el enlace de verificación. El token de Better Auth es un JWT sin estado: si esta
- * petición no marcó el correo como verificado, el enlace ya se había usado → `CONFLICT`.
+ * petición no marcó el correo como verificado, el enlace ya se había usado → `CONFLICT`. Al
+ * verificar, los menús de las organizaciones donde es dueño suben `menuVersion` (ADR-008): un
+ * menú inactivo o sin pedidos por falta de verificación se refresca en la caché de WEB.
  */
 export async function verifyEmail(deps: AuthDeps, request: Request): Promise<Response> {
-  let verified = false;
+  let verifiedUserId: string | undefined;
   const response = await forwardAuth(deps.env, request, {
     requestId: deps.requestId,
-    onEmailVerified: () => {
-      verified = true;
+    onEmailVerified: (userId) => {
+      verifiedUserId = userId;
     },
   });
-  if (!verified) {
+  if (verifiedUserId !== undefined) {
+    await refreshMenusOfOwner(createDb(deps.env), verifiedUserId).catch(() =>
+      // La verificación ya quedó guardada; la caché de WEB se corrige al vencer su TTL.
+      log.error("storefront.menu_refresh_failed", { requestId: deps.requestId }),
+    );
+  }
+  if (verifiedUserId === undefined) {
     await response.body?.cancel();
     throw new AppError(
       "CONFLICT",

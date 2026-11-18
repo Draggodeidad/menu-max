@@ -32,7 +32,7 @@ const HOUR_MS = 60 * 60 * 1000;
 export const UNSUPPORTED_IMAGE = "Sube una imagen JPG, PNG o WebP.";
 export const IMAGE_TOO_LARGE = `La imagen mide más de ${MAX_MEDIA_SIDE} px por lado. Redúcela e inténtalo de nuevo.`;
 export const IMAGE_IN_USE =
-  "Esta imagen la usa un producto. Quítala del producto antes de borrarla.";
+  "Esta imagen la usa un producto o el tema del menú. Quítala de ahí antes de borrarla.";
 
 function invalidImage(message: string) {
   return new AppError("VALIDATION_FAILED", message, { file: [message] });
@@ -110,7 +110,15 @@ export async function uploadMedia(
   return { id, url: publicUrl(deps.env, key), width: image.width, height: image.height };
 }
 
-/** Borrado lógico; la imagen que usa un producto activo no se borra (`BUSINESS_RULE`). */
+/** Imagen no borrada de la organización (otro módulo la valida antes de ligarla, T18). */
+export function findMedia(deps: Pick<MediaDeps, "db" | "tenant">, mediaId: string) {
+  return findActiveAsset(deps.db, deps.tenant, mediaId);
+}
+
+/**
+ * Borrado lógico; la imagen que usa un producto activo o un tema (logo o portada) no se borra
+ * (`BUSINESS_RULE`).
+ */
 export async function deleteMedia(deps: MediaDeps, mediaId: string, now = new Date()) {
   if (!(await findActiveAsset(deps.db, deps.tenant, mediaId))) throw new AppError("NOT_FOUND");
   const inUse = new AppError("BUSINESS_RULE", IMAGE_IN_USE);

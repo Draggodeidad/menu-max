@@ -23,6 +23,7 @@ import {
   organizationRoutes,
   publicInvitationRoutes,
 } from "./modules/organizations/organizations.routes";
+import { publicMenuRoutes, storefrontRoutes } from "./modules/storefront/storefront.routes";
 import { subscriptionRoutes } from "./modules/subscriptions/subscriptions.routes";
 import { AppError, notFound, onError } from "./shared/errors";
 import type { AppEnv, TenantEnv } from "./types";
@@ -86,6 +87,7 @@ export function createApp(environment?: Env["ENVIRONMENT"]) {
   app.route("/v1", meRoutes);
   // Sin sesión obligatoria: el token, Turnstile y las cuotas protegen estas rutas.
   app.route("/v1/public", publicInvitationRoutes);
+  app.route("/v1/public/menus", publicMenuRoutes);
 
   // Tenant explícito en la ruta (ADR-006): todo lo de abajo exige sesión y membresía activa, y
   // con la suscripción suspendida solo admite lecturas (T14).
@@ -95,6 +97,7 @@ export function createApp(environment?: Env["ENVIRONMENT"]) {
   orgScoped.route("/business", businessRoutes);
   orgScoped.route("/branches", branchRoutes);
   orgScoped.route("/branches/:branchId/menu", catalogRoutes);
+  orgScoped.route("/branches/:branchId/menu", storefrontRoutes);
   orgScoped.route("/media", mediaRoutes);
   app.route("/v1/orgs/:orgId", orgScoped);
 
