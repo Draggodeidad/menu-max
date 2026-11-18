@@ -33,7 +33,7 @@ Confirma en tu primer mensaje: **"Leí AGENTS.md y ADR.md"** y, en una línea, q
 | Pruebas        | Vitest + `@cloudflare/vitest-pool-workers`                                              |
 | Gestor         | pnpm workspaces                                                                         |
 
-**Dependencias permitidas en producción:** `hono`, `drizzle-orm`, `zod`, `better-auth`, `hono-openapi`.
+**Dependencias permitidas en producción:** `hono`, `drizzle-orm`, `zod`, `better-auth`, `hono-openapi`, `uqr` (QR en SVG, ADR-017).
 **Dependencias permitidas en desarrollo:** `wrangler`, `drizzle-kit`, `vitest`, `@cloudflare/vitest-pool-workers`, `@cloudflare/workers-types`, `@scalar/hono-api-reference`.
 
 `update` y `delete` de Drizzle siempre llevan `where`: lo verifica la regla local de oxlint `oxlint/drizzle-plugin.mjs` (`drizzle/enforce-update-with-where`, `drizzle/enforce-delete-with-where`), sin dependencias (enmienda a ADR-006). No instales `eslint-plugin-drizzle`: no carga bajo oxlint y arrastra `eslint` como peer.

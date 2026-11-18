@@ -43,7 +43,7 @@ Cada fila es un ADR corto para `docs/adr/`; las marcadas como _beta_ llevan un a
 
 Plan de Cloudflare: **Workers Paid** desde el día uno. Lo exigen el tiempo de CPU del hashing de contraseñas y el límite de 10 GB por base D1 (500 MB en Free) según los [límites de D1](https://developers.cloudflare.com/d1/platform/limits/).
 
-Dependencias de `apps/api` en producción: `hono`, `drizzle-orm`, `zod`, `better-auth`, `hono-openapi`. Desarrollo: `wrangler`, `drizzle-kit`, `vitest`, `@cloudflare/vitest-pool-workers`, `@scalar/hono-api-reference`. Cualquier otra requiere ADR, igual que en el frontend.
+Dependencias de `apps/api` en producción: `hono`, `drizzle-orm`, `zod`, `better-auth`, `hono-openapi`, `uqr` (ADR-017). Desarrollo: `wrangler`, `drizzle-kit`, `vitest`, `@cloudflare/vitest-pool-workers`, `@scalar/hono-api-reference`. Cualquier otra requiere ADR, igual que en el frontend.
 
 ## Estructura de `apps/api`
 
