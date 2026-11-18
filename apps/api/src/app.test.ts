@@ -291,6 +291,13 @@ describe("rate limit por grupo", () => {
     await expectApiError(await fromIp(ip, "/v1/public/no-existe"), 429, "RATE_LIMITED");
     await expectApiError(await fromIp(ip, "/v1/no-existe"), 404, "NOT_FOUND");
   });
+
+  it("el onboarding comparte el grupo de auth: crea cuentas (T20)", async () => {
+    const ip = randomIp();
+    await repeat(10, () => fromIp(ip, "/v1/auth/get-session"));
+    await expectApiError(await fromIp(ip, "/v1/onboarding"), 429, "RATE_LIMITED");
+    await expectApiError(await fromIp(ip, "/v1/no-existe"), 404, "NOT_FOUND");
+  });
 });
 
 describe("getEnv", () => {
