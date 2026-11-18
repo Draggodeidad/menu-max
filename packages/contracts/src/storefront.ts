@@ -153,10 +153,23 @@ export type MenuPublicationDto = z.infer<typeof MenuPublicationDto>;
 // Lectura pública ---------------------------------------------------------------------------
 
 /**
- * Por qué el menú no recibe pedidos: no publicado, suscripción suspendida, ningún dueño con correo
- * verificado (ADR-008) o sucursal cerrada. Si hay varios, se informa el primero de esta lista.
+ * Días que un menú publicado sigue visible sin ningún dueño con correo verificado, contados desde
+ * el alta de la organización (ADR-008). Después, el menú público queda inactivo.
  */
-export const NOT_ACCEPTING_REASONS = ["unpublished", "suspended", "unverified", "closed"] as const;
+export const UNVERIFIED_GRACE_DAYS = 21;
+
+/**
+ * Por qué el menú no recibe pedidos: no publicado, suscripción suspendida, menú inactivo (gracia
+ * vencida sin dueño verificado), ningún dueño con correo verificado todavía (ADR-008) o sucursal
+ * cerrada. Si hay varios, se informa el primero de esta lista.
+ */
+export const NOT_ACCEPTING_REASONS = [
+  "unpublished",
+  "suspended",
+  "inactive",
+  "unverified",
+  "closed",
+] as const;
 export const NotAcceptingReason = z.enum(NOT_ACCEPTING_REASONS);
 export type NotAcceptingReason = z.infer<typeof NotAcceptingReason>;
 
@@ -242,7 +255,9 @@ export const PublicBranchDto = z
 
 /**
  * Menú publicado para el comensal: solo datos publicables, sin ids de organización, sucursal ni
- * menú, sin códigos postales, sin el número de avisos de WhatsApp y sin datos de miembros.
+ * menú, sin códigos postales, sin el número de avisos de WhatsApp y sin datos de miembros. Con
+ * `notAcceptingReason: "inactive"` (ADR-008), `categories` va vacío: WEB muestra «Este menú aún no
+ * está activo».
  */
 export const PublicMenuDto = z
   .strictObject({
