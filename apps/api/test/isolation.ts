@@ -1,6 +1,6 @@
 // Aislamiento entre tenants (ADR-006): un recurso de otra organización simplemente no existe.
 import { ErrorResponse } from "@menu-max/contracts";
-import { createExecutionContext } from "cloudflare:test";
+import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { expect } from "vitest";
 import { getEnv, type Env } from "../src/env";
@@ -15,8 +15,9 @@ function randomIp() {
 /**
  * Petición a la API completa con token interno, IP propia (evita el rate limit) y sesión.
  * `body` viaja como JSON; `rawBody` tal cual, con el `content-type` que traiga `headers`.
+ * Con `settle`, espera también lo que la petición dejó en `waitUntil` (p. ej., lo encolado).
  */
-export function callApi(
+export async function callApi(
   method: string,
   path: string,
   options: {
@@ -25,8 +26,9 @@ export function callApi(
     rawBody?: Uint8Array;
     headers?: HeadersInit;
     bindings?: Env;
+    settle?: boolean;
   } = {},
-) {
+): Promise<Response> {
   const bindings = options.bindings ?? getEnv(env);
   const headers = new Headers(options.headers);
   headers.set("x-mm-internal", bindings.INTERNAL_TOKEN);
@@ -37,11 +39,14 @@ export function callApi(
     headers.set("content-type", "application/json");
     body = JSON.stringify(options.body);
   }
-  return worker.fetch(
+  const ctx = createExecutionContext();
+  const response = await worker.fetch(
     new Request(`https://api.internal${path}`, { method, headers, body }),
     bindings,
-    createExecutionContext(),
+    ctx,
   );
+  if (options.settle) await waitOnExecutionContext(ctx);
+  return response;
 }
 
 /**
