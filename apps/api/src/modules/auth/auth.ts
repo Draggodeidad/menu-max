@@ -1,4 +1,4 @@
-import { EMAIL_STATUSES, type EmailTemplate } from "@menu-max/contracts";
+import { EMAIL_STATUSES } from "@menu-max/contracts";
 import * as schema from "@menu-max/database";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { betterAuth } from "better-auth/minimal";
@@ -6,6 +6,7 @@ import { haveIBeenPwned } from "better-auth/plugins/haveibeenpwned";
 import type { Env } from "../../env";
 import { createDb } from "../../infrastructure/db";
 import { enqueue } from "../../infrastructure/jobs";
+import type { Mail } from "../../infrastructure/mailer/mailer";
 import { newId } from "../../shared/ids";
 import { log } from "../../shared/log";
 import { resetPasswordLink, verifyEmailLink } from "./web-links";
@@ -28,11 +29,10 @@ export type AuthRequestOptions = {
   skipVerificationEmail?: boolean;
 };
 
-type AuthEmail = {
-  to: string;
-  template: Exclude<EmailTemplate, "invitation" | "trial-ending" | "trial-ended">;
-  url: string;
-};
+type AuthEmail = Extract<
+  Mail,
+  { template: "verify-email" | "reset-password" | "password-changed" | "account-exists" }
+>;
 
 /**
  * Encola un correo de auth (ADR-011). Una falla al encolar no rompe el flujo: se registra y el
@@ -44,13 +44,7 @@ export function sendAuthEmail(
   mail: AuthEmail,
 ): Promise<void> {
   const requestId = options.requestId ?? crypto.randomUUID();
-  const task = enqueue(env, {
-    type: "email.send",
-    id: newId(),
-    to: mail.to,
-    template: mail.template,
-    data: { url: mail.url },
-  }).then(
+  const task = enqueue(env, { type: "email.send", id: newId(), ...mail }).then(
     () => log.info("email.enqueued", { requestId, template: mail.template }),
     (error: unknown) =>
       log.error("email.enqueue_failed", {
@@ -82,13 +76,13 @@ export function createAuth(env: Env, options: AuthRequestOptions = {}) {
         sendAuthEmail(env, options, {
           to: user.email,
           template: "reset-password",
-          url: resetPasswordLink(env, token),
+          data: { url: resetPasswordLink(env, token) },
         }),
       onPasswordReset: ({ user }) =>
         sendAuthEmail(env, options, {
           to: user.email,
           template: "password-changed",
-          url: resetPasswordLink(env),
+          data: { url: resetPasswordLink(env) },
         }),
     },
     emailVerification: {
@@ -99,7 +93,7 @@ export function createAuth(env: Env, options: AuthRequestOptions = {}) {
         sendAuthEmail(env, options, {
           to: user.email,
           template: "verify-email",
-          url: verifyEmailLink(env, token),
+          data: { url: verifyEmailLink(env, token) },
         }),
       afterEmailVerification: (user) => {
         options.onEmailVerified?.(user.id);

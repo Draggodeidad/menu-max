@@ -15,6 +15,15 @@ export function findEmailState(db: Db, userId: string) {
     .get();
 }
 
+/** `email_status` de la cuenta con ese correo normalizado, si existe. */
+export function findEmailStatusByEmail(db: Db, email: string) {
+  return db
+    .select({ emailStatus: users.emailStatus })
+    .from(users)
+    .where(eq(users.email, email))
+    .get();
+}
+
 export function findUserIdByEmail(db: Db, email: string) {
   return db.select({ id: users.id }).from(users).where(eq(users.email, email)).get();
 }

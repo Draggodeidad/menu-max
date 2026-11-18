@@ -127,7 +127,8 @@ const TURNSTILE = "x-turnstile-token";
 function tokenFrom(sent: JobMessage[], template: string, path: string) {
   const jobs = sent.filter((job) => job.template === template);
   expect(jobs).toHaveLength(1);
-  const url = new URL(jobs[0]?.data.url ?? "");
+  const data = jobs[0]?.data;
+  const url = new URL(data && "url" in data ? data.url : "");
   expect(url.origin).toBe(env.WEB_ORIGIN);
   expect(url.pathname).toBe(path);
   expect([...url.searchParams.keys()]).toEqual(["token"]);
