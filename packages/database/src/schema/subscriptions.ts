@@ -37,12 +37,19 @@ export const subscriptions = sqliteTable(
       .references(() => plans.id, { onDelete: "restrict" }),
     status: text("status", { enum: SUBSCRIPTION_STATUSES }).notNull(),
     currentPeriodEnd: integer("current_period_end", { mode: "timestamp_ms" }),
+    // Fin de la prueba (T20b). Un aviso se marca solo después de encolarlo: `null` = pendiente.
+    trialNotice15SentAt: integer("trial_notice_15_sent_at", { mode: "timestamp_ms" }),
+    trialNotice3SentAt: integer("trial_notice_3_sent_at", { mode: "timestamp_ms" }),
+    /** Se fija en el mismo `UPDATE` que pasa la prueba a `free`; vuelve a `null` al encolar el aviso. */
+    trialEndedNoticePendingAt: integer("trial_ended_notice_pending_at", { mode: "timestamp_ms" }),
     ...timestamps(),
   },
   (table) => [
     // `requireMembership` la une por organización en la misma consulta de la membresía.
     uniqueIndex("subscriptions_organization_id_unique").on(table.organizationId),
     index("subscriptions_plan_id_idx").on(table.planId),
+    // Barrido del Cron diario (T20b): pruebas por vencer o vencidas.
+    index("subscriptions_status_period_end_idx").on(table.status, table.currentPeriodEnd),
     check("subscriptions_status_check", inList(table.status, SUBSCRIPTION_STATUSES)),
   ],
 );
