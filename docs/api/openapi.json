@@ -594,6 +594,46 @@
         "required": ["menuVersion"],
         "additionalProperties": false
       },
+      "OnboardingDto": {
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+          },
+          "branchId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+          },
+          "menuSlug": {
+            "type": "string"
+          },
+          "menuUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": ["orgId", "branchId", "menuSlug", "menuUrl"],
+        "additionalProperties": false
+      },
+      "BranchModes": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "boolean"
+          },
+          "pickup": {
+            "type": "boolean"
+          },
+          "delivery": {
+            "type": "boolean"
+          }
+        },
+        "required": ["table", "pickup", "delivery"],
+        "additionalProperties": false
+      },
       "OrganizationDto": {
         "type": "object",
         "properties": {
@@ -975,22 +1015,6 @@
           "createdAt",
           "updatedAt"
         ],
-        "additionalProperties": false
-      },
-      "BranchModes": {
-        "type": "object",
-        "properties": {
-          "table": {
-            "type": "boolean"
-          },
-          "pickup": {
-            "type": "boolean"
-          },
-          "delivery": {
-            "type": "boolean"
-          }
-        },
-        "required": ["table", "pickup", "delivery"],
         "additionalProperties": false
       },
       "BranchDetailDto": {
@@ -2987,6 +3011,171 @@
           },
           "500": {
             "description": "Ocurrió un error interno.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/onboarding": {
+      "post": {
+        "operationId": "postV1Onboarding",
+        "tags": ["Onboarding"],
+        "summary": "Crear cuenta y publicar el menú en un solo envío",
+        "description": "Crea la cuenta (sin sesión), la organización con prueba `pro` de 90 días, el negocio, la sucursal y el menú publicado con sus productos. Misma `Idempotency-Key` y mismo cuerpo → la misma respuesta; otro cuerpo → 409 `IDEMPOTENCY_CONFLICT`. Si el alta falla después de crear la cuenta, la respuesta de error abre la sesión y el reintento con la misma llave y la sesión la completa.",
+        "security": [
+          {
+            "InternalToken": []
+          },
+          {
+            "InternalToken": [],
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "description": "UUID generado por WEB para este envío; se reutiliza en cada reintento.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "x-turnstile-token",
+            "in": "header",
+            "required": true,
+            "description": "Token de Turnstile de un solo uso.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "businessName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "pattern": "^[^\\p{Cc}]+$"
+                  },
+                  "products": {
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80,
+                          "pattern": "^[^\\p{Cc}]+$"
+                        },
+                        "priceCents": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 10000000
+                        }
+                      },
+                      "required": ["name", "priceCents"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "modes": {
+                    "$ref": "#/components/schemas/BranchModes"
+                  },
+                  "tableCount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 200
+                  },
+                  "alertWhatsapp": {
+                    "type": "string",
+                    "pattern": "^\\+[1-9]\\d{7,14}$"
+                  },
+                  "account": {
+                    "type": "object",
+                    "properties": {
+                      "email": {
+                        "type": "string",
+                        "format": "email",
+                        "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                      },
+                      "password": {
+                        "type": "string",
+                        "minLength": 10,
+                        "maxLength": 128
+                      }
+                    },
+                    "required": ["email", "password"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["businessName", "products", "modes", "account"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Alta completa. Sin sesión previa, incluye la cookie de sesión (Set-Cookie).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos inválidos, correo desechable o sin MX, contraseña filtrada, más productos de los que admite el alta o Turnstile rechazado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El token interno falta o es inválido. La respuesta no tiene cuerpo."
+          },
+          "409": {
+            "description": "El correo ya tiene cuenta, la sesión es de otra cuenta o ya tiene negocio (`CONFLICT`), o la llave se usó con otro cuerpo (`IDEMPOTENCY_CONFLICT`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tres altas desde esta IP hoy (UTC) o demasiadas peticiones. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ocurrió un error interno. Si ya se creó la cuenta, incluye la cookie de sesión.",
             "content": {
               "application/json": {
                 "schema": {

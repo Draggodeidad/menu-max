@@ -1,4 +1,4 @@
-import type { MeDto } from "@menu-max/contracts";
+import { ACCOUNT_ALREADY_EXISTS_MESSAGE, type MeDto } from "@menu-max/contracts";
 import { isAPIError } from "better-auth/api";
 import type { SQL } from "drizzle-orm";
 import type { Env } from "../../env";
@@ -269,16 +269,23 @@ export function emailVerifiedStatement(db: Db, userId: string, when: SQL) {
 
 export const ACCOUNT_EXISTS_MESSAGE = "Entra con tu cuenta para aceptar la invitación.";
 
-type InvitedUser = { email: string; name: string; password: string };
+type NewAccount = { email: string; name: string; password: string };
+
+type SignUpDeps = {
+  env: Env;
+  requestId: string;
+  waitUntil?: (promise: Promise<unknown>) => void;
+};
 
 /**
- * Crea la cuenta de quien acepta una invitación sin tener una (T13) y abre su sesión. No envía
- * `verify-email`: el enlace de invitación ya probó el correo. Devuelve las cookies de sesión.
+ * Crea la cuenta con Better Auth y abre su sesión; devuelve las cookies. `alreadyExists` es el
+ * error para un correo ya registrado (incluye la carrera entre la consulta y el registro).
  */
-export async function createInvitedUser(
-  deps: { env: Env; requestId: string },
+async function signUp(
+  deps: SignUpDeps,
   requestHeaders: Headers,
-  input: InvitedUser,
+  input: NewAccount,
+  options: { skipVerificationEmail: boolean; alreadyExists: AppError },
 ): Promise<{ userId: string; setCookies: string[] }> {
   // Solo los headers que Better Auth usa para la sesión; nunca cookies del cliente.
   const headers = new Headers();
@@ -289,7 +296,8 @@ export async function createInvitedUser(
   try {
     const { headers: responseHeaders, response } = await createAuth(deps.env, {
       requestId: deps.requestId,
-      skipVerificationEmail: true,
+      waitUntil: deps.waitUntil,
+      skipVerificationEmail: options.skipVerificationEmail,
     }).api.signUpEmail({ body: input, headers, returnHeaders: true });
     return { userId: response.user.id, setCookies: responseHeaders.getSetCookie() };
   } catch (error) {
@@ -299,11 +307,40 @@ export async function createInvitedUser(
       const message = "Esta contraseña se ha filtrado. Elige otra.";
       throw new AppError("VALIDATION_FAILED", message, { password: [message] });
     }
-    // Carrera: otra petición creó la cuenta con este correo entre la consulta y el registro.
-    if (code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
-      throw new AppError("AUTH_REQUIRED", ACCOUNT_EXISTS_MESSAGE);
-    }
+    if (code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") throw options.alreadyExists;
     if (error.statusCode < 500) throw new AppError("VALIDATION_FAILED");
     throw error;
   }
+}
+
+/**
+ * Crea la cuenta de quien acepta una invitación sin tener una (T13) y abre su sesión. No envía
+ * `verify-email`: el enlace de invitación ya probó el correo. Devuelve las cookies de sesión.
+ */
+export function createInvitedUser(
+  deps: { env: Env; requestId: string },
+  requestHeaders: Headers,
+  input: NewAccount,
+): Promise<{ userId: string; setCookies: string[] }> {
+  return signUp(deps, requestHeaders, input, {
+    skipVerificationEmail: true,
+    alreadyExists: new AppError("AUTH_REQUIRED", ACCOUNT_EXISTS_MESSAGE),
+  });
+}
+
+/**
+ * Crea la cuenta del dueño en el onboarding (T20) y abre su sesión. Better Auth encola
+ * `verify-email` en el alta (después de responder, con `waitUntil`). Correo ya registrado →
+ * `CONFLICT`: el registro da sesión inmediata, así que revelar que existe es inevitable (lo
+ * mitigan Turnstile y la cuota por IP, ADR-008).
+ */
+export function createOwnerAccount(
+  deps: SignUpDeps,
+  requestHeaders: Headers,
+  input: NewAccount,
+): Promise<{ userId: string; setCookies: string[] }> {
+  return signUp(deps, requestHeaders, input, {
+    skipVerificationEmail: false,
+    alreadyExists: new AppError("CONFLICT", ACCOUNT_ALREADY_EXISTS_MESSAGE),
+  });
 }

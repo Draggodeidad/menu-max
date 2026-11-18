@@ -1,6 +1,9 @@
 import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { organizationId } from "./columns";
+import { organizations } from "./tenancy";
 
-// Tablas de operación (ADR-016). No pertenecen a un tenant: guardan cuotas y cachés globales.
+// Tablas de operación (ADR-016). Cuotas y cachés globales, sin tenant; `idempotency_keys` sí
+// pertenece a la organización que creó la petición.
 
 /**
  * Cuotas exactas con ventana fija (ADR-010). `expires_at` = fin de la ventana; el Cron diario
@@ -29,4 +32,30 @@ export const emailDomainChecks = sqliteTable(
     checkedAt: integer("checked_at").notNull(),
   },
   (table) => [index("email_domain_checks_checked_at_idx").on(table.checkedAt)],
+);
+
+/**
+ * Respuestas guardadas por `Idempotency-Key` (ADR-013). Misma llave y mismo `request_hash` →
+ * misma respuesta; otro hash → `IDEMPOTENCY_CONFLICT`. Vence a las 24 h (`expires_at`, ms) y el
+ * Cron diario borra las vencidas. Se inserta en el mismo `db.batch` que el efecto que registra.
+ */
+export const idempotencyKeys = sqliteTable(
+  "idempotency_keys",
+  {
+    key: text("key").primaryKey(),
+    organizationId: organizationId().references(() => organizations.id, {
+      onDelete: "restrict",
+    }),
+    /** Operación que registró la llave (`onboarding`, `public-order`…). */
+    scope: text("scope").notNull(),
+    /** SHA-256 hex del cuerpo canónico; nunca lleva contraseñas ni datos en claro. */
+    requestHash: text("request_hash").notNull(),
+    statusCode: integer("status_code").notNull(),
+    responseJson: text("response_json", { mode: "json" }).$type<unknown>().notNull(),
+    expiresAt: integer("expires_at").notNull(),
+  },
+  (table) => [
+    index("idempotency_keys_org_idx").on(table.organizationId),
+    index("idempotency_keys_expires_at_idx").on(table.expiresAt),
+  ],
 );

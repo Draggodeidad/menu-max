@@ -19,6 +19,7 @@ import { authRoutes, meRoutes } from "./modules/auth/auth.routes";
 import { branchRoutes, businessRoutes } from "./modules/businesses/businesses.routes";
 import { catalogRoutes } from "./modules/catalog/catalog.routes";
 import { mediaRoutes } from "./modules/catalog/media.routes";
+import { onboardingRoutes } from "./modules/onboarding/onboarding.routes";
 import {
   organizationRoutes,
   publicInvitationRoutes,
@@ -51,10 +52,12 @@ const MEDIA_BODY_LIMIT = bodyLimit({
 });
 
 const MEDIA_UPLOAD_PATH = /^\/v1\/orgs\/[^/]+\/media\/?$/;
+const ONBOARDING_PATH = "/v1/onboarding";
 
 function routeGroup(path: string): RateLimitGroup {
   const under = (prefix: string) => path === prefix || path.startsWith(`${prefix}/`);
-  if (under(AUTH_BASE_PATH)) return "auth";
+  // El onboarding crea cuentas: mismo filtro grueso que Better Auth (T20).
+  if (under(AUTH_BASE_PATH) || under(ONBOARDING_PATH)) return "auth";
   if (under("/v1/public")) return "public";
   return "private";
 }
@@ -92,6 +95,8 @@ export function createApp(environment?: Env["ENVIRONMENT"]) {
   // Sin sesión obligatoria: el token, Turnstile y las cuotas protegen estas rutas.
   app.route("/v1/public", publicInvitationRoutes);
   app.route("/v1/public/menus", publicMenuRoutes);
+  // Sin sesión obligatoria: crea la cuenta; con sesión, reanuda un alta que no terminó (T20).
+  app.route(ONBOARDING_PATH, onboardingRoutes);
 
   // Tenant explícito en la ruta (ADR-006): todo lo de abajo exige sesión y membresía activa, y
   // con la suscripción suspendida solo admite lecturas (T14).
