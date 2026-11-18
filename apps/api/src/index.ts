@@ -3,6 +3,7 @@ import { getEnv } from "./env";
 import { createDb } from "./infrastructure/db";
 import { consumeBatch } from "./jobs/consumer";
 import { deleteStaleEmailDomainChecks } from "./shared/email-checks";
+import { deleteExpiredIdempotencyKeys } from "./shared/idempotency";
 import { log } from "./shared/log";
 import { deleteExpiredRateCounters } from "./shared/rate-counters";
 
@@ -17,13 +18,15 @@ export default {
   async queue(batch, env) {
     await consumeBatch(batch, getEnv(env));
   },
-  // Cron diario `0 9 * * *` (3:00 en Ciudad de México): limpieza de anti-abuso (ADR-010).
+  // Cron diario `0 9 * * *` (3:00 en Ciudad de México): limpieza de anti-abuso (ADR-010) y de
+  // llaves de idempotencia vencidas (ADR-013).
   async scheduled(controller, env) {
     const db = createDb(getEnv(env));
     const now = controller.scheduledTime;
-    const [rateCounters, emailDomainChecks] = await Promise.all([
+    const [rateCounters, emailDomainChecks, idempotencyKeys] = await Promise.all([
       deleteExpiredRateCounters(db, now),
       deleteStaleEmailDomainChecks(db, now),
+      deleteExpiredIdempotencyKeys(db, now),
     ]);
     log.info("maintenance.cleanup", {
       // Sin petición HTTP: un UUID hace de `requestId` (redact() no altera los UUID).
@@ -31,6 +34,7 @@ export default {
       cron: controller.cron,
       rateCounters,
       emailDomainChecks,
+      idempotencyKeys,
     });
   },
 } satisfies ExportedHandler<Record<string, unknown>>;
