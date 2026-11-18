@@ -213,18 +213,9 @@ export const qrRoutes = new Hono<TenantEnv>().get(
     tags,
     summary: "Descargar el QR del menú o de una mesa",
     description:
-      "SVG listo para imprimir (ADR-017): apunta a `/m/{slug}` en WEB o, con `mesa`, a `/m/{slug}?mesa={n}`. Corrección de errores nivel M y margen de 4 módulos; sin texto ni scripts. Solo con el menú publicado. El QR no cambia al editar el catálogo.",
+      "SVG listo para imprimir (ADR-017): apunta a `/m/{slug}` en WEB o, con `mesa` (de 1 a `tableCount` de la sucursal), a `/m/{slug}?mesa={n}`. Corrección de errores nivel M y margen de 4 módulos; sin texto ni scripts. Solo con el menú publicado. El QR no cambia al editar el catálogo.",
     security: privateSecurity,
-    parameters: [
-      ...branchParameters,
-      {
-        name: "mesa",
-        in: "query",
-        required: false,
-        description: "Número de mesa, de 1 a `tableCount` de la sucursal.",
-        schema: { type: "integer", minimum: 1 },
-      },
-    ],
+    parameters: branchParameters,
     responses: {
       200: {
         description: "QR en SVG. `Cache-Control: private, max-age=300`.",
