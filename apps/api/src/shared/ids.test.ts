@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hashToken, newId, newPublicToken } from "./ids";
+import { hashToken, newId, newPublicToken, orderTrackingToken } from "./ids";
 
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const BASE64URL_43 = /^[A-Za-z0-9_-]{43}$/;
@@ -53,5 +53,25 @@ describe("hashToken", () => {
   it("coincide con el vector conocido de SHA-256", async () => {
     // SHA-256("abc") = ba7816bf...15ad
     expect(await hashToken("abc")).toBe("ungWv48Bz-pBQUDeXa4iI7ADYaOWF3qctBD_YfIAFa0");
+  });
+});
+
+describe("orderTrackingToken", () => {
+  const secret = "secreto-de-prueba-".repeat(2);
+  const orderId = "0190f5c2-7a10-7000-8000-000000000001";
+
+  it("es HMAC-SHA256 del prefijo v1 y el id, en base64url de 43 caracteres", async () => {
+    // Vector calculado aparte con `node:crypto` (createHmac("sha256", …).digest("base64url")).
+    await expect(orderTrackingToken(secret, orderId)).resolves.toBe(
+      "IItIWHgwbX8e20dn8xVXsrhoZFpKmPFojEXZyOOIGDQ",
+    );
+    expect(await orderTrackingToken(secret, newId())).toMatch(BASE64URL_43);
+  });
+
+  it("da el mismo token para el mismo pedido y otro para otro pedido u otro secreto", async () => {
+    const token = await orderTrackingToken(secret, orderId);
+    expect(await orderTrackingToken(secret, orderId)).toBe(token);
+    expect(await orderTrackingToken(secret, newId())).not.toBe(token);
+    expect(await orderTrackingToken(`${secret}x`, orderId)).not.toBe(token);
   });
 });

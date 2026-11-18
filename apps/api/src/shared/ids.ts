@@ -27,6 +27,31 @@ export async function hashToken(token: string): Promise<string> {
   return toBase64Url(new Uint8Array(digest));
 }
 
+const TRACKING_TOKEN_CONTEXT = "order-tracking:v1:";
+
+/**
+ * Token de seguimiento de un pedido (enmienda de ADR-013): `HMAC-SHA256(secreto,
+ * "order-tracking:v1:" + orderId)` en base64url, 32 bytes como `newPublicToken`. Es determinista
+ * para que un reintento con la misma `Idempotency-Key` devuelva el mismo token sin guardarlo; la
+ * base solo guarda su `hashToken`. El prefijo ata el secreto a este uso y `v1` permite rotarlo.
+ */
+export async function orderTrackingToken(secret: string, orderId: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    encoder.encode(`${TRACKING_TOKEN_CONTEXT}${orderId}`),
+  );
+  return toBase64Url(new Uint8Array(signature));
+}
+
 function toBase64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);

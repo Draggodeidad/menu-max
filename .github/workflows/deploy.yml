@@ -48,3 +48,5 @@ jobs:
           INTERNAL_TOKEN: ${{ secrets.INTERNAL_TOKEN }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          PHONE_HASH_SALT: ${{ secrets.PHONE_HASH_SALT }}
+          ORDER_TOKEN_SECRET: ${{ secrets.ORDER_TOKEN_SECRET }}

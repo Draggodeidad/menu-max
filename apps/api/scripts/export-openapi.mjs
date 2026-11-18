@@ -18,6 +18,8 @@ const server = createTestHarness({
         RESEND_API_KEY: "openapi-export-local-placeholder",
         // Clave de prueba de Cloudflare que siempre pasa; el export no llama a Turnstile.
         TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA",
+        PHONE_HASH_SALT: "openapi-export-local-placeholder",
+        ORDER_TOKEN_SECRET: "openapi-export-local-placeholder",
       },
     },
   ],

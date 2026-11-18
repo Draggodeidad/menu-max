@@ -6,6 +6,7 @@ export * from "./health";
 export * from "./jobs";
 export * from "./media";
 export * from "./onboarding";
+export * from "./orders";
 export * from "./organizations";
 export * from "./subscriptions";
 export * from "./storefront";

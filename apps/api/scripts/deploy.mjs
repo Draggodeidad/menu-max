@@ -18,6 +18,8 @@ const {
   INTERNAL_TOKEN: internalToken,
   RESEND_API_KEY: resendApiKey,
   TURNSTILE_SECRET_KEY: turnstileSecret,
+  PHONE_HASH_SALT: phoneHashSalt,
+  ORDER_TOKEN_SECRET: orderTokenSecret,
   ...childEnv
 } = process.env;
 
@@ -86,6 +88,19 @@ if (
   (environment === "production" && isTurnstileTestKey)
 ) {
   throw new Error("Configura TURNSTILE_SECRET_KEY con la clave secreta de Turnstile del entorno.");
+}
+// Pedidos (T21): sal del hash del teléfono y secreto del token de seguimiento.
+const otherSecrets = new Set([authSecret, internalToken, resendApiKey, turnstileSecret]);
+for (const [name, value] of [
+  ["PHONE_HASH_SALT", phoneHashSalt],
+  ["ORDER_TOKEN_SECRET", orderTokenSecret],
+]) {
+  if (!value || value.length < 32 || /\s/.test(value) || otherSecrets.has(value)) {
+    throw new Error(`Configura ${name} con un valor propio de al menos 32 caracteres.`);
+  }
+}
+if (phoneHashSalt === orderTokenSecret) {
+  throw new Error("Usa valores distintos en PHONE_HASH_SALT y ORDER_TOKEN_SECRET.");
 }
 
 function readConfig(app) {
@@ -163,6 +178,8 @@ try {
     INTERNAL_TOKEN: internalToken,
     RESEND_API_KEY: resendApiKey,
     TURNSTILE_SECRET_KEY: turnstileSecret,
+    PHONE_HASH_SALT: phoneHashSalt,
+    ORDER_TOKEN_SECRET: orderTokenSecret,
   });
   await writeJson(webSecrets, { INTERNAL_TOKEN: internalToken });
 

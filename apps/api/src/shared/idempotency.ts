@@ -1,3 +1,4 @@
+import { IDEMPOTENCY_KEY_HEADER, IdempotencyKey } from "@menu-max/contracts";
 import { idempotencyKeys } from "@menu-max/database";
 import { and, eq, lte } from "drizzle-orm";
 import type { Db } from "../infrastructure/db";
@@ -7,6 +8,19 @@ import { AppError } from "./errors";
 // el efecto, así que una llave registrada implica que el efecto ocurrió una sola vez.
 
 export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+
+const INVALID_KEY = "Envía un Idempotency-Key con formato UUID.";
+
+/** Valor del header `Idempotency-Key`: un UUID. Si falta o es inválido → `VALIDATION_FAILED`. */
+export function parseIdempotencyKey(value: string | undefined): string {
+  const parsed = IdempotencyKey.safeParse(value);
+  if (!parsed.success) {
+    throw new AppError("VALIDATION_FAILED", INVALID_KEY, {
+      [IDEMPOTENCY_KEY_HEADER]: [INVALID_KEY],
+    });
+  }
+  return parsed.data;
+}
 
 export type StoredResponse = { statusCode: number; body: unknown };
 

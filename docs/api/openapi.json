@@ -594,6 +594,41 @@
         "required": ["menuVersion"],
         "additionalProperties": false
       },
+      "OrderCreatedDto": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "rejected",
+              "preparing",
+              "ready",
+              "out_for_delivery",
+              "completed",
+              "delivered",
+              "cancelled"
+            ]
+          },
+          "totalCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "trackingToken": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          }
+        },
+        "required": ["number", "status", "totalCents", "trackingToken"],
+        "additionalProperties": false
+      },
       "OnboardingDto": {
         "type": "object",
         "properties": {
@@ -3011,6 +3046,254 @@
           },
           "500": {
             "description": "Ocurrió un error interno.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/public/orders": {
+      "post": {
+        "operationId": "postV1PublicOrders",
+        "tags": ["Pedidos"],
+        "summary": "Crear un pedido como invitado",
+        "description": "La API calcula precios, envío y total con el catálogo vigente de D1; el cuerpo no acepta importes. Misma `Idempotency-Key` y mismo cuerpo → la misma respuesta, con el mismo `trackingToken`, sin volver a validar Turnstile; otro cuerpo → 409 `IDEMPOTENCY_CONFLICT`. Con la sesión de un miembro de la organización (de esa sucursal si es `staff`), el pedido es de prueba y se acepta aunque ningún dueño haya verificado su correo o la sucursal esté cerrada.",
+        "security": [
+          {
+            "InternalToken": []
+          },
+          {
+            "InternalToken": [],
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "description": "UUID generado por WEB para este envío; se reutiliza en cada reintento.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "x-turnstile-token",
+            "in": "header",
+            "required": true,
+            "description": "Token de Turnstile de un solo uso. Un reintento con una llave ya registrada no lo valida.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "menuSlug": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 50,
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": ["table", "pickup", "delivery"]
+                  },
+                  "tableNumber": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200
+                  },
+                  "items": {
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "productId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+                        },
+                        "variantId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+                        },
+                        "optionIds": {
+                          "maxItems": 300,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+                          }
+                        },
+                        "quantity": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 99
+                        },
+                        "notes": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200,
+                          "pattern": "^[^\\p{Cc}]*(?:[\\n\\r]+[^\\p{Cc}]*)*$"
+                        }
+                      },
+                      "required": ["productId", "optionIds", "quantity"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "customer": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80,
+                        "pattern": "^[^\\p{Cc}]+$"
+                      },
+                      "phone": {
+                        "type": "string",
+                        "pattern": "^\\+[1-9]\\d{7,14}$"
+                      },
+                      "whatsappOptIn": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["name", "phone", "whatsappOptIn"],
+                    "additionalProperties": false
+                  },
+                  "delivery": {
+                    "type": "object",
+                    "properties": {
+                      "street": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[^\\p{Cc}]+$"
+                      },
+                      "number": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[^\\p{Cc}]+$"
+                      },
+                      "neighborhood": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[^\\p{Cc}]+$"
+                      },
+                      "city": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[^\\p{Cc}]+$"
+                      },
+                      "postalCode": {
+                        "type": "string",
+                        "pattern": "^\\d{5}$"
+                      },
+                      "references": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "pattern": "^[^\\p{Cc}]*(?:[\\n\\r]+[^\\p{Cc}]*)*$"
+                      }
+                    },
+                    "required": ["street", "number", "neighborhood", "city", "postalCode"],
+                    "additionalProperties": false
+                  },
+                  "notes": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "pattern": "^[^\\p{Cc}]*(?:[\\n\\r]+[^\\p{Cc}]*)*$"
+                  }
+                },
+                "required": ["menuSlug", "mode", "items", "customer"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Pedido registrado. `trackingToken` abre el seguimiento y solo se entrega en esta respuesta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderCreatedDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos inválidos (incluye llaves de más, como `price` o `total`), llave con formato inválido o Turnstile rechazado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El menú no existe o no está publicado. Sin token interno, la respuesta no tiene cuerpo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "La llave ya se usó con otro cuerpo (`IDEMPOTENCY_CONFLICT`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "El negocio no recibe pedidos (cerrado, sin verificar, inactivo o suspendido), la modalidad está apagada, la mesa no existe, no hay zona para el código postal, algún producto cambió (errores por ítem en `fieldErrors`) o el total supera el tope de la sucursal (`BUSINESS_RULE`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "30 pedidos por hora desde esta IP, 3 en 10 minutos del mismo teléfono en la sucursal o demasiadas peticiones. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ocurrió un error interno; no se registró el pedido.",
             "content": {
               "application/json": {
                 "schema": {

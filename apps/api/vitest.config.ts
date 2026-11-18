@@ -21,6 +21,8 @@ export default defineConfig({
           MEDIA_PUBLIC_BASE_URL: "https://img.example.com",
           // Clave de prueba de Cloudflare que siempre pasa; siteverify se simula en las pruebas.
           TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA",
+          PHONE_HASH_SALT: "vitest-phone-salt-placeholder".repeat(2),
+          ORDER_TOKEN_SECRET: "vitest-order-token-placeholder".repeat(2),
           TEST_MIGRATIONS: migrations,
         },
       },

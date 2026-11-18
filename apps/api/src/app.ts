@@ -20,6 +20,7 @@ import { branchRoutes, businessRoutes } from "./modules/businesses/businesses.ro
 import { catalogRoutes } from "./modules/catalog/catalog.routes";
 import { mediaRoutes } from "./modules/catalog/media.routes";
 import { onboardingRoutes } from "./modules/onboarding/onboarding.routes";
+import { publicOrderRoutes } from "./modules/orders/orders.routes";
 import {
   organizationRoutes,
   publicInvitationRoutes,
@@ -95,6 +96,8 @@ export function createApp(environment?: Env["ENVIRONMENT"]) {
   // Sin sesión obligatoria: el token, Turnstile y las cuotas protegen estas rutas.
   app.route("/v1/public", publicInvitationRoutes);
   app.route("/v1/public/menus", publicMenuRoutes);
+  // Pedido del comensal (T21): sin sesión; la sesión de un miembro lo marca como prueba.
+  app.route("/v1/public/orders", publicOrderRoutes);
   // Sin sesión obligatoria: crea la cuenta; con sesión, reanuda un alta que no terminó (T20).
   app.route(ONBOARDING_PATH, onboardingRoutes);
 

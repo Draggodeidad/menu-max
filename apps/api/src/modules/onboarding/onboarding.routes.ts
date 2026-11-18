@@ -1,7 +1,6 @@
 import {
   ErrorResponse,
   IDEMPOTENCY_KEY_HEADER,
-  IdempotencyKey,
   OnboardingDto,
   OnboardingInput,
 } from "@menu-max/contracts";
@@ -9,22 +8,10 @@ import { Hono } from "hono";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { createDb } from "../../infrastructure/db";
 import { TURNSTILE_HEADER } from "../../infrastructure/turnstile";
-import { AppError } from "../../shared/errors";
+import { parseIdempotencyKey } from "../../shared/idempotency";
 import type { AppEnv } from "../../types";
 import { jsonResponse, rejectWith } from "../organizations/organizations.routes";
 import { onboard } from "./onboarding.service";
-
-const INVALID_KEY = "Envía un Idempotency-Key con formato UUID.";
-
-function idempotencyKey(value: string | undefined): string {
-  const parsed = IdempotencyKey.safeParse(value);
-  if (!parsed.success) {
-    throw new AppError("VALIDATION_FAILED", INVALID_KEY, {
-      [IDEMPOTENCY_KEY_HEADER]: [INVALID_KEY],
-    });
-  }
-  return parsed.data;
-}
 
 /** `POST /v1/onboarding` (T20): ruta sin tenant; la protegen Turnstile, la cuota por IP y la llave. */
 export const onboardingRoutes = new Hono<AppEnv>().post(
@@ -81,7 +68,7 @@ export const onboardingRoutes = new Hono<AppEnv>().post(
   }),
   validator("json", OnboardingInput, rejectWith(OnboardingInput)),
   async (c) => {
-    const key = idempotencyKey(c.req.header(IDEMPOTENCY_KEY_HEADER));
+    const key = parseIdempotencyKey(c.req.header(IDEMPOTENCY_KEY_HEADER));
     const result = await onboard(
       {
         db: createDb(c.env),

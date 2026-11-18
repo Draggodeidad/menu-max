@@ -4,8 +4,9 @@
 // Las colas `menusmax-jobs*` y sus DLQ las crea un humano en cada entorno antes de publicar.
 // Los `namespace_id` de `ratelimits` son provisionales: un humano confirma que sean únicos en la
 // cuenta. Los límites (10, 60 y 300 por minuto) son provisionales (ADR-010).
-// `RESEND_API_KEY` (ADR-020) y `TURNSTILE_SECRET_KEY` (ADR-010) son secretos: van en `.dev.vars`
-// y en los secretos de cada entorno, nunca en `vars`.
+// `RESEND_API_KEY` (ADR-020), `TURNSTILE_SECRET_KEY` (ADR-010), `PHONE_HASH_SALT` y
+// `ORDER_TOKEN_SECRET` (T21) son secretos: van en `.dev.vars` y en los secretos de cada entorno,
+// nunca en `vars`.
 // Los buckets R2 `menusmax-media*` (binding `MEDIA`, T17) los crea un humano en clase Standard, con
 // dominio propio y caché (nunca r2.dev en producción) y lifecycle para abortar multipart
 // incompletos. `MEDIA_PUBLIC_BASE_URL` es ese dominio: en staging y production lo inyecta

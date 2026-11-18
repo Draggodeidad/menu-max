@@ -315,6 +315,8 @@ describe("getEnv", () => {
     JOBS: fakeQueue,
     JOBS_DLQ: fakeQueue,
     TURNSTILE_SECRET_KEY: "turnstile-test-placeholder",
+    PHONE_HASH_SALT: "phone-salt-test-placeholder".repeat(2),
+    ORDER_TOKEN_SECRET: "order-token-test-placeholder".repeat(2),
     RL_AUTH: fakeRateLimit,
     RL_PUBLIC: fakeRateLimit,
     RL_PRIVATE: fakeRateLimit,
