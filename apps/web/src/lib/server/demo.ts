@@ -17,6 +17,7 @@ const flag = (url: URL, name: string, value: string) => dev && url.searchParams.
 // TEMPORAL: negocio único de la demo; panel, menú público y activación leen de aquí.
 export const slugNegocioDemo = "tacos-el-guero";
 const NOMBRE_NEGOCIO_DEMO = "Tacos El Güero";
+export const CORREO_CON_CUENTA_DEMO = "juan@tacoselguero.mx"; // TEMPORAL: dueño de la demo.
 
 // TEMPORAL: invitación sembrada, sin API ni persistencia compartida entre navegadores.
 export const demoInvitationToken = "equipo-demo";
@@ -1101,7 +1102,7 @@ const AJUSTES_BASE: AjustesDemo = {
     { id: "z2", nombre: "Del Valle / Narvarte", costoCents: 4500 },
   ],
   equipo: [
-    { id: "u1", nombre: "Juan González", correo: "juan@tacoselguero.mx", rol: "dueno" },
+    { id: "u1", nombre: "Juan González", correo: CORREO_CON_CUENTA_DEMO, rol: "dueno" },
     { id: "u2", nombre: "Mateo Trejo", correo: "cocina1@tacoselguero.mx", rol: "cocina" },
     { id: "u3", nombre: "Sofía Ramírez", correo: "sofia@tacoselguero.mx", rol: "mesera" },
   ],

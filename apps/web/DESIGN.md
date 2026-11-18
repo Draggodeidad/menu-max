@@ -237,6 +237,7 @@ Prohibido: animaciones en bucle, parallax y efectos que distraigan al comensal m
   - "Enviar pedido" → "Enviando…" → "Pedido enviado"
   - "Guardar cambios" → "Guardado"
 - Errores: qué pasó y cómo arreglarlo, sin disculpas. Ej.: "Este producto ya no está disponible. Quítalo para continuar."
+- Correo ya registrado en `/crear`. «Ya tienes una cuenta con este correo. Entra para publicar tu menú.» La acción secundaria dice «Entrar».
 - Estados vacíos invitan a actuar. Ej.: "Aún no hay pedidos. Comparte tu QR para recibir el primero."
 - Vocabulario fijo: **menú**, **producto**, **pedido**, **modalidad** (Mesa / Recoger / Domicilio), **panel**. Nunca "ítem", "orden", "storefront" o "dashboard" en la UI.
 
@@ -302,6 +303,8 @@ Alineación a la izquierda. El formulario es HTML puro (`method="GET" action="/c
 ```
 
 Móvil: la vista previa va arriba dentro de `<details open>`. El borrador persiste en `localStorage`. Un solo POST crea cuenta, organización, negocio, sucursal, menú y productos.
+
+Si el correo ya tiene cuenta, el error aparece debajo de ese campo, seguido del enlace «Entrar» a `/entrar`. Se conserva lo capturado y se vacía la contraseña.
 
 **C · Listo**: QR grande, "Hacer un pedido de prueba" (primario), "Descargar QR", "Copiar enlace", enlace a "Agregar fotos a tus productos".
 
