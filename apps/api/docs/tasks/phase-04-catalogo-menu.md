@@ -2,7 +2,7 @@
 
 > Planeación del backend (versionada en git).
 > **Criterio para cerrar la fase:** `/crear` en un solo envío deja un menú publicado con QR; una cuenta sin verificar no recibe pedidos de comensales.
-> **Orden de ejecución:** T15 → T20b, en orden numérico.
+> **Orden de ejecución:** T15 → T20c, en orden numérico.
 > **Convención de rutas de esta fase:** `/v1/orgs/:orgId/branches/:branchId/...` siempre con `requireBranch()` y `canAccessBranch`.
 
 ---
@@ -344,3 +344,102 @@ Cuando se cumplen los 3 meses de prueba, la organización pasa sola al plan `fre
 - Si los límites de `free` cambian después de fusionar T14, van en una migración nueva (no se edita `0005`).
 - Antes del lanzamiento comercial (Release 2) se decide si las sucursales que exceden el plan pasan a modo consulta. En el piloto siguen operando.
 - ADR-011 reserva el outbox para pedidos y encola `email.send` directo porque el usuario puede pedir reenvío. Aquí nadie puede pedirlo, por eso el estado del aviso vive en `subscriptions`; no se crea una tabla de outbox nueva.
+
+---
+
+## T20c — Aviso al correo que ya tiene cuenta cuando alguien intenta registrarse
+
+**Fase:** B4 · **Depende de:** T08, T20 · **ADR:** 008, 010, 011, 020 · **Rama sugerida:** `feat/t20c-aviso-cuenta-existente`
+
+> Planeada el 2026-11-17 al cerrar T20 (#70). Cumple la viñeta de ADR-008 «registrarse con un correo existente envía un aviso a ese correo», que T20 dejó fuera de su alcance. No cambia el contrato de `POST /v1/onboarding`: la respuesta, el código y el mensaje siguen idénticos, así que WEB no se rompe aunque esta task salga antes o después de la task-15 del frontend.
+
+### Objetivo
+
+Cuando alguien intenta crear una cuenta en `/crear` con un correo que ya está registrado, el dueño real de ese correo recibe un aviso con los enlaces para entrar o restablecer su contraseña. Así sabe del intento aunque no haya sido él.
+
+### Alcance
+
+- **Plantilla nueva `account-exists`** (`packages/contracts/src/jobs.ts`):
+  - se agrega a `EMAIL_TEMPLATES` y a la unión `EmailSendJob` con `data: { signInUrl: Link, resetUrl: Link }`;
+  - es un valor nuevo de un enum interno de la cola: productor y consumidor viven en el mismo Worker, así que no hay desfase en el despliegue;
+  - el cambio es compatible, porque `apps/web` no consume `EMAIL_TEMPLATES`.
+- **Texto** en `infrastructure/mailer/templates.ts`, en español de México y con el tono de `DESIGN.md §6`, en texto plano y HTML simple, sin tracking (ADR-020):
+  - Asunto: «Alguien intentó crear una cuenta con tu correo en MenusMax».
+  - Cuerpo: «Alguien intentó crear un menú en MenusMax con este correo, que ya tiene una cuenta. Si fuiste tú, entra para publicar tu menú: [Entrar]. Si no recuerdas tu contraseña, restablécela: [Restablecer contraseña]. Si no fuiste tú, no tienes que hacer nada: tu cuenta sigue igual.»
+  - Sin datos del intento (nombre del negocio, IP, productos): el correo no debe servir para enviar texto arbitrario a un tercero.
+- **Enlaces** en `modules/auth/web-links.ts`:
+  - ruta nueva `signIn: "/entrar"` con `signInLink(env)`;
+  - `resetPasswordLink(env)` sin token, que ya existe y abre la pantalla para pedir un enlace;
+  - ningún enlace lleva token ni el correo.
+- **Envío** desde `modules/auth/auth.service.ts` con una función nueva `notifyExistingAccount(deps, email)`:
+  - encola `email.send` con `sendAuthEmail` y `waitUntil`: la respuesta no espera a la cola y su tiempo no cambia;
+  - no envía si `users.email_status = 'undeliverable'` (ADR-008);
+  - una falla al encolar se registra y no cambia la respuesta (ADR-011: los correos de auth se encolan directo).
+- **Cuándo se llama.** `modules/onboarding/onboarding.service.ts` la llama en los dos caminos de T20 que terminan en `CONFLICT` con `ACCOUNT_ALREADY_EXISTS_MESSAGE`:
+  1. `createOwnerAccount` rechaza el correo porque ya existe (incluye la carrera entre la consulta y el registro);
+  2. sin sesión, la `Idempotency-Key` ya está registrada con el mismo cuerpo.
+
+  En los dos casos se llama después de Turnstile, la cuota por IP y `assertDeliverableEmail`, que T20 ya aplica.
+
+- **Cuota contra el uso del aviso para acosar a un tercero** (`rate_counters`, ventanas fijas en UTC como en ADR-010):
+  - límite: 1 aviso por hora y 3 por día por correo;
+  - llave: `account-exists-hour:<sha256(correo normalizado)>` y `account-exists-day:<…>`, con el mismo `emailDigest` del reset, nunca el correo en claro;
+  - cuota excedida: no se encola y la respuesta sigue siendo el mismo `409 CONFLICT`. Nunca `429`: quien intenta registrarse no debe distinguir si se envió el aviso.
+- **Logs:** `auth.existing_account_notified` y `auth.existing_account_notice_skipped` (con `reason: "quota" | "undeliverable"`), solo con `requestId`.
+- **Documentación:**
+  - agregar a la tabla de cuotas de ADR-010 la fila «Aviso de cuenta existente · 1 por hora, 3 por día · Correo normalizado (hash)»;
+  - marcar en ADR-008 que la viñeta queda implementada en T20c.
+  - Las dos ediciones van en el mismo PR, como hizo T18 con la gracia.
+
+### Fuera de alcance
+
+- Cambiar la respuesta, el código o el mensaje de `POST /v1/onboarding`.
+- Aceptar una invitación con un correo que ya tiene cuenta (`AUTH_REQUIRED`, T13): quien recibe la invitación ya sabe que su correo tiene cuenta.
+- Avisos por WhatsApp o dentro del panel.
+- La pantalla `/restablecer` y el manejo del error en `/crear`: frontend (task-15 de `docs/tasks/`).
+
+### Archivos esperados
+
+- `packages/contracts/src/jobs.ts`: plantilla `account-exists`.
+- `apps/api/src/infrastructure/mailer/templates.ts` (+ `mailer.test.ts`): texto y HTML.
+- `apps/api/src/modules/auth/web-links.ts`: `signInLink`.
+- `apps/api/src/modules/auth/auth.service.ts`: `notifyExistingAccount` y su cuota.
+- `apps/api/src/modules/onboarding/onboarding.service.ts` (+ `onboarding.test.ts`): llamada en los dos caminos.
+- `apps/api/docs/adr/ADR.md`: fila de cuota en ADR-010 y nota en ADR-008.
+
+### Endpoints
+
+| Método | Ruta             | Guardas                                       | Entrada                         | Salida                                                                                       |
+| ------ | ---------------- | --------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------- |
+| POST   | `/v1/onboarding` | Sin cambios (Turnstile, cuota por IP, `auth`) | Sin cambios (`OnboardingInput`) | Sin cambios; además, con correo ya registrado se encola `account-exists` (sujeto a su cuota) |
+
+### Datos
+
+- Sin tablas ni migraciones: la cuota usa `rate_counters` y el Cron diario ya limpia sus filas vencidas.
+
+### Variables de entorno y bindings
+
+- Ninguna. Usa `JOBS`, `DB` y `WEB_ORIGIN`, que ya existen.
+
+### Pruebas requeridas
+
+- [ ] Onboarding sin sesión con un correo ya registrado → `409 CONFLICT` con el mismo cuerpo que en T20 y un `email.send` `account-exists` encolado a ese correo, con `signInUrl` = `${WEB_ORIGIN}/entrar` y `resetUrl` = `${WEB_ORIGIN}/restablecer`, sin token.
+- [ ] Misma `Idempotency-Key` y mismo cuerpo sin sesión → mismo `409` y el mismo aviso.
+- [ ] Segundo intento dentro de la misma hora → `409` idéntico sin encolar. El cuarto intento del día tampoco encola.
+- [ ] Cuenta con `email_status = 'undeliverable'` → `409` sin encolar.
+- [ ] Falla al encolar → la respuesta sigue siendo `409 CONFLICT` (no `500`) y se registra `email.enqueue_failed`.
+- [ ] Correo nuevo → solo se encola `verify-email`, nunca `account-exists`.
+- [ ] Turnstile inválido, cuota por IP excedida o correo desechable → no se encola ningún aviso (esos rechazos ocurren antes).
+- [ ] `EmailSendJob` rechaza un `account-exists` sin `signInUrl` o con campos extra; el consumidor lo manda a la DLQ sin reintento.
+- [ ] La plantilla renderiza asunto, texto y HTML en español sin datos del intento. Los logs no contienen el correo.
+
+### Criterios de aceptación
+
+- [ ] En local (`pnpm --filter api dev`), un segundo `POST /v1/onboarding` con un correo ya registrado imprime en la terminal el aviso con los enlaces a `/entrar` y `/restablecer`. La respuesta HTTP es la misma que antes de esta task.
+- [ ] `pnpm --filter api check`, `lint` y `test` pasan; `docs/api/openapi.json` no cambia (si cambia, solo en la descripción del 409).
+
+### Notas
+
+- **Por qué no se cambia el mensaje del `409`.** El texto «Ya tienes una cuenta con este correo. Entra para publicar tu menú.» no dice que se envió un correo. Así sigue siendo cierto aunque la cuota impida el aviso, y WEB no depende de esta task.
+- **Por qué esa cuota.** Es más estricta que el reenvío de verificación (1 cada 60 s, 5 por día) porque el destinatario no pidió el correo. Un tercero que conoce un correo solo puede provocar 3 avisos al día. Turnstile y la cuota de 3 altas por IP ya acotan el volumen total.
+- **Prerrequisito para salir a producción:** el dominio emisor de Resend dado de alta (pendiente de T08). Sin él, el aviso se encola y el consumidor lo reintenta hasta la DLQ, como cualquier otro correo.
