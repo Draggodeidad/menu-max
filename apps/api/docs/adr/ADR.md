@@ -26,6 +26,7 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 | [014](#adr-014--caché-del-menú-público-en-web-con-versión)            | Caché del menú público en WEB con versión                | Aceptado (TTL: Propuesto)    | 2026-11-11 |
 | [015](#adr-015--retención-de-datos-del-comensal)                      | Retención de datos del comensal                          | Propuesto                    | 2026-11-11 |
 | [016](#adr-016--modelo-de-datos-reducido-para-el-mvp)                 | Modelo de datos reducido para el MVP                     | Aceptado                     | 2026-11-11 |
+| [017](#adr-017--qr-en-svg-generado-en-la-api-con-uqr)                 | QR en SVG generado en la API con `uqr`                   | Aceptado                     | 2026-11-17 |
 | [018](#adr-018--zonas-de-entrega-por-código-postal-con-tarifa-fija)   | Zonas de entrega por código postal con tarifa fija       | Aceptado                     | 2026-11-14 |
 | [020](#adr-020--correo-transaccional-con-resend)                      | Correo con Resend tras puerto `Mailer`                   | Aceptado                     | 2026-11-13 |
 
@@ -416,6 +417,39 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 | Operación               | `audit_logs`, `rate_counters`, `email_domain_checks`                                                                  |
 
 **Consecuencias.** Compartir productos entre menús o sucursales requerirá un ADR y una migración _expand/contract_ cuando un negocio real lo pida.
+
+---
+
+## ADR-017 — QR en SVG generado en la API con `uqr`
+
+**Estado:** Aceptado · **Fecha:** 2026-11-17
+
+**Contexto.** El negocio imprime un QR permanente de su menú y uno por mesa (T19). El QR solo depende de dos datos: el slug del menú, que no cambia después de publicar, y el número de mesa. WEB muestra el SVG tal cual con `{@html}`, que `apps/web/AGENTS.md` solo permite para el SVG que genera nuestra API. Generar un QR a mano (Reed-Solomon, máscaras, versiones) es código delicado, así que hace falta una librería y la lista de dependencias de `apps/api` no tiene ninguna.
+
+**Decisión.**
+
+- Dependencia de producción `uqr` (unjs, MIT, sin dependencias, ~80 KB), con versión exacta. Es TypeScript puro y funciona en Workers sin APIs de Node.
+- El SVG se genera en la API al pedirlo: `GET /v1/orgs/:orgId/branches/:branchId/qr` (`organization:read`), con `?mesa=N` opcional.
+- **No se guarda** en D1 ni en R2: se calcula desde el slug y la mesa, así que el QR del panel y el impreso siempre coinciden. Editar el catálogo no lo cambia.
+- Contenido: `${WEB_ORIGIN}/m/{slug}` o `${WEB_ORIGIN}/m/{slug}?mesa={n}`, con `n` entre 1 y `branches.table_count`.
+- Corrección de errores nivel **M** (hasta 15 % de daño) y margen de **4 módulos** (la zona silenciosa del estándar). `uqr` usa por defecto `L` y 1 módulo, así que las dos opciones se pasan explícitas.
+- La salida solo contiene `<svg>`, `<rect>` y `<path>`: sin texto, scripts, manejadores ni referencias externas. Una prueba lo verifica.
+- `Cache-Control: private, max-age=300`.
+- Solo con el menú publicado; si no, `BUSINESS_RULE`.
+
+**Consecuencias.**
+
+- `uqr` entra en la lista de dependencias de producción de `apps/api/AGENTS.md` y `PLAN-BACKEND.md`.
+- Las pruebas comparan el SVG con la salida de `uqr` para la URL esperada y leen el nivel de corrección en los bits de formato. No decodifican la imagen: no hay un decodificador entre las dependencias permitidas.
+- PNG o PDF para imprimir, colores y logo dentro del QR quedan fuera del MVP. Agregarlos requiere revisar este ADR.
+- La permanencia del QR depende de que el slug no cambie (`DATABASE.md`). Si algún día se permite renombrarlo, hará falta una tabla de alias.
+
+**Alternativas descartadas.**
+
+- `qrcode` (npm): más pesada, arrastra dependencias y sus salidas PNG y canvas dependen de APIs de Node.
+- Generar el QR en WEB: duplicaría la lógica del destino del QR fuera de la API, que es dueña del slug y de `table_count`.
+- Guardar el SVG en R2: agrega estado que puede desalinearse del slug sin aportar nada, porque generarlo cuesta milisegundos.
+- Escribir el codificador a mano: mucho código delicado para una función ya resuelta.
 
 ---
 

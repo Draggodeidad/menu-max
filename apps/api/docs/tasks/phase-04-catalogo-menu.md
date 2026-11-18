@@ -201,9 +201,9 @@ El negocio personaliza y publica su menú, y cualquier comensal puede leerlo por
 
 ## T19 — Código QR por menú y por mesa
 
-**Fase:** B4 · **Depende de:** T18 · **ADR:** 017 (Propuesto) · **Rama sugerida:** `feat/t19-qr`
+**Fase:** B4 · **Depende de:** T18 · **ADR:** 017 · **Rama sugerida:** `feat/t19-qr`
 
-> Requiere la dependencia `uqr` (ADR-017, `Propuesto`). No la instales hasta que el ADR esté aceptado.
+> Usa la dependencia `uqr` (ADR-017, aceptado el 2026-11-17).
 
 ### Objetivo
 
