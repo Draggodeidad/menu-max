@@ -104,3 +104,13 @@ export function memberSlotAvailable(db: Db, orgId: string): SQL {
     .where(eq(subscriptions.organizationId, orgId));
   return sql`(${used}) < (${limit})`;
 }
+
+/** `max_products` de un plan del catálogo (sin tenant: lo usa el onboarding, T20). */
+export async function findPlanMaxProducts(db: Db, planId: string) {
+  const row = await db
+    .select({ maxProducts: plans.maxProducts })
+    .from(plans)
+    .where(eq(plans.id, planId))
+    .get();
+  return row?.maxProducts;
+}

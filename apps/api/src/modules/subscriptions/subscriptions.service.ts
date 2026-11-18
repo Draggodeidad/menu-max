@@ -5,6 +5,7 @@ import { log } from "../../shared/log";
 import type { TenantContext } from "../../types";
 import {
   findMemberLimit,
+  findPlanMaxProducts,
   findSubscriptionWithUsage,
   memberSlotAvailable,
 } from "./subscriptions.repository";
@@ -53,4 +54,17 @@ export async function assertMemberSlotForInvitation(db: Db, orgId: string, reque
 /** Condición SQL para la sentencia que agrega al miembro (cierra la carrera entre aceptaciones). */
 export function memberSlotCondition(db: Db, orgId: string) {
   return memberSlotAvailable(db, orgId);
+}
+
+/**
+ * Tope de productos del plan, leído de `plans` (el onboarding usa el de `free`, T20). Si el plan
+ * no existe, la siembra de la migración está rota.
+ */
+export async function planMaxProducts(db: Db, planId: string, requestId: string) {
+  const max = await findPlanMaxProducts(db, planId);
+  if (max === undefined) {
+    log.error("subscription.plan_missing", { requestId, planId });
+    throw new AppError("INTERNAL");
+  }
+  return max;
 }
