@@ -27,6 +27,7 @@ import { assertFeature } from "../subscriptions/limits";
 import { acceptingOrders } from "./acceptance";
 import {
   assignSlug,
+  bumpMenusOwnedBy,
   findAssetKeys,
   findBusinessNameOfBranch,
   findPublication,
@@ -384,8 +385,17 @@ function publicProducts(deps: PublicStorefrontDeps, read: PublicRead) {
 }
 
 /**
+ * Al verificar su correo un dueño (ADR-008), sube `menuVersion` de los menús de sus organizaciones:
+ * cambian `acceptingOrders` y, si la gracia venció, el menú vuelve a mostrarse.
+ */
+export function refreshMenusOfOwner(db: Db, userId: string) {
+  return bumpMenusOwnedBy(db, userId);
+}
+
+/**
  * Menú publicado por su slug, en un solo `db.batch`: solo datos publicables, productos
- * disponibles y el tema efectivo según el plan vigente. No publicado o inexistente → 404.
+ * disponibles y el tema efectivo según el plan vigente. Con la gracia de ADR-008 vencida, sin
+ * categorías (`notAcceptingReason: "inactive"`). No publicado o inexistente → 404.
  */
 export async function getPublicMenu(
   deps: PublicStorefrontDeps,
@@ -429,13 +439,21 @@ export async function getPublicMenu(
   const today = localWeekday(header.timezone, now);
   const acceptance = acceptingOrders(
     { status: "published" },
-    { hasVerifiedOwner: header.hasVerifiedOwner === 1, subscriptionStatus },
+    {
+      hasVerifiedOwner: header.hasVerifiedOwner === 1,
+      subscriptionStatus,
+      createdAt: new Date(header.orgCreatedAt ?? 0),
+    },
     { hours, timezone: header.timezone },
     now,
   );
   const opening = nextOpening(hours, header.timezone, now);
 
-  const productsByCategory = publicProducts(deps, read);
+  // Menú inactivo (gracia vencida, ADR-008): sin categorías ni productos.
+  const productsByCategory =
+    acceptance.reason === "inactive"
+      ? new Map<string, PublicProductDto[]>()
+      : publicProducts(deps, read);
   const categories: PublicCategoryDto[] = read.categoryRows.flatMap((category) => {
     const products = productsByCategory.get(category.id) ?? [];
     return products.length > 0 ? [{ id: category.id, name: category.name, products }] : [];

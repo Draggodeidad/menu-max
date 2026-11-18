@@ -9,6 +9,7 @@ import {
   optionGroups,
   options,
   organizationMembers,
+  organizations,
   plans,
   products,
   productVariants,
@@ -151,6 +152,23 @@ export async function unpublishMenu(db: Db, tenant: TenantContext, menuId: strin
     .where(and(menuCondition(tenant, menuId), eq(menus.status, "published")))
     .returning(publicationFields);
   return rows[0];
+}
+
+/**
+ * Sube `menu_version` de los menús de toda organización donde el usuario es `owner` activo. Es una
+ * acción del sistema al verificar un correo (ADR-008), no de un tenant: filtra por la membresía.
+ */
+export async function bumpMenusOwnedBy(db: Db, userId: string) {
+  await db
+    .update(menus)
+    .set({ menuVersion: sql`${menus.menuVersion} + 1` })
+    .where(
+      sql`${menus.organizationId} in (select ${organizationMembers.organizationId} from ${organizationMembers} where ${and(
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.role, "owner"),
+        eq(organizationMembers.status, "active"),
+      )})`,
+    );
 }
 
 // Tema --------------------------------------------------------------------------------------
@@ -300,6 +318,7 @@ const publicHeaderFields = {
   customTheme: aliased<number>(plans.customTheme, "plan_custom_theme"),
   removeBranding: aliased<number>(plans.removeBranding, "plan_remove_branding"),
   hasVerifiedOwner,
+  orgCreatedAt: aliased<number>(organizations.createdAt, "org_created_at"),
   themePreset: aliased<string>(storefrontThemes.preset, "theme_preset"),
   themePrimaryColor: aliased<string>(storefrontThemes.primaryColor, "theme_primary_color"),
   themeBackgroundColor: aliased<string>(storefrontThemes.backgroundColor, "theme_background_color"),
@@ -328,8 +347,8 @@ const joinActiveCategory = and(
 );
 
 /**
- * Menú público en un solo `db.batch` de 6 consultas: cabecera (menú, negocio, sucursal, plan,
- * dueño verificado y tema con sus imágenes), horario, zonas activas, categorías, productos
+ * Menú público en un solo `db.batch` de 6 consultas: cabecera (menú, negocio, sucursal, alta de
+ * la organización, plan, dueño verificado y tema con sus imágenes), horario, zonas activas, categorías, productos
  * disponibles con variantes e imagen, y grupos con opciones.
  */
 export async function readPublicMenu(db: Db, slug: string) {
@@ -348,6 +367,7 @@ export async function readPublicMenu(db: Db, slug: string) {
           eq(businesses.id, branches.businessId),
         ),
       )
+      .innerJoin(organizations, eq(organizations.id, menus.organizationId))
       .leftJoin(subscriptions, eq(subscriptions.organizationId, menus.organizationId))
       .leftJoin(plans, eq(plans.id, subscriptions.planId))
       .leftJoin(
