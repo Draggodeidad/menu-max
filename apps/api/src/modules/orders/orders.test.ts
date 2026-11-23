@@ -36,6 +36,7 @@ import {
   PHONE_QUOTA_MESSAGE,
   TABLE_OUT_OF_RANGE,
 } from "./orders.service";
+import { orderPageQuery, type OrderPageFilter } from "./orders.repository";
 import { PRODUCT_UNAVAILABLE, VARIANT_UNAVAILABLE } from "./pricing";
 
 const SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
@@ -1067,6 +1068,43 @@ async function staffOf(s: Shop, branchIds: string[]) {
   return user;
 }
 
+/** Copia `count` pedidos terminados del pedido dado, con ids anteriores a los reales. */
+async function seedFinishedOrders(
+  templateId: string,
+  branchId: string,
+  count: number,
+  from: number,
+) {
+  await getEnv(env)
+    .DB.prepare(
+      `insert into orders (id, organization_id, branch_id, menu_id, number, status, mode,
+         customer_name, customer_phone, customer_phone_hash, subtotal_cents, total_cents,
+         tracking_token_hash, created_at, updated_at)
+       with recursive n(i) as (select 1 union all select i + 1 from n where i < ?1)
+       select '01900000-0000-7000-8000-' || lower(hex(randomblob(6))), organization_id, ?2, menu_id,
+         ?3 + i, 'completed', 'pickup', customer_name, customer_phone, customer_phone_hash,
+         subtotal_cents, total_cents, lower(hex(randomblob(32))), 1000 + i, 1000 + i
+       from orders, n where orders.id = ?4`,
+    )
+    .bind(count, branchId, from, templateId)
+    .run();
+}
+
+/** Filas que D1 lee para una página, con la misma consulta que usa el listado. */
+async function pageRowsRead(s: Shop, page: OrderPageFilter) {
+  const { sql: text, params } = orderPageQuery(
+    db(),
+    { orgId: s.org.orgId },
+    s.branchId,
+    page,
+  ).toSQL();
+  const result = await getEnv(env)
+    .DB.prepare(text)
+    .bind(...params)
+    .all();
+  return { rows: result.results.length, rowsRead: result.meta.rows_read };
+}
+
 describe("Panel de pedidos (T23)", () => {
   it.each([
     ["pickup", {}, ["accepted", "preparing", "ready", "completed"]],
@@ -1425,6 +1463,50 @@ describe("Panel de pedidos (T23)", () => {
 
     await newOrder(s);
     expect((await list(s, "", { "if-none-match": movedEtag })).status).toBe(200);
+  });
+
+  it("el listado no recorre el historial de la sucursal ni de la organización", async () => {
+    const s = await shop();
+    const otherBranch = await createBranch({ orgId: s.org.orgId, businessId: s.org.businessId });
+    const active = await newOrder(s);
+    await seedFinishedOrders(active.id, s.branchId, 400, 1_000);
+    await seedFinishedOrders(active.id, otherBranch, 800, 1_000);
+
+    const board = await pageRowsRead(s, {
+      status: "active",
+      since: undefined,
+      cursor: undefined,
+      limit: 50,
+    });
+    expect(board.rows).toBe(1);
+    expect(board.rowsRead).toBeLessThan(20);
+
+    const changed = await pageRowsRead(s, {
+      status: "active",
+      since: active.updatedAt.getTime(),
+      cursor: undefined,
+      limit: 50,
+    });
+    expect(changed.rows).toBe(1);
+    expect(changed.rowsRead).toBeLessThan(30);
+
+    const done = await pageRowsRead(s, {
+      status: "done",
+      since: undefined,
+      cursor: undefined,
+      limit: 20,
+    });
+    expect(done.rows).toBe(21);
+    expect(done.rowsRead).toBeLessThan(40);
+
+    const boardAfterCursor = await pageRowsRead(s, {
+      status: "active",
+      since: undefined,
+      cursor: "01900000-0000-7000-8000-000000000000",
+      limit: 50,
+    });
+    expect(boardAfterCursor.rows).toBe(1);
+    expect(boardAfterCursor.rowsRead).toBeLessThan(20);
   });
 
   it("`ETag` de terminados: 304 hasta que termina otro pedido", async () => {
