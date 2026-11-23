@@ -5,6 +5,7 @@ import {
   OUTBOX_EVENTS,
   OUTBOX_STATUSES,
   PAYMENT_METHODS,
+  type OrderStatus,
 } from "@menu-max/contracts";
 import { sql } from "drizzle-orm";
 import {
@@ -34,8 +35,12 @@ export type OrderOptionSnapshot = {
   priceDeltaCents: number;
 };
 
-/** Contenido de `notification_outbox.payload_json`: solo ids; el aviso se arma al enviarlo. */
-export type OutboxPayload = { orderId: string };
+/**
+ * Contenido de `notification_outbox.payload_json`, sin datos personales; el aviso se arma al
+ * enviarlo. `toStatus` va en `order.status_changed`: distingue cada cambio del mismo pedido en la
+ * llave de deduplicación de T24.
+ */
+export type OutboxPayload = { orderId: string; toStatus?: OrderStatus };
 
 /**
  * Pedido. `number` es el número visible por sucursal (`#1042`, ADR-013): sale de
@@ -100,6 +105,8 @@ export const orders = sqliteTable(
       table.status,
       table.updatedAt,
     ),
+    // Panel (T23, ADR-021): historial de terminados paginado por `id` dentro de la sucursal.
+    index("orders_org_branch_id_idx").on(table.organizationId, table.branchId, table.id),
     // Cuota de pedidos por teléfono y sucursal (ADR-010).
     index("orders_branch_phone_created_idx").on(
       table.branchId,

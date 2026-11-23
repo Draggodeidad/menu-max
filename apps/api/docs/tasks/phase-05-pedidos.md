@@ -149,7 +149,7 @@ El comensal consulta el estado de su pedido con el enlace no adivinable que reci
 
 ## T23 — Panel de pedidos y máquina de estados
 
-**Fase:** B5 · **Depende de:** T21 · **ADR:** 007 · **Rama sugerida:** `feat/t23-panel-pedidos`
+**Fase:** B5 · **Depende de:** T21 · **ADR:** 007, 021 · **Rama sugerida:** `feat/t23-panel-pedidos`
 
 ### Objetivo
 
@@ -190,3 +190,18 @@ El personal ve los pedidos de sus sucursales casi en tiempo real y los avanza un
 ### Criterios de aceptación
 
 - [ ] El listado del panel usa un solo `batch` y filtra por sucursal en SQL.
+
+### Decisiones al implementar (acordadas el 2026-11-22)
+
+- **Cancelación:** además de lo listado en «Alcance», `ready → cancelled` y `out_for_delivery → cancelled`, para cerrar un pedido que nadie recogió o una entrega fallida. Requiere `orders:cancel` (`owner` y `admin`) y motivo.
+- **Avisos:** `order.status_changed` lleva `{ orderId, toStatus }`, sin datos personales, y T24 debe usar `toStatus` en la llave de deduplicación. Un pedido de prueba sin dueño verificado no genera avisos (ADR-008).
+- **`since`:** ignora `status` y devuelve todos los pedidos cambiados, también los terminados, para que el panel los quite del tablero. Compara con `>=`.
+- **`nextSince`:** la respuesta trae el valor para el siguiente sondeo, con 5 s de margen. Con varias páginas se usa el de la primera. Un pedido puede repetirse: se identifica por `id` y `version`.
+- **`ETag`:**
+  - el tablero (`active` o `since`) usa el máximo de `updated_at`, el conteo y la suma de `version` de los pedidos en curso;
+  - `done` usa la huella de la página, para no contar todo el historial;
+  - las páginas con `cursor` no llevan `ETag`.
+- **Concurrencia:** la `version` se compara antes que la política, así que quien llega tarde recibe `CONFLICT`. Historial y outbox se insertan antes del `update` con la misma condición de `version` y estado; no hace falta el índice único `(pedido, to_status)` que proponía el diseño original.
+- **Índice (migración `0015`):** `(organization_id, branch_id, id)` para paginar terminados. El tablero y `since` ordenan con `+id` para no recorrer el historial (ADR-021).
+- **DTOs:** el listado no lleva teléfono ni dirección. El motivo de rechazo o cancelación solo lo ve el panel, como se acordó en T22.
+- **Motivo:** enviarlo en una transición que no es `rejected` ni `cancelled` responde `400`.

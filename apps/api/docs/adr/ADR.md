@@ -20,15 +20,17 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 | [008](#adr-008--verificación-de-correo-no-bloqueante)                 | Verificación de correo no bloqueante                     | Aceptado (gracia de 21 días) | 2026-11-11 |
 | [009](#adr-009--correo-transaccional-con-cloudflare-email-service)    | Correo con Cloudflare Email Service tras puerto `Mailer` | Reemplazado por ADR-020      | 2026-11-11 |
 | [010](#adr-010--anti-abuso-en-capas)                                  | Anti-abuso en capas                                      | Aceptado (login: Propuesto)  | 2026-11-11 |
-| [011](#adr-011--una-cola-con-dlq-y-outbox-solo-para-pedidos)          | Una cola con DLQ; outbox solo para pedidos               | Aceptado                     | 2026-11-11 |
+| [011](#adr-011--una-cola-con-dlq-y-outbox-solo-para-pedidos)          | Una cola con DLQ; outbox solo para pedidos               | Aceptado (enmienda T23)      | 2026-11-11 |
 | [012](#adr-012--documentación-openapi-solo-en-desarrollo)             | Documentación OpenAPI solo en desarrollo                 | Aceptado                     | 2026-11-11 |
 | [013](#adr-013--ids-uuidv7-y-tokens-públicos-hasheados)               | Ids UUIDv7 y tokens públicos hasheados                   | Aceptado (enmienda T21)      | 2026-11-11 |
 | [014](#adr-014--caché-del-menú-público-en-web-con-versión)            | Caché del menú público en WEB con versión                | Aceptado (TTL: Propuesto)    | 2026-11-11 |
-| [015](#adr-015--retención-de-datos-del-comensal)                      | Retención de datos del comensal                          | Propuesto                    | 2026-11-11 |
+| [015](#adr-015--retención-de-datos-del-comensal)                      | Retención de datos del comensal                          | Aceptado (plazo: Propuesto)  | 2026-11-11 |
 | [016](#adr-016--modelo-de-datos-reducido-para-el-mvp)                 | Modelo de datos reducido para el MVP                     | Aceptado                     | 2026-11-11 |
 | [017](#adr-017--qr-en-svg-generado-en-la-api-con-uqr)                 | QR en SVG generado en la API con `uqr`                   | Aceptado                     | 2026-11-17 |
 | [018](#adr-018--zonas-de-entrega-por-código-postal-con-tarifa-fija)   | Zonas de entrega por código postal con tarifa fija       | Aceptado                     | 2026-11-14 |
 | [020](#adr-020--correo-transaccional-con-resend)                      | Correo con Resend tras puerto `Mailer`                   | Aceptado                     | 2026-11-13 |
+| [021](#adr-021--máquina-de-estados-y-panel-de-pedidos)                | Máquina de estados y panel de pedidos                    | Aceptado                     | 2026-11-22 |
+| [022](#adr-022--enlace-de-seguimiento-en-avisos-de-whatsapp)          | Enlace de seguimiento en avisos de WhatsApp              | Aceptado                     | 2026-11-23 |
 
 ---
 
@@ -334,6 +336,12 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 
 **Alternativas descartadas.** Una cola por tipo de mensaje; outbox para todo.
 
+**Enmienda (2026-11-22, T23).** Solo cambia la llave de deduplicación; el resto de la decisión sigue igual.
+
+- `dedupe_key` pasa de `orderId:event:recipient` a `orderId:event:toStatus:recipientHash`.
+- Todos los cambios de estado usan el evento `order.status_changed`: con la llave anterior, cada comensal recibiría solo el primero.
+- `order.created` no lleva `toStatus` en su payload y usa `pending`. El detalle está en ADR-021.
+
 ---
 
 ## ADR-012 — Documentación OpenAPI solo en desarrollo
@@ -398,16 +406,37 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 
 ## ADR-015 — Retención de datos del comensal
 
-**Estado:** Propuesto · **Fecha:** 2026-11-11
+**Estado:** Aceptado · Plazo: **Propuesto** · **Fecha:** 2026-11-11 · Mecanismo aceptado el 2026-11-23
 
-**Decisión propuesta.**
+**Decisión.**
 
 - Nombre, teléfono y dirección del comensal solo se guardan dentro del pedido.
-- A los 12 meses, un Cron anonimiza esos campos y conserva importes, productos y fechas para estadísticas.
+- Al vencer el plazo, un Cron anonimiza esos campos y conserva importes, productos, zona y fechas para estadísticas. El plazo propuesto es de 12 meses.
 - `customer_phone_hash` (SHA-256 con sal del entorno) permite cuotas y bloqueos sin guardar el teléfono en claro fuera del pedido.
 - Logs sin PII desde el día uno (`redact()`).
 
-**Pendiente.** Elegir 6, 12 o 24 meses y revisar el aviso de privacidad.
+**Mecanismo de anonimización (aceptado el 2026-11-23).** Valores de reemplazo con `anonymized_at`, sin reconstruir `orders`:
+
+- La migración agrega `anonymized_at` con `ALTER TABLE … ADD COLUMN` y un `CHECK` que rechaza un pedido anonimizado que conserve datos. Se escribe a mano para que no reconstruya la tabla.
+- `customer_name`, `customer_phone` y `customer_phone_hash` pasan a `''`, porque son `NOT NULL`. En domicilio, también calle, número, colonia, ciudad y código postal, que el `CHECK` de dirección exige.
+- `orders.notes`, `delivery_references`, `order_items.notes` y `order_status_history.reason` pasan a `NULL`.
+- `tracking_token_hash` se reemplaza por el hash de un valor aleatorio: el enlace de seguimiento deja de funcionar.
+- Los DTO conservan `string` y agregan `anonymizedAt`. Los mappers no presentan `''` como dato real.
+- Un pedido anonimizado no genera avisos.
+
+**Consecuencias.**
+
+- Es aditiva: en D1 local, con 80,001 pedidos, tomó 0.9 s, no reescribió filas y el `CHECK` rechazó una anonimización parcial.
+- Todo código que lea pedidos debe respetar `anonymized_at`.
+- La migración y el Cron entran en T26 cuando se acepte el plazo.
+
+**Alternativas descartadas.**
+
+- Reconstruir `orders` con `NULL`: funciona (2.2 s con los mismos datos), pero reescribe la tabla principal y sus 6 índices, y vuelve anulables varios campos de los DTO.
+- Mover los datos del comensal a otra tabla: contradice ADR-016 y exige _expand/contract_.
+- Borrar el pedido: los pedidos nunca se borran.
+
+**Pendiente.** Elegir el plazo de 6, 12 o 24 meses y revisar el aviso de privacidad. La LFPDPPP vigente (DOF, 20 de marzo de 2025) trata plazo de conservación, bloqueo y supresión: un asesor legal debe confirmar el plazo y si esta anonimización cumple.
 
 ---
 
@@ -550,6 +579,78 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 **Pendiente.** Prueba de entregabilidad a Gmail, Outlook y Yahoo antes del piloto.
 
 **Alternativas descartadas.** Cloudflare Email Service (costo, beta y rebotes sin definir); SDK oficial `resend` (dependencia extra para una llamada HTTP); Amazon SES (más configuración y firma de peticiones propia para el mismo resultado).
+
+---
+
+## ADR-021 — Máquina de estados y panel de pedidos
+
+**Estado:** Aceptado · **Fecha:** 2026-11-22 · Precisa ADR-007 y ADR-011
+
+**Contexto.** T23 entrega el panel: el personal consulta cada 10 s y avanza los pedidos sin pisarse. Faltaba definir desde qué estados se cancela (`DATABASE.md` lo dejó abierto), cómo evitar historial y avisos duplicados sin transacciones interactivas (ADR-003), qué necesita T24 para avisar de cada cambio y cómo leer el tablero sin recorrer el historial. Una medición en D1 local con 80,000 pedidos mostró que la primera versión del listado leía toda la organización en cada sondeo.
+
+**Decisión.**
+
+- **Transiciones** (`ORDER_TRANSITIONS`, por modalidad):
+  - `pending → accepted | rejected`;
+  - `accepted → preparing | cancelled`;
+  - `preparing → ready | cancelled`;
+  - `ready → completed | cancelled` en mesa y recoger;
+  - `ready → out_for_delivery | cancelled` y `out_for_delivery → delivered | cancelled` en domicilio.
+- **Permisos.** Cancelar requiere `orders:cancel` (`owner` y `admin`). Rechazar o cancelar requiere motivo de hasta 280 caracteres, visible solo en el panel.
+- **Concurrencia.** Un solo `db.batch` inserta historial y outbox, y al final hace el `update`. Las tres sentencias exigen la `version` y el estado leídos, así que evalúan el mismo estado previo: si otra persona ganó, ninguna escribe y se responde `CONFLICT`.
+- **Avisos.** `order.status_changed` guarda `{ orderId, toStatus }` y solo se inserta con `customer_whatsapp_opt_in`. Un pedido de prueba sin dueño verificado no genera avisos (ADR-008). T24 usa `orderId:event:toStatus:recipientHash` como llave y elige la plantilla por `toStatus`, nunca por el estado actual del pedido.
+- **Lectura del panel.**
+  - El tablero y `since` usan `(organization_id, branch_id, status, updated_at)` y ordenan con `ORDER BY +id`, para que SQLite no elija un índice por `id` y recorra el historial.
+  - Los terminados se paginan con el índice nuevo `(organization_id, branch_id, id)`, migración `0015`.
+  - `since` ignora `status` y compara con `>=`. `nextSince` lleva 5 s de margen; un pedido repetido se identifica por `id` y `version`.
+  - El `ETag` del tablero combina máximo de `updated_at`, conteo y suma de `version`.
+
+**Consecuencias.**
+
+- El tablero pasa de 80,001 a 66 filas leídas por sondeo, y `since` de 80,001 a 70. Una prueba de `rows_read` lo protege.
+- La migración solo crea un índice: no reescribe datos y el código funciona antes y después de aplicarla. Cada escritura en `orders` mantiene un índice más.
+- La base no impide un `out_for_delivery` fuera de domicilio: agregar ese `CHECK` exige reconstruir `orders` y hoy lo cubre la política.
+- La base tampoco impide dos filas de historial con el mismo estado; las sentencias condicionales lo evitan, y reabrir un pedido en el futuro no requeriría quitar un índice.
+
+**Alternativas descartadas.**
+
+- Índice único `(organization_id, order_id, to_status)`: no es necesario con sentencias condicionales y bloquearía reabrir un pedido.
+- `order_id` en `notification_outbox`: T24 publica por el id del outbox y el payload ya lleva el pedido.
+- Un evento por estado (`order.accepted`, …): obliga a reconstruir la tabla por el `CHECK` de `event`.
+- Índice `(organization_id, branch_id, updated_at)`: no resuelve el orden por `id` del historial.
+
+---
+
+## ADR-022 — Enlace de seguimiento en avisos de WhatsApp
+
+**Estado:** Aceptado · **Fecha:** 2026-11-23 · Afecta a T24
+
+**Contexto.** T24 avisa al comensal cuando su pedido cambia de estado. Su especificación usaba `${WEB_ORIGIN}/app`, que exige sesión, pero el comensal pide como invitado. La única página que puede abrir es `/pedido/{token}`. Ese token no vence (T22) y, si va en un botón de WhatsApp, Meta lo recibe como parámetro. Quien lo tiene ve número, estado, productos, total, colonia y datos de la sucursal. No ve nombre, teléfono, calle ni número, y no puede cambiar nada.
+
+**Decisión.** El aviso al comensal lleva un botón de URL a `/pedido/{token}`.
+
+- La plantilla usa `https://{dominio}/pedido/{{1}}`. Meta admite una variable al final de la URL, y el token en base64url no requiere codificación.
+- El mensaje de la cola no lleva el token. El consumidor lo deriva con `orderTrackingToken` al enviar y compara su hash con `orders.tracking_token_hash`. Si no coincide (secreto rotado, ADR-013), no envía y registra `failed`.
+- El token nunca se guarda en `notification_deliveries` ni aparece en logs o errores.
+- WEB responde `Referrer-Policy: no-referrer` en `/pedido/[token]`.
+- El aviso al negocio sigue usando `/app`.
+- El enlace deja de funcionar cuando el pedido se anonimiza (ADR-015).
+
+**Consecuencias.**
+
+- Meta procesa el token.
+- Reenviar el mensaje comparte el seguimiento, y no se puede revocar el enlace de un solo pedido antes de anonimizarlo.
+- Si el comensal capturó mal su teléfono, otra persona recibe el aviso, igual que con el resumen que el mensaje ya incluye.
+- Hace falta una plantilla aprobada con botón por dominio. Sin ella, T24 no envía aviso al comensal.
+
+**Alternativas descartadas.**
+
+- `/app`: el comensal no tiene cuenta.
+- Enlace firmado que vence: limita la exposición, pero exige una ruta nueva en API y WEB y definir un plazo. Se revisa si el enlace no debe vivir en el chat.
+- Sin enlace: no expone nada, pero quien cerró la página no puede volver. Usarlo como respaldo si Meta no aprueba el botón requiere confirmarlo.
+- Código por WhatsApp para entrar: flujo y mensajes extra.
+- Acortador externo: otro tercero ve el enlace.
+- Tabla propia de enlaces: fuera de ADR-016.
 
 ---
 

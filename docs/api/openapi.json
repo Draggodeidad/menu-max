@@ -1887,6 +1887,480 @@
         "required": ["status", "slug", "publishedAt", "menuVersion"],
         "additionalProperties": false
       },
+      "OrderListDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderSummaryDto"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextSince": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["items", "nextCursor", "nextSince"],
+        "additionalProperties": false
+      },
+      "OrderSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+          },
+          "number": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "rejected",
+              "preparing",
+              "ready",
+              "out_for_delivery",
+              "completed",
+              "delivered",
+              "cancelled"
+            ]
+          },
+          "isFinal": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["table", "pickup", "delivery"]
+          },
+          "tableNumber": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "customerName": {
+            "type": "string"
+          },
+          "totalCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "notes": {
+            "type": ["string", "null"]
+          },
+          "isTest": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "variantName": {
+                  "type": ["string", "null"]
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "priceDeltaCents": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": ["name", "priceDeltaCents"],
+                    "additionalProperties": false
+                  }
+                },
+                "quantity": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "unitPriceCents": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "lineTotalCents": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "notes": {
+                  "type": ["string", "null"]
+                }
+              },
+              "required": [
+                "name",
+                "variantName",
+                "options",
+                "quantity",
+                "unitPriceCents",
+                "lineTotalCents",
+                "notes"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "status",
+          "isFinal",
+          "mode",
+          "tableNumber",
+          "customerName",
+          "totalCents",
+          "notes",
+          "isTest",
+          "version",
+          "createdAt",
+          "updatedAt",
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "OrderDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+          },
+          "number": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "rejected",
+              "preparing",
+              "ready",
+              "out_for_delivery",
+              "completed",
+              "delivered",
+              "cancelled"
+            ]
+          },
+          "isFinal": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["table", "pickup", "delivery"]
+          },
+          "tableNumber": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "customerName": {
+            "type": "string"
+          },
+          "totalCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "notes": {
+            "type": ["string", "null"]
+          },
+          "isTest": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "variantName": {
+                  "type": ["string", "null"]
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "priceDeltaCents": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": ["name", "priceDeltaCents"],
+                    "additionalProperties": false
+                  }
+                },
+                "quantity": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "unitPriceCents": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "lineTotalCents": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "notes": {
+                  "type": ["string", "null"]
+                }
+              },
+              "required": [
+                "name",
+                "variantName",
+                "options",
+                "quantity",
+                "unitPriceCents",
+                "lineTotalCents",
+                "notes"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "customerPhone": {
+            "type": "string"
+          },
+          "customerWhatsappOptIn": {
+            "type": "boolean"
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "street": {
+                    "type": "string"
+                  },
+                  "number": {
+                    "type": "string"
+                  },
+                  "neighborhood": {
+                    "type": "string"
+                  },
+                  "city": {
+                    "type": "string"
+                  },
+                  "postalCode": {
+                    "type": "string"
+                  },
+                  "references": {
+                    "type": ["string", "null"]
+                  }
+                },
+                "required": [
+                  "street",
+                  "number",
+                  "neighborhood",
+                  "city",
+                  "postalCode",
+                  "references"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subtotalCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "deliveryFeeCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "currency": {
+            "type": "string",
+            "enum": ["MXN"]
+          },
+          "paymentMethod": {
+            "type": "string",
+            "enum": ["cash"]
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "accepted",
+                        "rejected",
+                        "preparing",
+                        "ready",
+                        "out_for_delivery",
+                        "completed",
+                        "delivered",
+                        "cancelled"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "to": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "accepted",
+                    "rejected",
+                    "preparing",
+                    "ready",
+                    "out_for_delivery",
+                    "completed",
+                    "delivered",
+                    "cancelled"
+                  ]
+                },
+                "actorMemberId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "reason": {
+                  "type": ["string", "null"]
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                }
+              },
+              "required": ["from", "to", "actorMemberId", "reason", "at"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "status",
+          "isFinal",
+          "mode",
+          "tableNumber",
+          "customerName",
+          "totalCents",
+          "notes",
+          "isTest",
+          "version",
+          "createdAt",
+          "updatedAt",
+          "items",
+          "customerPhone",
+          "customerWhatsappOptIn",
+          "delivery",
+          "subtotalCents",
+          "deliveryFeeCents",
+          "currency",
+          "paymentMethod",
+          "history"
+        ],
+        "additionalProperties": false
+      },
       "MediaAssetDto": {
         "type": "object",
         "properties": {
@@ -8226,6 +8700,448 @@
           },
           "422": {
             "description": "El menú no está publicado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ocurrió un error interno.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/orgs/{orgId}/branches/{branchId}/orders": {
+      "get": {
+        "operationId": "getV1OrgsByOrgIdBranchesByBranchIdOrders",
+        "tags": ["Pedidos"],
+        "summary": "Listar los pedidos de la sucursal",
+        "description": "`status` elige en curso (`active`, por defecto) o terminados (`done`). Con `since` (ms) se ignora `status` y vuelven todos los pedidos cambiados desde entonces, también los que ya terminaron. Para el siguiente sondeo usa `nextSince` de la primera página. Responde `ETag`; con `If-None-Match` vigente responde 304. No incluye teléfono ni dirección.",
+        "security": [
+          {
+            "InternalToken": [],
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "description": "Id (UUIDv7) de la organización.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "branchId",
+            "in": "path",
+            "required": true,
+            "description": "Id (UUIDv7) de la sucursal.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "`ETag` de la última respuesta recibida.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "default": "active",
+              "type": "string",
+              "enum": ["active", "done"]
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 8640000000000000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de pedidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderListDto"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "El tablero no cambió desde el `ETag` enviado."
+          },
+          "400": {
+            "description": "Datos inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La sesión falta o ya no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tu rol no tiene el permiso, o la suscripción está suspendida y solo admite lecturas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "La organización, la sucursal o el pedido no existen, o la sucursal no está asignada a tu cuenta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ocurrió un error interno.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/orgs/{orgId}/branches/{branchId}/orders/{orderId}": {
+      "get": {
+        "operationId": "getV1OrgsByOrgIdBranchesByBranchIdOrdersByOrderId",
+        "tags": ["Pedidos"],
+        "summary": "Consultar el detalle de un pedido",
+        "description": "Incluye teléfono, dirección completa e historial con actor y motivo.",
+        "security": [
+          {
+            "InternalToken": [],
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "description": "Id (UUIDv7) de la organización.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "branchId",
+            "in": "path",
+            "required": true,
+            "description": "Id (UUIDv7) de la sucursal.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "description": "Id (UUIDv7) del pedido.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pedido completo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderDetailDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La sesión falta o ya no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tu rol no tiene el permiso, o la suscripción está suspendida y solo admite lecturas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "La organización, la sucursal o el pedido no existen, o la sucursal no está asignada a tu cuenta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ocurrió un error interno.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/orgs/{orgId}/branches/{branchId}/orders/{orderId}/transitions": {
+      "post": {
+        "operationId": "postV1OrgsByOrgIdBranchesByBranchIdOrdersByOrderIdTransitions",
+        "tags": ["Pedidos"],
+        "summary": "Cambiar el estado de un pedido",
+        "description": "Avanza un estado a la vez, con la `version` leída. `reason` es obligatorio para `rejected` y `cancelled` y no aplica en otro caso. Solo dueños y administradores pueden cancelar.",
+        "security": [
+          {
+            "InternalToken": [],
+            "SessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "description": "Id (UUIDv7) de la organización.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "branchId",
+            "in": "path",
+            "required": true,
+            "description": "Id (UUIDv7) de la sucursal.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "orderId",
+            "in": "path",
+            "required": true,
+            "description": "Id (UUIDv7) del pedido.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "accepted",
+                      "rejected",
+                      "preparing",
+                      "ready",
+                      "out_for_delivery",
+                      "completed",
+                      "delivered",
+                      "cancelled"
+                    ]
+                  },
+                  "version": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 280,
+                    "pattern": "^[^\\p{Cc}]+$"
+                  }
+                },
+                "required": ["to", "version"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pedido con su nuevo estado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderDetailDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "La sesión falta o ya no es válida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tu rol no tiene el permiso, o la suscripción está suspendida y solo admite lecturas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "La organización, la sucursal o el pedido no existen, o la sucursal no está asignada a tu cuenta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Otra persona ya actualizó el pedido (`version` vieja). Vuelve a leerlo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "El estado actual o la modalidad no permiten este cambio (`INVALID_TRANSITION`).",
             "content": {
               "application/json": {
                 "schema": {

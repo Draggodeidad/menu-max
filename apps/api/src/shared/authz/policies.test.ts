@@ -1,4 +1,11 @@
-import type { MemberRole, SubscriptionStatus } from "@menu-max/contracts";
+import {
+  ORDER_MODES,
+  ORDER_STATUSES,
+  type MemberRole,
+  type OrderMode,
+  type OrderStatus,
+  type SubscriptionStatus,
+} from "@menu-max/contracts";
 import { describe, expect, it } from "vitest";
 import { AppError } from "../errors";
 import {
@@ -6,6 +13,7 @@ import {
   canInviteMember,
   canManageMember,
   canOperate,
+  canTransitionOrder,
   SUSPENDED_MESSAGE,
   type MemberChange,
 } from "./policies";
@@ -142,5 +150,68 @@ describe("canOperate", () => {
 
   it("explica por qué no puede escribir", () => {
     expect(canOperate(withStatus("suspended"))).toEqual(deny("FORBIDDEN", SUSPENDED_MESSAGE));
+  });
+});
+
+describe("canTransitionOrder", () => {
+  const ORG = "0190f3a0-0000-7000-8000-0000000000aa";
+  const owner = { orgId: ORG, role: "owner" as const, branchIds: [] };
+  const view = (status: OrderStatus, mode: OrderMode = "pickup") => ({
+    orgId: ORG,
+    branchId: BRANCH_A,
+    status,
+    mode,
+  });
+
+  // Copia literal de la máquina de estados: la prueba no se deriva de `ORDER_TRANSITIONS`.
+  const onSite: Partial<Record<OrderStatus, OrderStatus[]>> = {
+    pending: ["accepted", "rejected"],
+    accepted: ["preparing", "cancelled"],
+    preparing: ["ready", "cancelled"],
+    ready: ["completed", "cancelled"],
+  };
+  const expected: Record<OrderMode, Partial<Record<OrderStatus, OrderStatus[]>>> = {
+    table: onSite,
+    pickup: onSite,
+    delivery: {
+      ...onSite,
+      ready: ["out_for_delivery", "cancelled"],
+      out_for_delivery: ["delivered", "cancelled"],
+    },
+  };
+
+  const cases = ORDER_MODES.flatMap((mode) =>
+    ORDER_STATUSES.flatMap((from) => ORDER_STATUSES.map((to) => ({ mode, from, to }))),
+  );
+
+  it.each(cases)("$mode: $from → $to", ({ mode, from, to }) => {
+    const valid = expected[mode][from]?.includes(to) ?? false;
+    expect(codeOf(canTransitionOrder(owner, view(from, mode), to))).toBe(
+      valid ? "ALLOW" : "INVALID_TRANSITION",
+    );
+  });
+
+  it.each(["accepted", "preparing", "ready"] as const)(
+    "staff no cancela desde %s; admin sí",
+    (status) => {
+      const staff = { orgId: ORG, role: "staff" as const, branchIds: [BRANCH_A] };
+      const admin = { orgId: ORG, role: "admin" as const, branchIds: [] };
+      expect(codeOf(canTransitionOrder(staff, view(status), "cancelled"))).toBe("FORBIDDEN");
+      expect(codeOf(canTransitionOrder(admin, view(status), "cancelled"))).toBe("ALLOW");
+    },
+  );
+
+  it("staff no cancela una entrega en camino", () => {
+    const staff = { orgId: ORG, role: "staff" as const, branchIds: [BRANCH_A] };
+    const order = view("out_for_delivery", "delivery");
+    expect(codeOf(canTransitionOrder(staff, order, "cancelled"))).toBe("FORBIDDEN");
+    expect(codeOf(canTransitionOrder(staff, order, "delivered"))).toBe("ALLOW");
+  });
+
+  it("staff de otra sucursal u otra organización → NOT_FOUND", () => {
+    const outsider = { orgId: ORG, role: "staff" as const, branchIds: [BRANCH_B] };
+    expect(codeOf(canTransitionOrder(outsider, view("pending"), "accepted"))).toBe("NOT_FOUND");
+    const otherOrg = { ...owner, orgId: "0190f3a0-0000-7000-8000-0000000000bb" };
+    expect(codeOf(canTransitionOrder(otherOrg, view("pending"), "accepted"))).toBe("NOT_FOUND");
   });
 });

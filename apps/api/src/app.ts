@@ -20,7 +20,7 @@ import { branchRoutes, businessRoutes } from "./modules/businesses/businesses.ro
 import { catalogRoutes } from "./modules/catalog/catalog.routes";
 import { mediaRoutes } from "./modules/catalog/media.routes";
 import { onboardingRoutes } from "./modules/onboarding/onboarding.routes";
-import { publicOrderRoutes } from "./modules/orders/orders.routes";
+import { orderPanelRoutes, publicOrderRoutes } from "./modules/orders/orders.routes";
 import {
   organizationRoutes,
   publicInvitationRoutes,
@@ -111,6 +111,7 @@ export function createApp(environment?: Env["ENVIRONMENT"]) {
   orgScoped.route("/branches/:branchId/menu", catalogRoutes);
   orgScoped.route("/branches/:branchId/menu", storefrontRoutes);
   orgScoped.route("/branches/:branchId/qr", qrRoutes);
+  orgScoped.route("/branches/:branchId/orders", orderPanelRoutes);
   orgScoped.route("/media", mediaRoutes);
   app.route("/v1/orgs/:orgId", orgScoped);
 
