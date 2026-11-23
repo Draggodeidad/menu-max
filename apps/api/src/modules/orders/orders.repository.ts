@@ -1,5 +1,6 @@
 import {
   branches,
+  businesses,
   notificationOutbox,
   orderItems,
   orders,
@@ -10,7 +11,7 @@ import type { OrderMode } from "@menu-max/contracts";
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "../../infrastructure/db";
 
-// Pedidos (T21). Solo arma las sentencias del `db.batch`; las reglas viven en el servicio.
+// Pedidos (T21, T22). Arma las sentencias y lecturas; las reglas viven en el servicio.
 
 export type NewOrderLine = {
   id: string;
@@ -158,4 +159,73 @@ export function storedOrderResponse(order: Pick<NewOrder, "id" | "orgId" | "tota
     eq(orders.organizationId, order.orgId),
     eq(orders.id, order.id),
   )}), 'status', 'pending', 'totalCents', ${order.totalCents})`;
+}
+
+/**
+ * Pedido por el hash de su token (T22), solo con las columnas publicables. No filtra sucursales
+ * borradas ni organizaciones suspendidas: el comensal conserva el seguimiento de lo que ya pidió.
+ */
+export async function findTrackedOrder(db: Db, trackingTokenHash: string) {
+  const [order] = await db
+    .select({
+      id: orders.id,
+      organizationId: orders.organizationId,
+      number: orders.number,
+      status: orders.status,
+      mode: orders.mode,
+      tableNumber: orders.tableNumber,
+      deliveryNeighborhood: orders.deliveryNeighborhood,
+      totalCents: orders.totalCents,
+      version: orders.version,
+      createdAt: orders.createdAt,
+      businessName: businesses.name,
+      branchName: branches.name,
+      contactPhone: branches.contactPhone,
+    })
+    .from(orders)
+    .innerJoin(
+      branches,
+      and(eq(branches.organizationId, orders.organizationId), eq(branches.id, orders.branchId)),
+    )
+    .innerJoin(
+      businesses,
+      and(
+        eq(businesses.organizationId, branches.organizationId),
+        eq(businesses.id, branches.businessId),
+      ),
+    )
+    .where(eq(orders.trackingTokenHash, trackingTokenHash))
+    .limit(1);
+  return order ?? null;
+}
+
+/** Líneas e historial del pedido, en el orden en que se registraron (`rowid`). */
+export async function loadTrackedOrderDetails(
+  db: Db,
+  order: { id: string; organizationId: string },
+) {
+  const [items, history] = await db.batch([
+    db
+      .select({
+        name: orderItems.productName,
+        variantName: orderItems.variantName,
+        quantity: orderItems.quantity,
+      })
+      .from(orderItems)
+      .where(
+        and(eq(orderItems.organizationId, order.organizationId), eq(orderItems.orderId, order.id)),
+      )
+      .orderBy(sql`rowid`),
+    db
+      .select({ status: orderStatusHistory.toStatus, at: orderStatusHistory.createdAt })
+      .from(orderStatusHistory)
+      .where(
+        and(
+          eq(orderStatusHistory.organizationId, order.organizationId),
+          eq(orderStatusHistory.orderId, order.id),
+        ),
+      )
+      .orderBy(orderStatusHistory.createdAt, sql`rowid`),
+  ]);
+  return { items, history };
 }

@@ -1,9 +1,11 @@
 import {
+  FINAL_STATUSES,
   OrderStatus,
   type NotAcceptingReason,
   type OrderCreatedDto,
   type OrderInput,
   type OrderMode,
+  type PublicOrderDto,
 } from "@menu-max/contracts";
 import { z } from "zod";
 import type { Env } from "../../env";
@@ -18,7 +20,13 @@ import { hit } from "../../shared/rate-counters";
 import type { AuthUser } from "../auth/auth";
 import { loadTenant } from "../organizations/organizations.service";
 import { loadCheckout, type CheckoutContext } from "../storefront/storefront.service";
-import { createOrderStatements, storedOrderResponse, type NewOrder } from "./orders.repository";
+import {
+  createOrderStatements,
+  findTrackedOrder,
+  loadTrackedOrderDetails,
+  storedOrderResponse,
+  type NewOrder,
+} from "./orders.repository";
 import { priceOrder } from "./pricing";
 
 // Pedido público (T21, ADR-010, ADR-011, ADR-013): el comensal pide como invitado y la API lo
@@ -36,6 +44,7 @@ export const IP_QUOTA_MESSAGE =
   "Recibimos demasiados pedidos desde esta conexión. Inténtalo de nuevo más tarde.";
 export const PHONE_QUOTA_MESSAGE =
   "Ya enviaste varios pedidos en pocos minutos. Espera un momento antes de enviar otro.";
+export const ORDER_NOT_FOUND = "No encontramos este pedido. Revisa que el enlace esté completo.";
 export const NO_DELIVERY_ZONE = "No entregamos en ese código postal.";
 export const TABLE_OUT_OF_RANGE =
   "Esa mesa no existe en esta sucursal. Revisa el número de tu mesa.";
@@ -310,4 +319,54 @@ export async function createOrder(
     log.error("order.batch_failed", { requestId: deps.requestId, orgId: order.orgId });
     throw error;
   }
+}
+
+const FINAL_STATUS_SET: ReadonlySet<OrderStatus> = new Set(FINAL_STATUSES);
+
+/** `If-None-Match` admite una lista, `*` y validadores débiles (`W/`) que agregan los proxies. */
+function matchesEtag(ifNoneMatch: string | undefined, etag: string): boolean {
+  if (!ifNoneMatch) return false;
+  return ifNoneMatch
+    .split(",")
+    .map((candidate) => candidate.trim().replace(/^W\//, ""))
+    .some((candidate) => candidate === "*" || candidate === etag);
+}
+
+export type TrackedOrder = { etag: string; body: PublicOrderDto | null };
+
+/**
+ * Seguimiento público (T22, ADR-013). Todo token se hashea y se busca, aunque su formato sea
+ * inválido: no hay salida temprana que distinga por tiempo un token malformado de uno inexistente.
+ * Con `If-None-Match` vigente, `body` es `null` y no se leen líneas ni historial.
+ */
+export async function getTrackedOrder(
+  db: Db,
+  token: string,
+  ifNoneMatch: string | undefined,
+): Promise<TrackedOrder> {
+  const order = await findTrackedOrder(db, await hashToken(token));
+  if (!order) throw new AppError("NOT_FOUND", ORDER_NOT_FOUND);
+
+  const etag = `"${order.version}"`;
+  if (matchesEtag(ifNoneMatch, etag)) return { etag, body: null };
+
+  const { items, history } = await loadTrackedOrderDetails(db, order);
+  return {
+    etag,
+    body: {
+      number: order.number,
+      status: order.status,
+      isFinal: FINAL_STATUS_SET.has(order.status),
+      mode: order.mode,
+      tableNumber: order.tableNumber,
+      deliveryNeighborhood: order.deliveryNeighborhood,
+      items,
+      totalCents: order.totalCents,
+      createdAt: order.createdAt.toISOString(),
+      history: history.map(({ status, at }) => ({ status, at: at.toISOString() })),
+      businessName: order.businessName,
+      branchName: order.branchName,
+      contactPhone: order.contactPhone,
+    },
+  };
 }

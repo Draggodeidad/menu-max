@@ -629,6 +629,137 @@
         "required": ["number", "status", "totalCents", "trackingToken"],
         "additionalProperties": false
       },
+      "PublicOrderDto": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "rejected",
+              "preparing",
+              "ready",
+              "out_for_delivery",
+              "completed",
+              "delivered",
+              "cancelled"
+            ]
+          },
+          "isFinal": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["table", "pickup", "delivery"]
+          },
+          "tableNumber": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deliveryNeighborhood": {
+            "type": ["string", "null"]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "variantName": {
+                  "type": ["string", "null"]
+                },
+                "quantity": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": ["name", "variantName", "quantity"],
+              "additionalProperties": false
+            }
+          },
+          "totalCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "accepted",
+                    "rejected",
+                    "preparing",
+                    "ready",
+                    "out_for_delivery",
+                    "completed",
+                    "delivered",
+                    "cancelled"
+                  ]
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                }
+              },
+              "required": ["status", "at"],
+              "additionalProperties": false
+            }
+          },
+          "businessName": {
+            "type": "string"
+          },
+          "branchName": {
+            "type": "string"
+          },
+          "contactPhone": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": [
+          "number",
+          "status",
+          "isFinal",
+          "mode",
+          "tableNumber",
+          "deliveryNeighborhood",
+          "items",
+          "totalCents",
+          "createdAt",
+          "history",
+          "businessName",
+          "branchName",
+          "contactPhone"
+        ],
+        "additionalProperties": false
+      },
       "OnboardingDto": {
         "type": "object",
         "properties": {
@@ -3294,6 +3425,74 @@
           },
           "500": {
             "description": "Ocurrió un error interno; no se registró el pedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/public/orders/{token}": {
+      "get": {
+        "operationId": "getV1PublicOrdersByToken",
+        "tags": ["Pedidos"],
+        "summary": "Consultar el seguimiento de un pedido",
+        "description": "Busca por el SHA-256 del token. No expone datos del comensal: de un domicilio solo muestra la colonia. Responde `ETag` por versión del pedido; con `If-None-Match` vigente responde 304. Siempre `Cache-Control: no-store`.",
+        "security": [
+          {
+            "InternalToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "description": "Token de seguimiento que entregó la creación del pedido.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": false,
+            "description": "`ETag` de la última respuesta recibida.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado actual del pedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicOrderDto"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "El pedido no cambió desde el `ETag` enviado."
+          },
+          "404": {
+            "description": "El token no corresponde a ningún pedido. Sin token interno, la respuesta no tiene cuerpo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Demasiadas peticiones desde esta IP. Espera los segundos del header Retry-After.",
             "content": {
               "application/json": {
                 "schema": {
