@@ -61,6 +61,53 @@ Un comensal envía un pedido como invitado y la API lo registra una sola vez, co
 - [ ] Ninguna lectura de caché interviene en el cálculo del total.
 - [ ] `PublicMenuDto` y `OrderInput` comparten ids y enums desde `contracts`.
 
+### Decisiones al implementar (acordadas el 2026-11-17)
+
+- **Token de seguimiento (enmienda de ADR-013):**
+  - es `base64url(HMAC-SHA256(ORDER_TOKEN_SECRET, "order-tracking:v1:" + orderId))`, de 32 bytes como los tokens aleatorios;
+  - `orders` guarda solo `SHA-256(token)` y el seguimiento (T22) busca por ese hash;
+  - `idempotency_keys.response_json` guarda `{ orderId, number, status, totalCents }` sin el token; el reintento lo vuelve a derivar del `orderId`;
+  - secreto nuevo `ORDER_TOKEN_SECRET`.
+- **Orden del flujo** (reemplaza el de «Alcance»):
+  1. Zod y `request_hash` del cuerpo canónico más el usuario de la sesión, si hay. La llave no sirve con otra sesión.
+  2. La llave en `idempotency_keys`:
+     - mismo hash → respuesta guardada con el token derivado, sin Turnstile ni cuotas;
+     - otro hash → `IDEMPOTENCY_CONFLICT`.
+       Va antes de leer el menú: el reintento no depende de que la sucursal siga abierta o el menú publicado.
+  3. Turnstile y cuota por IP; menú por slug (`404` si no está publicado) y cuota por teléfono y sucursal; reglas; cálculo.
+  4. Un solo `db.batch`. Si otro envío registró la misma llave a la vez, la llave primaria revierte el batch y se responde con lo guardado por el primero.
+- **Pedido de prueba:**
+  - `is_test` lo decide el servidor: hay sesión de un miembro activo de la organización y, si es `staff`, de esa sucursal;
+  - salta los motivos `unverified` y `closed` de `acceptingOrders` (el alta no captura horarios);
+  - `unpublished`, `suspended` e `inactive` (gracia vencida, ADR-008) bloquean;
+  - modalidad, mesa, zona, Turnstile y cuotas aplican igual;
+  - lleva outbox solo si algún dueño tiene el correo verificado.
+- **Errores:**
+  - las reglas del negocio y los errores por ítem responden `BUSINESS_RULE` (422), con `fieldErrors` en `items.N.productId|variantId|optionIds|quantity`, `mode`, `tableNumber` y `delivery.postalCode`;
+  - exceder cualquiera de las dos cuotas responde `RATE_LIMITED` (429) con `Retry-After`.
+- **Catálogo:**
+  - con variantes, `variantId` es obligatorio; sin variantes, se rechaza;
+  - un producto en una categoría borrada cuenta como no disponible;
+  - opciones repetidas o de otro producto → error en `optionIds`;
+  - el tope `max_order_total_cents` se compara contra el total con envío.
+- **Esquema** (además de lo listado en «Alcance»):
+  - únicos `(organization_id, id)` y `(organization_id, branch_id, number)`;
+  - FKs compuestas a sucursal, menú, zona, pedido, producto y miembro;
+  - `CHECK` de estado, modalidad, pago, moneda, mesa solo en `table`, dirección y zona solo en `delivery`, `total = subtotal + envío` y `line_total = unitario × cantidad`;
+  - `ORDER_STATUSES` ya trae los 9 estados de T23 para no reconstruir `orders`.
+- **Outbox:** `payload_json = { orderId }`, sin datos personales. `notification_outbox` no lleva `order_id` propio: el relay es de T24.
+- **Topes de texto:**
+
+  | Campo               | Máximo |
+  | ------------------- | ------ |
+  | Nombre              | 80     |
+  | Notas del pedido    | 500    |
+  | Notas de la línea   | 200    |
+  | Campos de dirección | 120    |
+  | Referencias         | 200    |
+
+- **Concurrencia:** envíos simultáneos con la misma llave pasan la consulta rápida y cada uno cuenta en las cuotas. El cuarto de un mismo teléfono puede recibir `429` en lugar de la respuesta guardada; los reintentos secuenciales no cuentan.
+
 ---
 
 ## T22 — Seguimiento público del pedido

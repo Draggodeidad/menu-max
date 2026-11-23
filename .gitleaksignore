@@ -1,3 +1,7 @@
 # Valores ficticios de BETTER_AUTH_SECRET retirados de los ejemplos de T07.
 76935a17ab6d05ea1184884feaafc32b0d16e77e:.env.example:generic-api-key:10
 76935a17ab6d05ea1184884feaafc32b0d16e77e:apps/api/.dev.vars.example:generic-api-key:8
+
+# Valor ficticio de ORDER_TOKEN_SECRET retirado de los ejemplos de T21.
+a786262d6e88322fa73b81b7bfbaecaeeb8a7932:.env.example:generic-api-key:29
+a786262d6e88322fa73b81b7bfbaecaeeb8a7932:apps/api/.dev.vars.example:generic-api-key:29

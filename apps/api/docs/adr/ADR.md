@@ -22,7 +22,7 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 | [010](#adr-010--anti-abuso-en-capas)                                  | Anti-abuso en capas                                      | Aceptado (login: Propuesto)  | 2026-11-11 |
 | [011](#adr-011--una-cola-con-dlq-y-outbox-solo-para-pedidos)          | Una cola con DLQ; outbox solo para pedidos               | Aceptado                     | 2026-11-11 |
 | [012](#adr-012--documentación-openapi-solo-en-desarrollo)             | Documentación OpenAPI solo en desarrollo                 | Aceptado                     | 2026-11-11 |
-| [013](#adr-013--ids-uuidv7-y-tokens-públicos-hasheados)               | Ids UUIDv7 y tokens públicos hasheados                   | Aceptado                     | 2026-11-11 |
+| [013](#adr-013--ids-uuidv7-y-tokens-públicos-hasheados)               | Ids UUIDv7 y tokens públicos hasheados                   | Aceptado (enmienda T21)      | 2026-11-11 |
 | [014](#adr-014--caché-del-menú-público-en-web-con-versión)            | Caché del menú público en WEB con versión                | Aceptado (TTL: Propuesto)    | 2026-11-11 |
 | [015](#adr-015--retención-de-datos-del-comensal)                      | Retención de datos del comensal                          | Propuesto                    | 2026-11-11 |
 | [016](#adr-016--modelo-de-datos-reducido-para-el-mvp)                 | Modelo de datos reducido para el MVP                     | Aceptado                     | 2026-11-11 |
@@ -363,6 +363,19 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 - Número visible de pedido (`#1042`): contador por sucursal; nunca se usa para consultar.
 - Tokens públicos (seguimiento de pedido, invitaciones): 32 bytes de `crypto.getRandomValues` en base64url; en la base solo su SHA-256; comparación en tiempo constante.
 - Idempotencia: tabla `idempotency_keys (key, org_id, request_hash, response, expires_at)`; misma llave y mismo cuerpo devuelve la misma respuesta; otro cuerpo → `409 IDEMPOTENCY_CONFLICT`; expiración 24 h.
+
+**Enmienda (2026-11-17, T21).** Solo cambia cómo se genera el token de seguimiento de pedidos. Las invitaciones siguen con tokens aleatorios y el resto de la decisión sigue igual.
+
+- **Problema.** La respuesta de crear un pedido lleva el token de seguimiento. Un reintento con la misma llave debe devolver esa respuesta, y la base no puede guardar el token en claro.
+- **Cálculo.** El token de seguimiento es `base64url(HMAC-SHA256(ORDER_TOKEN_SECRET, "order-tracking:v1:" + orderId))`:
+  - mide 32 bytes, como los tokens aleatorios, así que `/pedido/[token]` no cambia;
+  - el prefijo ata el secreto a este uso, y `v1` deja lugar para rotarlo.
+- **Búsqueda.** `orders` guarda solo `SHA-256(token)` y el seguimiento busca por ese hash.
+- **Reintento.** `idempotency_keys` guarda la respuesta sin el token; en un reintento, el servicio de pedidos lo vuelve a derivar del `orderId`. `shared/idempotency.ts` no sabe nada de tokens.
+- **Secreto.** `ORDER_TOKEN_SECRET` (mínimo 32 caracteres), propio de cada entorno.
+- **Qué se pierde:**
+  - ya no se puede rotar el token de un solo pedido;
+  - si se rota el secreto, un reintento dentro de las 24 h siguientes recibe un token que no funciona. Los enlaces ya entregados siguen sirviendo, porque se buscan por el hash guardado.
 
 ---
 

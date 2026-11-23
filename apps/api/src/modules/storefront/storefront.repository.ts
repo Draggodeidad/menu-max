@@ -475,38 +475,139 @@ export async function readPublicMenu(db: Db, slug: string) {
       )
       .where(availableProduct)
       .orderBy(asc(products.position), asc(products.id), asc(productVariants.position)),
-    db
-      .select({
-        groupId: aliased<string>(optionGroups.id, "group_id"),
-        productId: optionGroups.productId,
-        groupName: aliased<string>(optionGroups.name, "group_name"),
-        minSelect: optionGroups.minSelect,
-        maxSelect: optionGroups.maxSelect,
-        optionId: aliased<string>(options.id, "option_id"),
-        optionName: aliased<string>(options.name, "option_name"),
-        priceDeltaCents: aliased<number>(options.priceDeltaCents, "option_price_delta_cents"),
-      })
-      .from(optionGroups)
-      .innerJoin(
-        products,
-        and(
-          eq(products.organizationId, optionGroups.organizationId),
-          eq(products.id, optionGroups.productId),
-          availableProduct,
-        ),
-      )
-      .innerJoin(categories, joinActiveCategory)
-      .innerJoin(menus, joinPublishedMenu(slug, products.organizationId, products.menuId))
-      .leftJoin(
-        options,
-        and(
-          eq(options.organizationId, optionGroups.organizationId),
-          eq(options.optionGroupId, optionGroups.id),
-        ),
-      )
-      .orderBy(asc(optionGroups.position), asc(optionGroups.id), asc(options.position)),
+    optionRows(db, slug),
   ]);
   return { header: headerRows[0], hourRows, zoneRows, categoryRows, productRows, groupRows };
+}
+
+// Checkout (T21) ------------------------------------------------------------------------------
+
+/** Opciones de los grupos de los productos del menú publicado, en el orden del catálogo. */
+function optionRows(db: Db, slug: string, productIds?: readonly string[]) {
+  return db
+    .select({
+      groupId: aliased<string>(optionGroups.id, "group_id"),
+      productId: optionGroups.productId,
+      groupName: aliased<string>(optionGroups.name, "group_name"),
+      minSelect: optionGroups.minSelect,
+      maxSelect: optionGroups.maxSelect,
+      optionId: aliased<string>(options.id, "option_id"),
+      optionName: aliased<string>(options.name, "option_name"),
+      priceDeltaCents: aliased<number>(options.priceDeltaCents, "option_price_delta_cents"),
+    })
+    .from(optionGroups)
+    .innerJoin(
+      products,
+      and(
+        eq(products.organizationId, optionGroups.organizationId),
+        eq(products.id, optionGroups.productId),
+        availableProduct,
+        productIds ? inArray(products.id, [...productIds]) : undefined,
+      ),
+    )
+    .innerJoin(categories, joinActiveCategory)
+    .innerJoin(menus, joinPublishedMenu(slug, products.organizationId, products.menuId))
+    .leftJoin(
+      options,
+      and(
+        eq(options.organizationId, optionGroups.organizationId),
+        eq(options.optionGroupId, optionGroups.id),
+      ),
+    )
+    .orderBy(asc(optionGroups.position), asc(optionGroups.id), asc(options.position));
+}
+
+/**
+ * Lo que necesita un pedido público, en un solo `db.batch` de 5 consultas y siempre desde D1
+ * (ADR-014): cabecera (ids del menú, sucursal y organización, modalidades, mesas, tope del total,
+ * suscripción, dueño verificado y alta de la organización), horario, la zona activa que atiende
+ * `postalCode` (ADR-018), y los productos pedidos que siguen disponibles con sus variantes y sus
+ * grupos de opciones. Un producto de otro menú, borrado, no disponible o en una categoría borrada
+ * no aparece.
+ */
+export async function readCheckout(
+  db: Db,
+  slug: string,
+  productIds: readonly string[],
+  postalCode: string | null,
+) {
+  const [headerRows, hourRows, zoneRows, productRows, groupRows] = await db.batch([
+    db
+      .select({
+        orgId: menus.organizationId,
+        menuId: menus.id,
+        branchId: menus.branchId,
+        timezone: branches.timezone,
+        modeTable: branches.modeTable,
+        modePickup: branches.modePickup,
+        modeDelivery: branches.modeDelivery,
+        tableCount: branches.tableCount,
+        maxOrderTotalCents: branches.maxOrderTotalCents,
+        subscriptionStatus: aliased<string>(subscriptions.status, "subscription_status"),
+        hasVerifiedOwner,
+        orgCreatedAt: aliased<number>(organizations.createdAt, "org_created_at"),
+      })
+      .from(menus)
+      .innerJoin(
+        branches,
+        and(eq(branches.organizationId, menus.organizationId), eq(branches.id, menus.branchId)),
+      )
+      .innerJoin(organizations, eq(organizations.id, menus.organizationId))
+      .leftJoin(subscriptions, eq(subscriptions.organizationId, menus.organizationId))
+      .where(publishedMenu(slug)),
+    db
+      .select({
+        weekday: businessHours.weekday,
+        opensAt: businessHours.opensAt,
+        closesAt: businessHours.closesAt,
+      })
+      .from(businessHours)
+      .innerJoin(
+        menus,
+        joinPublishedMenuOfBranch(slug, businessHours.organizationId, businessHours.branchId),
+      )
+      .orderBy(asc(businessHours.weekday), asc(businessHours.opensAt)),
+    db
+      .select({ id: deliveryZones.id, feeCents: deliveryZones.feeCents })
+      .from(deliveryZones)
+      .innerJoin(
+        menus,
+        joinPublishedMenuOfBranch(slug, deliveryZones.organizationId, deliveryZones.branchId),
+      )
+      .where(
+        and(
+          eq(deliveryZones.active, true),
+          isNull(deliveryZones.deletedAt),
+          // Sin código postal, `value = null` nunca coincide.
+          sql`exists (select 1 from json_each(${deliveryZones.postalCodes}) where value = ${postalCode})`,
+        ),
+      )
+      .orderBy(asc(deliveryZones.id))
+      .limit(1),
+    db
+      .select({
+        id: products.id,
+        name: products.name,
+        priceCents: products.priceCents,
+        variantId: aliased<string>(productVariants.id, "variant_id"),
+        variantName: aliased<string>(productVariants.name, "variant_name"),
+        variantPriceCents: aliased<number>(productVariants.priceCents, "variant_price_cents"),
+      })
+      .from(products)
+      .innerJoin(menus, joinPublishedMenu(slug, products.organizationId, products.menuId))
+      .innerJoin(categories, joinActiveCategory)
+      .leftJoin(
+        productVariants,
+        and(
+          eq(productVariants.organizationId, products.organizationId),
+          eq(productVariants.productId, products.id),
+        ),
+      )
+      .where(and(availableProduct, inArray(products.id, [...productIds])))
+      .orderBy(asc(products.id), asc(productVariants.position)),
+    optionRows(db, slug, productIds),
+  ]);
+  return { header: headerRows[0], hourRows, zone: zoneRows[0], productRows, groupRows };
 }
 
 /** Solo `menu_version` del menú publicado (llave de caché en WEB, ADR-014). */

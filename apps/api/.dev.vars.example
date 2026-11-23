@@ -20,6 +20,14 @@ RESEND_API_KEY=cambia-esto-por-tu-api-key-de-resend
 # que siempre pasa; en staging y production, la del widget real (la configura un humano).
 TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 
+# Sal del hash del teléfono del comensal (T21). Mínimo 32 caracteres; distinta de los demás
+# secretos. Cambiarla reinicia las cuotas de pedidos por teléfono.
+PHONE_HASH_SALT=cambia-esto-por-una-sal-de-32-caracteres-o-mas
+
+# Secreto que deriva el token de seguimiento de cada pedido (T21, ADR-013). Mínimo 32
+# caracteres; distinto de los demás secretos.
+ORDER_TOKEN_SECRET=
+
 # Dominio público del bucket R2 MEDIA (T17), sin diagonal final. En staging y production es el
 # dominio propio conectado al bucket (nunca r2.dev); lo configura un humano. En development el
 # bucket es local de wrangler y no tiene dominio público: las URLs solo sirven como referencia.

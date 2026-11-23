@@ -69,6 +69,12 @@ export const EnvSchema = z.object({
   RESEND_API_KEY: z.string().min(1),
   // Secreto de Turnstile (ADR-010). En development y pruebas, la clave de prueba de Cloudflare.
   TURNSTILE_SECRET_KEY: z.string().min(1),
+  // Sal del hash del teléfono del comensal (T21, ADR-010, ADR-015): cuotas sin leer el número en
+  // claro. Cambiarla reinicia las cuotas por teléfono.
+  PHONE_HASH_SALT: z.string().min(32),
+  // Deriva el token de seguimiento de cada pedido (T21, enmienda de ADR-013). Rotarlo invalida los
+  // tokens de los reintentos de las últimas 24 h; los enlaces ya entregados siguen funcionando.
+  ORDER_TOKEN_SECRET: z.string().min(32),
   // Dominio público del bucket MEDIA (T17), configurado por un humano. Los DTO arman con él las
   // URLs de las imágenes; el frontend nunca construye rutas de R2.
   MEDIA_PUBLIC_BASE_URL: z.url({ protocol: /^https?$/ }).refine(isBaseUrl, {
