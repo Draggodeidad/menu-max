@@ -1,4 +1,12 @@
-import { CategoryDto, ErrorResponse, OrderCreatedDto, ProductDto } from "@menu-max/contracts";
+import {
+  CategoryDto,
+  ErrorResponse,
+  FINAL_STATUSES,
+  OrderCreatedDto,
+  ORDER_STATUSES,
+  ProductDto,
+  PublicOrderDto,
+} from "@menu-max/contracts";
 import {
   branches,
   businesses,
@@ -19,7 +27,12 @@ import { callApi } from "../../../test/isolation";
 import { getEnv } from "../../env";
 import { createDb } from "../../infrastructure/db";
 import { hashToken, orderTrackingToken } from "../../shared/ids";
-import { NO_DELIVERY_ZONE, PHONE_QUOTA_MESSAGE, TABLE_OUT_OF_RANGE } from "./orders.service";
+import {
+  NO_DELIVERY_ZONE,
+  ORDER_NOT_FOUND,
+  PHONE_QUOTA_MESSAGE,
+  TABLE_OUT_OF_RANGE,
+} from "./orders.service";
 import { PRODUCT_UNAVAILABLE, VARIANT_UNAVAILABLE } from "./pricing";
 
 const SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
@@ -816,5 +829,192 @@ describe("POST /v1/public/orders: atomicidad", () => {
 
     // Sin la falla, el reintento con la misma llave crea el pedido con el número 1.
     expect((await created(orderBody(s), { key })).number).toBe(1);
+  });
+});
+
+function track(token: string, headers?: HeadersInit) {
+  return callApi("GET", `/v1/public/orders/${token}`, { headers });
+}
+
+/** Transición simulada: el endpoint real es de T23. */
+async function transition(orderId: string, from: "pending", to: "accepted", at: Date) {
+  const [row] = await db().select().from(orders).where(eq(orders.id, orderId));
+  if (!row) throw new Error("Sin pedido");
+  await db()
+    .update(orders)
+    .set({ status: to, version: row.version + 1, updatedAt: at })
+    .where(and(eq(orders.organizationId, row.organizationId), eq(orders.id, orderId)));
+  await db().insert(orderStatusHistory).values({
+    id: crypto.randomUUID(),
+    organizationId: row.organizationId,
+    orderId,
+    fromStatus: from,
+    toStatus: to,
+    createdAt: at,
+  });
+}
+
+describe("GET /v1/public/orders/:token", () => {
+  it("token válido → DTO con líneas en orden, historial y datos de la sucursal", async () => {
+    const s = await shop();
+    await db()
+      .update(branches)
+      .set({ contactPhone: "+525500000000" })
+      .where(and(eq(branches.organizationId, s.org.orgId), eq(branches.id, s.branchId)));
+    const { trackingToken } = await created(
+      orderBody(s, {
+        mode: "table",
+        tableNumber: 4,
+        items: [
+          { productId: s.taco.id, optionIds: [s.verde], quantity: 2 },
+          { productId: s.agua.id, variantId: s.grande, optionIds: [], quantity: 1 },
+        ],
+      }),
+    );
+    const response = await track(trackingToken);
+    const dto = await ok(response, 200, PublicOrderDto);
+    const order = await onlyOrder(s.branchId);
+    const [business] = await db()
+      .select()
+      .from(businesses)
+      .where(eq(businesses.id, s.org.businessId));
+
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("etag")).toBe('"1"');
+    expect(dto).toMatchObject({
+      number: 1,
+      status: "pending",
+      isFinal: false,
+      mode: "table",
+      tableNumber: 4,
+      deliveryNeighborhood: null,
+      totalCents: 9_000,
+      createdAt: order.createdAt.toISOString(),
+      businessName: business?.name,
+      contactPhone: "+525500000000",
+      items: [
+        { name: "Taco al pastor", variantName: null, quantity: 2 },
+        { name: "Agua de horchata", variantName: "Grande", quantity: 1 },
+      ],
+      history: [{ status: "pending", at: order.createdAt.toISOString() }],
+    });
+  });
+
+  it("a domicilio: solo la colonia; ningún dato personal del comensal", async () => {
+    const s = await shop();
+    const phone = newPhone();
+    const { trackingToken } = await created(
+      orderBody(s, {
+        mode: "delivery",
+        customer: { name: "Ana López", phone, whatsappOptIn: true },
+        delivery: {
+          street: "Calle Ficticia",
+          number: "742",
+          neighborhood: "Centro",
+          city: "Ciudad de México",
+          postalCode: "06700",
+          references: "Portón azul",
+        },
+        notes: "Tocar el timbre",
+      }),
+    );
+    const response = await track(trackingToken);
+    const raw = await response.clone().text();
+    const dto = await ok(response, 200, PublicOrderDto);
+
+    expect(dto.deliveryNeighborhood).toBe("Centro");
+    for (const secret of [
+      phone,
+      "Ana López",
+      "Calle Ficticia",
+      "742",
+      "06700",
+      "Portón azul",
+      "Tocar el timbre",
+      "customerPhone",
+      s.org.orgId,
+      s.branchId,
+    ]) {
+      expect(raw).not.toContain(secret);
+    }
+    expect(PublicOrderDto.safeParse({ ...dto, customerPhone: phone }).success).toBe(false);
+    expect(PublicOrderDto.safeParse({ ...dto, deliveryStreet: "Calle" }).success).toBe(false);
+  });
+
+  it("token inexistente, corto o largo → el mismo 404, siempre pasando por el hash", async () => {
+    const digest = vi.spyOn(crypto.subtle, "digest");
+    const tokens = ["A".repeat(43), "corto", "B".repeat(512), "no%20valido"];
+    const bodies = await Promise.all(
+      tokens.map(async (token) => expectError(await track(token), 404, "NOT_FOUND")),
+    );
+    for (const body of bodies) expect(body.message).toBe(ORDER_NOT_FOUND);
+    const hashed = digest.mock.calls.map(([, data]) =>
+      new TextDecoder().decode(data as Uint8Array),
+    );
+    for (const token of [tokens[0], tokens[1], tokens[2], "no valido"]) {
+      expect(hashed).toContain(token);
+    }
+  });
+
+  it("el token de un pedido no abre otro", async () => {
+    const first = await shop();
+    const second = await shop();
+    const a = await created(orderBody(first));
+    const b = await created(orderBody(second));
+    const dtoA = await ok(await track(a.trackingToken), 200, PublicOrderDto);
+    const dtoB = await ok(await track(b.trackingToken), 200, PublicOrderDto);
+    expect(dtoA.businessName).not.toBe(dtoB.businessName);
+  });
+
+  it("ETag sin cambios → 304; tras una transición → 200 con nuevo ETag e historial", async () => {
+    const s = await shop();
+    const { trackingToken } = await created(orderBody(s));
+    const first = await track(trackingToken);
+    const etag = first.headers.get("etag") ?? "";
+
+    const same = await track(trackingToken, { "if-none-match": etag });
+    expect(same.status).toBe(304);
+    expect(await same.text()).toBe("");
+    expect(same.headers.get("etag")).toBe(etag);
+    expect(same.headers.get("cache-control")).toBe("no-store");
+    expect((await track(trackingToken, { "if-none-match": `W/${etag}` })).status).toBe(304);
+
+    const order = await onlyOrder(s.branchId);
+    await transition(order.id, "pending", "accepted", new Date(order.createdAt.getTime() + 1_000));
+    const changed = await track(trackingToken, { "if-none-match": etag });
+    const dto = await ok(changed, 200, PublicOrderDto);
+    expect(changed.headers.get("etag")).toBe('"2"');
+    expect(dto.status).toBe("accepted");
+    expect(dto.history.map((entry) => entry.status)).toEqual(["pending", "accepted"]);
+  });
+
+  it("isFinal coincide con FINAL_STATUSES en cada estado", async () => {
+    const s = await shop();
+    await Promise.all(
+      ORDER_STATUSES.map(async (status) => {
+        const { trackingToken } = await created(orderBody(s));
+        await db()
+          .update(orders)
+          .set({ status })
+          .where(
+            and(
+              eq(orders.organizationId, s.org.orgId),
+              eq(orders.trackingTokenHash, await hashToken(trackingToken)),
+            ),
+          );
+        const dto = await ok(await track(trackingToken), 200, PublicOrderDto);
+        expect(dto.isFinal, status).toBe((FINAL_STATUSES as readonly string[]).includes(status));
+      }),
+    );
+  });
+
+  it("sigue disponible con la suscripción suspendida", async () => {
+    const s = await shop();
+    const { trackingToken } = await created(orderBody(s));
+    await db()
+      .update(subscriptions)
+      .set({ status: "suspended" })
+      .where(eq(subscriptions.organizationId, s.org.orgId));
+    await ok(await track(trackingToken), 200, PublicOrderDto);
   });
 });
