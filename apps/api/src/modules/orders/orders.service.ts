@@ -3,28 +3,41 @@ import {
   OrderStatus,
   type NotAcceptingReason,
   type OrderCreatedDto,
+  type OrderDetailDto,
   type OrderInput,
+  type OrderListDto,
+  type OrderListQuery,
   type OrderMode,
+  type OrderSummaryDto,
+  type OrderTransitionInput,
   type PublicOrderDto,
 } from "@menu-max/contracts";
 import { z } from "zod";
 import type { Env } from "../../env";
 import type { Db } from "../../infrastructure/db";
 import { verifyTurnstile } from "../../infrastructure/turnstile";
-import { canAccessBranch } from "../../shared/authz/policies";
+import { canAccessBranch, canTransitionOrder } from "../../shared/authz/policies";
+import { assertAllowed } from "../../shared/authz/result";
 import { AppError } from "../../shared/errors";
 import { findStoredResponse, requestHash, storeResponseStatements } from "../../shared/idempotency";
 import { hashToken, newId, orderTrackingToken } from "../../shared/ids";
 import { log } from "../../shared/log";
 import { hit } from "../../shared/rate-counters";
+import type { TenantContext } from "../../types";
 import type { AuthUser } from "../auth/auth";
 import { loadTenant } from "../organizations/organizations.service";
 import { loadCheckout, type CheckoutContext } from "../storefront/storefront.service";
 import {
+  applyOrderTransition,
   createOrderStatements,
+  findOrderForTransition,
+  findPanelOrder,
   findTrackedOrder,
+  loadOrderPage,
   loadTrackedOrderDetails,
+  readActiveStamp,
   storedOrderResponse,
+  type ActiveStamp,
   type NewOrder,
 } from "./orders.repository";
 import { priceOrder } from "./pricing";
@@ -369,4 +382,214 @@ export async function getTrackedOrder(
       contactPhone: order.contactPhone,
     },
   };
+}
+
+// Panel de pedidos (T23, ADR-007) --------------------------------------------------------------
+
+export const PANEL_ORDER_NOT_FOUND = "No encontramos este pedido en esta sucursal.";
+export const ORDER_CHANGED = "Otra persona ya actualizó este pedido. Recarga para ver el cambio.";
+
+/**
+ * Margen de `nextSince`: el `updated_at` se fija antes de escribir, así que un cambio puede quedar
+ * visible con una marca un poco anterior a la última lectura. Repetirlo no daña; perderlo, sí.
+ */
+const POLL_OVERLAP_MS = 5_000;
+
+export type OrderPanelDeps = { db: Db; tenant: TenantContext; requestId: string };
+
+export type OrderListResult = { etag: string | null; body: OrderListDto | null };
+
+type ItemRow = Awaited<ReturnType<typeof loadOrderPage>>["items"][number];
+type SummaryRow = Awaited<ReturnType<typeof loadOrderPage>>["rows"][number];
+
+function toItemDto(item: ItemRow): OrderSummaryDto["items"][number] {
+  return {
+    name: item.name,
+    variantName: item.variantName,
+    options: item.options.map(({ name, priceDeltaCents }) => ({ name, priceDeltaCents })),
+    quantity: item.quantity,
+    unitPriceCents: item.unitPriceCents,
+    lineTotalCents: item.lineTotalCents,
+    notes: item.notes,
+  };
+}
+
+function toSummaryDto(order: SummaryRow, items: ItemRow[]): OrderSummaryDto {
+  return {
+    id: order.id,
+    number: order.number,
+    status: order.status,
+    isFinal: FINAL_STATUS_SET.has(order.status),
+    mode: order.mode,
+    tableNumber: order.tableNumber,
+    customerName: order.customerName,
+    totalCents: order.totalCents,
+    notes: order.notes,
+    isTest: order.isTest,
+    version: order.version,
+    createdAt: order.createdAt.toISOString(),
+    updatedAt: order.updatedAt.toISOString(),
+    items: items.map(toItemDto),
+  };
+}
+
+/** `ETag` del tablero: máximo `updated_at`, conteo y suma de `version` de los pedidos en curso. */
+function activeEtag(stamp: ActiveStamp, limit: number) {
+  return `"active-${limit}-${stamp.lastUpdate ?? 0}-${stamp.total}-${stamp.versions}"`;
+}
+
+/** Los terminados no cambian: basta la huella de la página, sin contar todo el historial. */
+function donePageEtag(rows: SummaryRow[], limit: number) {
+  const last = rows.reduce((max, row) => Math.max(max, row.updatedAt.getTime()), 0);
+  return `"done-${limit}-${last}-${rows.length}-${rows[0]?.id ?? ""}"`;
+}
+
+/**
+ * Listado del panel. El tablero (`active` o `since`) responde `304` con solo leer su huella. Las
+ * páginas con `cursor` no llevan `ETag`: el sondeo siempre pide la primera.
+ */
+export async function listOrders(
+  deps: OrderPanelDeps,
+  branchId: string,
+  query: OrderListQuery,
+  ifNoneMatch: string | undefined,
+  now = new Date(),
+): Promise<OrderListResult> {
+  assertAllowed(canAccessBranch(deps.tenant, branchId));
+  const isBoard = query.since !== undefined || query.status === "active";
+
+  if (isBoard && !query.cursor && ifNoneMatch) {
+    const etag = activeEtag(await readActiveStamp(deps.db, deps.tenant, branchId), query.limit);
+    if (matchesEtag(ifNoneMatch, etag)) return { etag, body: null };
+  }
+
+  const { stamp, rows, items } = await loadOrderPage(deps.db, deps.tenant, branchId, {
+    status: query.status,
+    since: query.since,
+    cursor: query.cursor,
+    limit: query.limit,
+  });
+  const etag = query.cursor
+    ? null
+    : isBoard
+      ? activeEtag(stamp, query.limit)
+      : donePageEtag(rows, query.limit);
+  if (etag && matchesEtag(ifNoneMatch, etag)) return { etag, body: null };
+
+  const page = rows.slice(0, query.limit);
+  const itemsByOrder = new Map<string, ItemRow[]>();
+  for (const item of items) {
+    const lines = itemsByOrder.get(item.orderId);
+    if (lines) lines.push(item);
+    else itemsByOrder.set(item.orderId, [item]);
+  }
+  return {
+    etag,
+    body: {
+      items: page.map((order) => toSummaryDto(order, itemsByOrder.get(order.id) ?? [])),
+      nextCursor: rows.length > query.limit ? (page.at(-1)?.id ?? null) : null,
+      nextSince: Math.max(0, now.getTime() - POLL_OVERLAP_MS),
+    },
+  };
+}
+
+/** Detalle con teléfono, dirección e historial: solo para quien opera la sucursal. */
+export async function getOrder(
+  deps: OrderPanelDeps,
+  branchId: string,
+  orderId: string,
+): Promise<OrderDetailDto> {
+  assertAllowed(canAccessBranch(deps.tenant, branchId));
+  const found = await findPanelOrder(deps.db, deps.tenant, branchId, orderId);
+  if (!found) throw new AppError("NOT_FOUND", PANEL_ORDER_NOT_FOUND);
+  const { order, items, history } = found;
+  const {
+    deliveryStreet: street,
+    deliveryNumber: number,
+    deliveryNeighborhood: neighborhood,
+    deliveryCity: city,
+    deliveryPostalCode: postalCode,
+  } = order;
+  return {
+    ...toSummaryDto(order, items),
+    customerPhone: order.customerPhone,
+    customerWhatsappOptIn: order.customerWhatsappOptIn,
+    // El `CHECK` de `orders` garantiza la dirección completa en domicilio y ninguna fuera de él.
+    delivery:
+      street !== null &&
+      number !== null &&
+      neighborhood !== null &&
+      city !== null &&
+      postalCode !== null
+        ? {
+            street,
+            number,
+            neighborhood,
+            city,
+            postalCode,
+            references: order.deliveryReferences,
+          }
+        : null,
+    subtotalCents: order.subtotalCents,
+    deliveryFeeCents: order.deliveryFeeCents,
+    currency: order.currency,
+    paymentMethod: order.paymentMethod,
+    history: history.map(({ from, to, actorMemberId, reason, at }) => ({
+      from,
+      to,
+      actorMemberId,
+      reason,
+      at: at.toISOString(),
+    })),
+  };
+}
+
+/**
+ * Avanza un pedido un estado. La `version` se compara antes que la política: quien llega tarde
+ * recibe `CONFLICT` aunque el pedido ya no admita ese cambio. El `batch` vuelve a exigir la misma
+ * `version`, así que de dos peticiones simultáneas solo una escribe historial y aviso.
+ */
+export async function transitionOrder(
+  deps: OrderPanelDeps,
+  branchId: string,
+  orderId: string,
+  input: OrderTransitionInput,
+  now = new Date(),
+): Promise<OrderDetailDto> {
+  const { db, tenant } = deps;
+  assertAllowed(canAccessBranch(tenant, branchId));
+  const order = await findOrderForTransition(db, tenant, branchId, orderId);
+  if (!order) throw new AppError("NOT_FOUND", PANEL_ORDER_NOT_FOUND);
+  if (order.version !== input.version) throw new AppError("CONFLICT", ORDER_CHANGED);
+  assertAllowed(
+    canTransitionOrder(
+      tenant,
+      { orgId: tenant.orgId, branchId, status: order.status, mode: order.mode },
+      input.to,
+    ),
+  );
+
+  // ADR-008: una cuenta sin dueño verificado no envía avisos, ni siquiera de prueba.
+  const notifies = order.customerWhatsappOptIn && (!order.isTest || order.hasVerifiedOwner === 1);
+  const applied = await applyOrderTransition(db, {
+    orgId: tenant.orgId,
+    branchId,
+    orderId,
+    from: order.status,
+    to: input.to,
+    version: input.version,
+    actorMemberId: tenant.memberId,
+    reason: input.reason ?? null,
+    historyId: newId(),
+    outboxId: notifies ? newId() : null,
+    now,
+  });
+  if (!applied) throw new AppError("CONFLICT", ORDER_CHANGED);
+  log.info("order.status_changed", {
+    requestId: deps.requestId,
+    orgId: tenant.orgId,
+    from: order.status,
+    to: input.to,
+  });
+  return getOrder(deps, branchId, orderId);
 }
