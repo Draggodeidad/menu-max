@@ -3,6 +3,8 @@ import {
   ErrorResponse,
   FINAL_STATUSES,
   OrderCreatedDto,
+  OrderDetailDto,
+  OrderListDto,
   ORDER_STATUSES,
   ProductDto,
   PublicOrderDto,
@@ -23,12 +25,13 @@ import { env } from "cloudflare:workers";
 import { and, eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addMember, createBranch, createOrg, createUser } from "../../../test/factories";
-import { callApi } from "../../../test/isolation";
+import { callApi, expectNotFoundForOtherTenant } from "../../../test/isolation";
 import { getEnv } from "../../env";
 import { createDb } from "../../infrastructure/db";
 import { hashToken, orderTrackingToken } from "../../shared/ids";
 import {
   NO_DELIVERY_ZONE,
+  ORDER_CHANGED,
   ORDER_NOT_FOUND,
   PHONE_QUOTA_MESSAGE,
   TABLE_OUT_OF_RANGE,
@@ -1016,5 +1019,427 @@ describe("GET /v1/public/orders/:token", () => {
       .set({ status: "suspended" })
       .where(eq(subscriptions.organizationId, s.org.orgId));
     await ok(await track(trackingToken), 200, PublicOrderDto);
+  });
+});
+
+const panelDelivery = {
+  street: "Av. Reforma",
+  number: "123",
+  neighborhood: "Juárez",
+  city: "Ciudad de México",
+  postalCode: "06700",
+  references: "Portón negro",
+};
+
+const panel = (s: Shop) => `${s.base}/branches/${s.branchId}/orders`;
+
+async function newOrder(s: Shop, overrides: Record<string, unknown> = {}) {
+  await created(orderBody(s, overrides));
+  const rows = await ordersOf(s.branchId);
+  const row = rows.at(-1);
+  if (!row) throw new Error("Sin pedido");
+  return row;
+}
+
+function move(s: Shop, orderId: string, body: unknown, cookie = s.owner.cookie) {
+  return callApi("POST", `${panel(s)}/${orderId}/transitions`, { cookie, body });
+}
+
+async function walk(s: Shop, orderId: string, steps: string[]) {
+  let version = 1;
+  let dto: OrderDetailDto | undefined;
+  for (const to of steps) {
+    // oxlint-disable-next-line no-await-in-loop -- cada paso depende de la versión del anterior
+    dto = await ok(await move(s, orderId, { to, version }), 200, OrderDetailDto);
+    version = dto.version;
+  }
+  if (!dto) throw new Error("Sin pasos");
+  return dto;
+}
+
+async function list(s: Shop, query = "", headers?: HeadersInit, cookie = s.owner.cookie) {
+  return callApi("GET", `${panel(s)}${query}`, { cookie, headers });
+}
+
+async function staffOf(s: Shop, branchIds: string[]) {
+  const user = await createUser();
+  await addMember({ orgId: s.org.orgId, userId: user.id, role: "staff", branchIds });
+  return user;
+}
+
+describe("Panel de pedidos (T23)", () => {
+  it.each([
+    ["pickup", {}, ["accepted", "preparing", "ready", "completed"]],
+    ["table", { tableNumber: 3 }, ["accepted", "preparing", "ready", "completed"]],
+    [
+      "delivery",
+      { delivery: panelDelivery },
+      ["accepted", "preparing", "ready", "out_for_delivery", "delivered"],
+    ],
+  ] as const)("recorre %s de principio a fin", async (mode, extra, steps) => {
+    const s = await shop();
+    const order = await newOrder(s, { mode, ...extra });
+    const dto = await walk(s, order.id, [...steps]);
+
+    expect(dto).toMatchObject({
+      status: steps.at(-1),
+      isFinal: true,
+      version: steps.length + 1,
+    });
+    expect(dto.history.map(({ to }) => to)).toEqual(["pending", ...steps]);
+    expect(dto.history[0]).toMatchObject({ from: null, actorMemberId: null });
+    for (const entry of dto.history.slice(1)) {
+      expect(entry.actorMemberId).toBe(s.org.ownerMemberId);
+      expect(Date.parse(entry.at)).not.toBeNaN();
+    }
+    const events = (await outboxOf(s.org.orgId)).filter(
+      (row) => row.event === "order.status_changed",
+    );
+    expect(events.map((row) => row.payloadJson)).toEqual(
+      steps.map((toStatus) => ({ orderId: order.id, toStatus })),
+    );
+  });
+
+  it("la modalidad decide la salida de `ready`", async () => {
+    const s = await shop();
+    const pickup = await newOrder(s);
+    const atPickup = await walk(s, pickup.id, ["accepted", "preparing", "ready"]);
+    await expectError(
+      await move(s, pickup.id, { to: "out_for_delivery", version: atPickup.version }),
+      422,
+      "INVALID_TRANSITION",
+    );
+    const home = await newOrder(s, { mode: "delivery", delivery: panelDelivery });
+    const atHome = await walk(s, home.id, ["accepted", "preparing", "ready"]);
+    await expectError(
+      await move(s, home.id, { to: "completed", version: atHome.version }),
+      422,
+      "INVALID_TRANSITION",
+    );
+  });
+
+  it("motivo obligatorio al rechazar o cancelar; no aplica en otros cambios", async () => {
+    const s = await shop();
+    const order = await newOrder(s);
+    const missing = await expectError(
+      await move(s, order.id, { to: "rejected", version: 1 }),
+      400,
+      "VALIDATION_FAILED",
+    );
+    expect(missing.fieldErrors?.reason).toHaveLength(1);
+    const extra = await expectError(
+      await move(s, order.id, { to: "accepted", version: 1, reason: "Porque sí" }),
+      400,
+      "VALIDATION_FAILED",
+    );
+    expect(extra.fieldErrors?.reason).toHaveLength(1);
+    await expectError(
+      await move(s, order.id, { to: "rejected", version: 1, reason: "x".repeat(281) }),
+      400,
+      "VALIDATION_FAILED",
+    );
+
+    const dto = await ok(
+      await move(s, order.id, { to: "rejected", version: 1, reason: "Se acabó el pastor" }),
+      200,
+      OrderDetailDto,
+    );
+    expect(dto.history.at(-1)).toMatchObject({ to: "rejected", reason: "Se acabó el pastor" });
+  });
+
+  it("dos transiciones con la misma `version` en paralelo: una 200 y otra 409", async () => {
+    const s = await shop();
+    const order = await newOrder(s);
+    const responses = await Promise.all([
+      move(s, order.id, { to: "accepted", version: 1 }),
+      move(s, order.id, { to: "accepted", version: 1 }),
+    ]);
+    expect(responses.filter((r) => r.status === 200)).toHaveLength(1);
+    const loser = responses.find((r) => r.status === 409);
+    if (!loser) throw new Error("Sin conflicto");
+    expect((await expectError(loser, 409, "CONFLICT")).message).toBe(ORDER_CHANGED);
+
+    const history = await db()
+      .select()
+      .from(orderStatusHistory)
+      .where(eq(orderStatusHistory.orderId, order.id));
+    expect(history).toHaveLength(2);
+    expect(new Set(history.map((row) => row.toStatus))).toEqual(new Set(["pending", "accepted"]));
+    const events = (await outboxOf(s.org.orgId)).filter(
+      (row) => row.event === "order.status_changed",
+    );
+    expect(events).toHaveLength(1);
+    expect((await onlyOrder(s.branchId)).version).toBe(2);
+  });
+
+  it("`version` vieja → 409 aunque el estado ya no admita ese cambio", async () => {
+    const s = await shop();
+    const order = await newOrder(s);
+    await walk(s, order.id, ["accepted"]);
+    const stale = await expectError(
+      await move(s, order.id, { to: "accepted", version: 1 }),
+      409,
+      "CONFLICT",
+    );
+    expect(stale.message).toBe(ORDER_CHANGED);
+  });
+
+  it("sin aviso si el comensal no aceptó WhatsApp", async () => {
+    const s = await shop();
+    const order = await newOrder(s, {
+      customer: { name: "Ana López", phone: newPhone(), whatsappOptIn: false },
+    });
+    await walk(s, order.id, ["accepted"]);
+    const events = (await outboxOf(s.org.orgId)).filter(
+      (row) => row.event === "order.status_changed",
+    );
+    expect(events).toEqual([]);
+  });
+
+  it("pedido de prueba sin dueño verificado: cambia de estado sin aviso", async () => {
+    const s = await shop();
+    await setOwnerVerified(s, false);
+    await created(orderBody(s), { cookie: s.owner.cookie });
+    const order = await onlyOrder(s.branchId);
+    expect(order.isTest).toBe(true);
+    await walk(s, order.id, ["accepted"]);
+    expect(await outboxOf(s.org.orgId)).toEqual([]);
+  });
+
+  it("staff opera su sucursal, no cancela y no ve otra", async () => {
+    const s = await shop();
+    const otherBranch = await createBranch({ orgId: s.org.orgId, businessId: s.org.businessId });
+    const own = await staffOf(s, [s.branchId]);
+    const outsider = await staffOf(s, [otherBranch]);
+    const order = await newOrder(s);
+
+    await expectError(await list(s, "", undefined, outsider.cookie), 404, "NOT_FOUND");
+    await expectError(
+      await callApi("GET", `${panel(s)}/${order.id}`, { cookie: outsider.cookie }),
+      404,
+      "NOT_FOUND",
+    );
+    await expectError(
+      await move(s, order.id, { to: "accepted", version: 1 }, outsider.cookie),
+      404,
+      "NOT_FOUND",
+    );
+
+    const accepted = await ok(
+      await move(s, order.id, { to: "accepted", version: 1 }, own.cookie),
+      200,
+      OrderDetailDto,
+    );
+    await expectError(
+      await move(
+        s,
+        order.id,
+        { to: "cancelled", version: accepted.version, reason: "Sin insumos" },
+        own.cookie,
+      ),
+      403,
+      "FORBIDDEN",
+    );
+    const admin = await createUser();
+    await addMember({ orgId: s.org.orgId, userId: admin.id, role: "admin" });
+    const cancelled = await ok(
+      await move(
+        s,
+        order.id,
+        { to: "cancelled", version: accepted.version, reason: "Sin insumos" },
+        admin.cookie,
+      ),
+      200,
+      OrderDetailDto,
+    );
+    expect(cancelled.status).toBe("cancelled");
+  });
+
+  it("sin sesión → 401 en todas las rutas", async () => {
+    const s = await shop();
+    const order = await newOrder(s);
+    await expectError(await callApi("GET", panel(s)), 401, "AUTH_REQUIRED");
+    await expectError(await callApi("GET", `${panel(s)}/${order.id}`), 401, "AUTH_REQUIRED");
+    await expectError(
+      await callApi("POST", `${panel(s)}/${order.id}/transitions`, {
+        body: { to: "accepted", version: 1 },
+      }),
+      401,
+      "AUTH_REQUIRED",
+    );
+  });
+
+  it("aislamiento: otra organización con ids reales → 404", async () => {
+    const s = await shop();
+    const other = await shop();
+    const order = await newOrder(s);
+    const foreign = `${other.base}/branches/${s.branchId}/orders`;
+    const crossed = `${panel(other)}/${order.id}`;
+    await expectNotFoundForOtherTenant({
+      intruder: other.owner,
+      paths: [panel(s), `${panel(s)}/${order.id}`, foreign, `${foreign}/${order.id}`, crossed],
+    });
+    await expectNotFoundForOtherTenant({
+      method: "POST",
+      intruder: other.owner,
+      body: { to: "accepted", version: 1 },
+      paths: [
+        `${panel(s)}/${order.id}/transitions`,
+        `${foreign}/${order.id}/transitions`,
+        `${crossed}/transitions`,
+      ],
+    });
+    expect((await onlyOrder(s.branchId)).status).toBe("pending");
+  });
+
+  it("un pedido de otra sucursal de la misma organización → 404", async () => {
+    const s = await shop();
+    const otherBranch = await createBranch({ orgId: s.org.orgId, businessId: s.org.businessId });
+    const order = await newOrder(s);
+    const path = `${s.base}/branches/${otherBranch}/orders/${order.id}`;
+    await expectError(await callApi("GET", path, { cookie: s.owner.cookie }), 404, "NOT_FOUND");
+    await expectError(
+      await callApi("POST", `${path}/transitions`, {
+        cookie: s.owner.cookie,
+        body: { to: "accepted", version: 1 },
+      }),
+      404,
+      "NOT_FOUND",
+    );
+  });
+
+  it("con la suscripción suspendida se lee, pero no se cambia el estado", async () => {
+    const s = await shop();
+    const order = await newOrder(s);
+    await db()
+      .update(subscriptions)
+      .set({ status: "suspended" })
+      .where(eq(subscriptions.organizationId, s.org.orgId));
+    await ok(await list(s), 200, OrderListDto);
+    await expectError(await move(s, order.id, { to: "accepted", version: 1 }), 403, "FORBIDDEN");
+  });
+
+  it("el detalle trae teléfono y dirección; el listado no", async () => {
+    const s = await shop();
+    const phone = newPhone();
+    const order = await newOrder(s, {
+      mode: "delivery",
+      delivery: panelDelivery,
+      customer: { name: "Ana López", phone, whatsappOptIn: true },
+    });
+    const response = await callApi("GET", `${panel(s)}/${order.id}`, { cookie: s.owner.cookie });
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const detail = await ok(response, 200, OrderDetailDto);
+    expect(detail).toMatchObject({
+      customerPhone: phone,
+      delivery: panelDelivery,
+      deliveryFeeCents: 3_500,
+    });
+    expect(detail.items[0]).toMatchObject({ name: "Taco al pastor", quantity: 2 });
+
+    const text = await (await list(s)).text();
+    OrderListDto.parse(JSON.parse(text));
+    expect(text).not.toContain(phone);
+    expect(text).not.toContain(panelDelivery.street);
+  });
+
+  it("`active` y `done` separan los pedidos, con sus líneas", async () => {
+    const s = await shop();
+    const first = await newOrder(s);
+    const second = await newOrder(s);
+    const third = await newOrder(s);
+    await walk(s, second.id, ["accepted", "preparing", "ready", "completed"]);
+    await ok(
+      await move(s, third.id, { to: "rejected", version: 1, reason: "Cerramos temprano" }),
+      200,
+      OrderDetailDto,
+    );
+
+    const active = await ok(await list(s), 200, OrderListDto);
+    expect(active.items.map(({ id }) => id)).toEqual([first.id]);
+    expect(active.items[0]?.items).toHaveLength(1);
+    const done = await ok(await list(s, "?status=done"), 200, OrderListDto);
+    expect(done.items.map(({ id }) => id)).toEqual([third.id, second.id]);
+  });
+
+  it("pagina con `cursor` sin repetir ni saltar pedidos", async () => {
+    const s = await shop();
+    const ids = [(await newOrder(s)).id, (await newOrder(s)).id, (await newOrder(s)).id];
+    const first = await ok(await list(s, "?limit=2"), 200, OrderListDto);
+    expect(first.items.map(({ id }) => id)).toEqual(ids.slice(0, 2));
+    expect(first.nextCursor).toBe(ids[1]);
+    const second = await list(s, `?limit=2&cursor=${first.nextCursor}`);
+    expect(second.headers.get("etag")).toBeNull();
+    const page = await ok(second, 200, OrderListDto);
+    expect(page.items.map(({ id }) => id)).toEqual(ids.slice(2));
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("`since` devuelve solo lo cambiado, también lo que ya terminó", async () => {
+    const s = await shop();
+    const old = await newOrder(s);
+    const finished = await newOrder(s);
+    const untouched = new Date(1_000);
+    await db().update(orders).set({ updatedAt: untouched }).where(eq(orders.id, old.id));
+    await db().update(orders).set({ updatedAt: untouched }).where(eq(orders.id, finished.id));
+    await ok(
+      await move(s, finished.id, { to: "rejected", version: 1, reason: "Sin gas" }),
+      200,
+      OrderDetailDto,
+    );
+
+    const changed = await ok(await list(s, "?since=2000"), 200, OrderListDto);
+    expect(changed.items.map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: finished.id, status: "rejected" },
+    ]);
+    expect(changed.nextSince).toBeGreaterThan(2_000);
+    const ignored = await ok(await list(s, "?since=2000&status=active"), 200, OrderListDto);
+    expect(ignored.items.map(({ id }) => id)).toEqual([finished.id]);
+    await expectError(await list(s, "?since=abc"), 400, "VALIDATION_FAILED");
+    await expectError(await list(s, "?since=9000000000000000"), 400, "VALIDATION_FAILED");
+  });
+
+  it("`ETag`: sin cambios → 304; con un cambio o un pedido nuevo → 200", async () => {
+    const s = await shop();
+    const order = await newOrder(s);
+    const first = await list(s);
+    expect(first.headers.get("cache-control")).toBe("no-store");
+    const etag = first.headers.get("etag") ?? "";
+    expect(etag).not.toBe("");
+
+    const same = await list(s, "", { "if-none-match": etag });
+    expect(same.status).toBe(304);
+    expect(await same.text()).toBe("");
+    expect(same.headers.get("etag")).toBe(etag);
+    expect((await list(s, "?since=2000", { "if-none-match": etag })).status).toBe(304);
+
+    // Mismo `updated_at` y mismo conteo: la suma de `version` detecta el cambio.
+    await db()
+      .update(orders)
+      .set({ version: 2, updatedAt: order.updatedAt })
+      .where(eq(orders.id, order.id));
+    const moved = await list(s, "", { "if-none-match": etag });
+    expect(moved.status).toBe(200);
+    const movedEtag = moved.headers.get("etag") ?? "";
+    expect(movedEtag).not.toBe(etag);
+
+    await newOrder(s);
+    expect((await list(s, "", { "if-none-match": movedEtag })).status).toBe(200);
+  });
+
+  it("`ETag` de terminados: 304 hasta que termina otro pedido", async () => {
+    const s = await shop();
+    const a = await newOrder(s);
+    const b = await newOrder(s);
+    await walk(s, a.id, ["accepted", "preparing", "ready", "completed"]);
+    const first = await list(s, "?status=done");
+    const etag = first.headers.get("etag") ?? "";
+    expect((await list(s, "?status=done", { "if-none-match": etag })).status).toBe(304);
+    await ok(
+      await move(s, b.id, { to: "rejected", version: 1, reason: "Sin gas" }),
+      200,
+      OrderDetailDto,
+    );
+    expect((await list(s, "?status=done", { "if-none-match": etag })).status).toBe(200);
   });
 });
