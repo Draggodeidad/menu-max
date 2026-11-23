@@ -11,7 +11,7 @@
 
 **Fase:** B7 · **Depende de:** T25 · **ADR:** 015 (Propuesto) · **Rama sugerida:** `feat/t26-auditoria-mantenimiento`
 
-> La anonimización por retención depende de ADR-015 (`Propuesto`). Implementa auditoría y limpieza; deja la anonimización hasta que se acepte el plazo.
+> La anonimización por retención depende de ADR-015 (`Propuesto`), que ya compara las opciones: reemplazo con `anonymized_at` (recomendada) o reconstruir `orders`. Implementa auditoría y limpieza; deja la anonimización hasta que se acepten la opción y el plazo.
 
 ### Objetivo
 
