@@ -30,6 +30,7 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 | [018](#adr-018--zonas-de-entrega-por-código-postal-con-tarifa-fija)   | Zonas de entrega por código postal con tarifa fija       | Aceptado                     | 2026-11-14 |
 | [020](#adr-020--correo-transaccional-con-resend)                      | Correo con Resend tras puerto `Mailer`                   | Aceptado                     | 2026-11-13 |
 | [021](#adr-021--máquina-de-estados-y-panel-de-pedidos)                | Máquina de estados y panel de pedidos                    | Aceptado                     | 2026-11-22 |
+| [022](#adr-022--enlace-de-seguimiento-en-avisos-de-whatsapp)          | Enlace de seguimiento en avisos de WhatsApp              | Propuesto                    | 2026-11-22 |
 
 ---
 
@@ -414,7 +415,29 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 - `customer_phone_hash` (SHA-256 con sal del entorno) permite cuotas y bloqueos sin guardar el teléfono en claro fuera del pedido.
 - Logs sin PII desde el día uno (`redact()`).
 
-**Pendiente.** Elegir 6, 12 o 24 meses y revisar el aviso de privacidad.
+**Opciones para anonimizar (2026-11-22).** Hoy `customer_name`, `customer_phone` y `customer_phone_hash` son `NOT NULL`, y el `CHECK` de domicilio exige la dirección. Las dos opciones se probaron en D1 local con 80,001 pedidos, sin perder filas ni romper llaves foráneas.
+
+|              | A. Reemplazo con `anonymized_at` (recomendada)                                  | B. Reconstruir `orders` con `NULL`                                           |
+| ------------ | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Cómo borra   | Nombre, teléfono, hash y dirección pasan a `''`; notas y referencias a `NULL`   | Todos esos campos pasan a `NULL`                                             |
+| Migración    | `ALTER TABLE … ADD COLUMN anonymized_at` con `CHECK`, escrita a mano            | Reconstrucción manual de la tabla y sus 6 índices (`DATABASE.md` §3.3)       |
+| Prueba local | 0.9 s; no reescribe filas                                                       | 2.2 s; reescribe todas las filas                                             |
+| Garantía     | El `CHECK` rechaza un pedido marcado como anonimizado que conserve datos        | Igual, con un `CHECK` nuevo                                                  |
+| Contratos    | Los DTO siguen con `string`; agregan `anonymizedAt`                             | `customerName`, `customerPhone` y la dirección pasan a anulables             |
+| Riesgo       | Quien lea la fila debe respetar `anonymized_at` y no tratar `''` como dato real | Es la operación más delicada sobre la tabla principal, y crece con los datos |
+
+**Recomendación: A.** Elimina los datos con el mismo efecto, es aditiva y se puede aplicar en cualquier momento. B solo conviene si se quiere `NULL` como modelo definitivo, y entonces debe hacerse antes del piloto, mientras `orders` está casi vacía y WEB aún no consume esos DTO.
+
+**Aplica a cualquiera de las dos:**
+
+- limpiar también `order_items.notes` y `order_status_history.reason`, que son texto libre;
+- conservar importes, productos, zona y fechas;
+- reemplazar `tracking_token_hash` por el hash de un valor aleatorio, para que el enlace de seguimiento deje de funcionar (T22 dejó esa vigencia para este ADR);
+- no enviar avisos de un pedido anonimizado.
+
+**Descartadas.** Mover los datos del comensal a otra tabla (contradice ADR-016 y exige _expand/contract_) y borrar el pedido (los pedidos nunca se borran).
+
+**Pendiente.** Elegir la opción y el plazo de 6, 12 o 24 meses, y revisar el aviso de privacidad. La LFPDPPP vigente (DOF, 20 de marzo de 2025) trata plazo de conservación, bloqueo y supresión: un asesor legal debe confirmar el plazo y si esta anonimización cumple.
 
 ---
 
@@ -596,6 +619,38 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 - `order_id` en `notification_outbox`: T24 publica por el id del outbox y el payload ya lleva el pedido.
 - Un evento por estado (`order.accepted`, …): obliga a reconstruir la tabla por el `CHECK` de `event`.
 - Índice `(organization_id, branch_id, updated_at)`: no resuelve el orden por `id` del historial.
+
+---
+
+## ADR-022 — Enlace de seguimiento en avisos de WhatsApp
+
+**Estado:** Propuesto · **Fecha:** 2026-11-22 · Afecta a T24
+
+**Contexto.** T24 avisa al comensal cuando su pedido cambia de estado. Su especificación usaba `${WEB_ORIGIN}/app`, que exige sesión, pero el comensal pide como invitado. La única página que puede abrir es `/pedido/{token}`. Ese token no vence (T22) y, si va en un botón de WhatsApp, Meta lo recibe como parámetro. Quien lo tiene ve número, estado, productos, total, colonia y datos de la sucursal. No ve nombre, teléfono, calle ni número, y no puede cambiar nada.
+
+**Opciones.**
+
+|            | A. Botón con el token (recomendada)             | B. Enlace firmado que vence                                   | C. Sin enlace                                           |
+| ---------- | ----------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------- |
+| Enlace     | `/pedido/{token}`                               | Ruta nueva con `orderId`, vencimiento y firma HMAC            | Ninguno                                                 |
+| Comensal   | Abre el seguimiento desde cualquier aviso       | Igual, hasta que vence; después ve «Este enlace venció»       | Solo lee el estado; si cerró la página, no puede volver |
+| Exposición | Token permanente en WhatsApp y Meta             | Solo durante la vigencia                                      | Ninguna                                                 |
+| Trabajo    | Derivar el token al enviar; sin tablas ni rutas | Ruta en API y WEB, plazo por definir y pruebas de vencimiento | Plantilla sin botón                                     |
+
+**Recomendación: A.** Es lo único que cumple el objetivo sin agregar superficie: la página no expone datos de contacto, es de solo lectura y el aviso ya lleva productos y colonia. B conviene si se decide que el enlace no debe vivir en el chat más de unos días. C es el respaldo para arrancar el piloto si Meta tarda en aprobar la plantilla con botón.
+
+**Condiciones de A.**
+
+- La plantilla usa `https://{dominio}/pedido/{{1}}`. Meta admite una variable al final de la URL, y el token en base64url no requiere codificación.
+- El mensaje de la cola no lleva el token. El consumidor lo deriva con `orderTrackingToken` al enviar y compara su hash con `orders.tracking_token_hash`. Si no coincide (secreto rotado, ADR-013), no envía y registra `failed`.
+- El token nunca se guarda en `notification_deliveries` ni aparece en logs o errores.
+- WEB responde `Referrer-Policy: no-referrer` en `/pedido/[token]`.
+- El aviso al negocio sigue usando `/app`.
+- El enlace deja de funcionar cuando el pedido se anonimiza (ADR-015).
+
+**Consecuencias de A.** Meta procesa el token. Reenviar el mensaje comparte el seguimiento y no se puede revocar el enlace de un solo pedido antes de anonimizarlo. Si el comensal capturó mal su teléfono, otra persona recibe el aviso, igual que con el resumen que el mensaje ya incluye.
+
+**Alternativas descartadas.** `/app` (el comensal no tiene cuenta); código por WhatsApp para entrar (flujo y mensajes extra); acortador externo (otro tercero ve el enlace); tabla propia de enlaces (fuera de ADR-016).
 
 ---
 
