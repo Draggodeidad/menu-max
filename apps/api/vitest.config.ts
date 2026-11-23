@@ -25,6 +25,9 @@ export default defineConfig({
           ORDER_TOKEN_SECRET: "vitest-order-token-placeholder".repeat(2),
           TEST_MIGRATIONS: migrations,
         },
+        // Cola sin consumidor: la entrega real correría `queue()` mientras Vitest cierra el archivo
+        // de pruebas (`EnvironmentTeardownError`). El consumidor se prueba llamándolo directo.
+        queueProducers: { JOBS: { queueName: "menusmax-jobs-test" } },
       },
     }),
   ],
