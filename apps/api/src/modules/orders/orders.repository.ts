@@ -17,7 +17,7 @@ import {
   type OrderMode,
   type OrderStatus,
 } from "@menu-max/contracts";
-import { and, asc, desc, eq, gt, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "../../infrastructure/db";
 import type { TenantContext } from "../../types";
 
@@ -268,7 +268,7 @@ const itemColumns = {
   notes: orderItems.notes,
 };
 
-function branchOrders(tenant: TenantContext, branchId: string) {
+function branchOrders(tenant: Pick<TenantContext, "orgId">, branchId: string) {
   return and(eq(orders.organizationId, tenant.orgId), eq(orders.branchId, branchId));
 }
 
@@ -303,15 +303,13 @@ export type OrderPageFilter = {
 };
 
 /**
- * Con `since` se listan todos los estados: incluirlos en el `IN` deja usar el índice
- * `(organization_id, branch_id, status, updated_at)` también para el rango de `updated_at`.
+ * Filtro y orden de una página (ADR-021). El tablero y `since` tocan pocos pedidos: se leen por
+ * `(organization_id, branch_id, status, updated_at)` y se ordenan en memoria. `+id` impide que
+ * SQLite elija un índice por `id` solo para ahorrar ese orden, porque recorrería todo el historial
+ * en cada sondeo. Los terminados sí se paginan por `(organization_id, branch_id, id)`.
  */
-function pageWhere(
-  tenant: TenantContext,
-  branchId: string,
-  page: OrderPageFilter,
-  newest: boolean,
-) {
+function orderPage(tenant: Pick<TenantContext, "orgId">, branchId: string, page: OrderPageFilter) {
+  const newest = page.since === undefined && page.status === "done";
   const scope =
     page.since !== undefined
       ? and(inArray(orders.status, ORDER_STATUSES), gte(orders.updatedAt, new Date(page.since)))
@@ -319,15 +317,33 @@ function pageWhere(
   const after = page.cursor
     ? newest
       ? lt(orders.id, page.cursor)
-      : gt(orders.id, page.cursor)
+      : sql`+${orders.id} > ${page.cursor}`
     : undefined;
-  return and(branchOrders(tenant, branchId), scope, after);
+  return {
+    where: and(branchOrders(tenant, branchId), scope, after),
+    order: newest ? desc(orders.id) : sql`+${orders.id}`,
+  };
+}
+
+/** Pedidos de una página, con uno de más para saber si hay otra. */
+export function orderPageQuery(
+  db: Db,
+  tenant: Pick<TenantContext, "orgId">,
+  branchId: string,
+  page: OrderPageFilter,
+) {
+  const { where, order } = orderPage(tenant, branchId, page);
+  return db
+    .select(summaryColumns)
+    .from(orders)
+    .where(where)
+    .orderBy(order)
+    .limit(page.limit + 1);
 }
 
 /**
- * Una página del panel en un solo `batch`: huella del tablero, pedidos y sus líneas. Trae un
- * pedido de más para saber si hay otra página. Los terminados van del más nuevo al más antiguo;
- * lo demás, en orden de llegada.
+ * Una página del panel en un solo `batch`: huella del tablero, pedidos y sus líneas. Los
+ * terminados van del más nuevo al más antiguo; lo demás, en orden de llegada.
  */
 export async function loadOrderPage(
   db: Db,
@@ -335,17 +351,10 @@ export async function loadOrderPage(
   branchId: string,
   page: OrderPageFilter,
 ) {
-  const newest = page.since === undefined && page.status === "done";
-  const where = pageWhere(tenant, branchId, page, newest);
-  const order = newest ? desc(orders.id) : asc(orders.id);
+  const { where, order } = orderPage(tenant, branchId, page);
   const [stamps, rows, items] = await db.batch([
     activeStampQuery(db, tenant, branchId),
-    db
-      .select(summaryColumns)
-      .from(orders)
-      .where(where)
-      .orderBy(order)
-      .limit(page.limit + 1),
+    orderPageQuery(db, tenant, branchId, page),
     db
       .select(itemColumns)
       .from(orderItems)
