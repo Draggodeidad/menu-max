@@ -3,13 +3,13 @@
 > Planeación del backend (versionada en git).
 > **Criterio para cerrar la fase:** si WhatsApp falla, el pedido sigue visible en el panel y el aviso se reintenta o queda en DLQ; nunca se pierde en silencio.
 > **Orden de ejecución:** T24 → T25.
-> **Prerrequisitos humanos:** cuenta de WhatsApp Business Platform, número emisor, plantillas aprobadas por Meta (`es_MX`) y secretos cargados por entorno. Sin eso, las pruebas usan Meta simulado y no se prueba contra Meta real.
+> **Prerrequisitos humanos:** cuenta de WhatsApp Business Platform, número emisor, plantillas aprobadas por Meta (`es_MX`), incluidas las del comensal con botón `https://{dominio}/pedido/{{1}}`, y secretos cargados por entorno. Sin eso, las pruebas usan Meta simulado y no se prueba contra Meta real.
 
 ---
 
 ## T24 — Relay del outbox y consumidor de WhatsApp
 
-**Fase:** B6 · **Depende de:** T08, T21, T23 · **ADR:** 011, 021, 022 (Propuesto) · **Rama sugerida:** `feat/t24-whatsapp`
+**Fase:** B6 · **Depende de:** T08, T21, T23 · **ADR:** 011, 021, 022 · **Rama sugerida:** `feat/t24-whatsapp`
 
 ### Objetivo
 
@@ -34,13 +34,18 @@ Cada evento de pedido llega a la cola aunque la petición original falle despué
   - `GET /subscription` agrega a `usage` los avisos usados y el presupuesto del mes (cambio aditivo).
 - **Consumidor** (`jobs/whatsapp.handler.ts`):
   1. `insert … on conflict(dedupe_key) do nothing` con `dedupe_key = orderId:event:toStatus:recipientHash` (enmienda de ADR-011); si ya existe en `sent`, `delivered`, `read` o `ambiguous` → `ack`;
-  2. `infrastructure/whatsapp.ts`: `POST https://graph.facebook.com/${META_GRAPH_API_VERSION}/${META_PHONE_NUMBER_ID}/messages` con plantilla y parámetros (número de pedido, sucursal, modalidad, total, resumen de ítems, colonia para domicilio y enlace: `${WEB_ORIGIN}/app` para el negocio; para el comensal, lo que acepte ADR-022); timeout de 10 s;
+  2. `infrastructure/whatsapp.ts`: `POST https://graph.facebook.com/${META_GRAPH_API_VERSION}/${META_PHONE_NUMBER_ID}/messages` con plantilla y parámetros (número de pedido, sucursal, modalidad, total, resumen de ítems, colonia para domicilio y enlace: `${WEB_ORIGIN}/app` para el negocio; para el comensal, botón de URL a `/pedido/{token}`); timeout de 10 s;
   3. 2xx → `sent` + `external_id`;
   4. 429, 5xx o error de red **antes** de recibir respuesta → `retry` con backoff;
   5. timeout sin saber si Meta aceptó → `ambiguous`, `ack`, `log.warn` (sin reintento automático);
   6. 4xx de número o plantilla → `failed`, `ack`.
 - **DLQ:** consumidor de `menusmax-jobs-dlq` que marca `dead` en `notification_deliveries` (si aplica) y hace `log.error` con `requestId` y `outboxId`. `docs/runbooks/reprocesar-dlq.md` explica cómo reencolar a mano.
-- El mensaje nunca incluye tokens de sesión ni la dirección completa; el enlace al panel exige iniciar sesión.
+- **Enlace al comensal (ADR-022):**
+  - el mensaje de la cola no lleva el token; el consumidor lo deriva con `orderTrackingToken` al enviar y lo pasa solo como parámetro del botón;
+  - antes de llamar a Meta compara su hash con `orders.tracking_token_hash`; si no coincide, no envía, queda `failed` y hace `log.error`;
+  - el token nunca se guarda en `notification_deliveries` ni aparece en logs o errores.
+- **WEB:** `src/routes/pedido/[token]/+page.server.ts` agrega `referrer-policy: no-referrer`. Esta parte toca `apps/web`: lee también `apps/web/AGENTS.md`.
+- El mensaje nunca incluye tokens de sesión ni la dirección completa. El enlace del negocio al panel exige iniciar sesión.
 
 ### Fuera de alcance
 
@@ -49,7 +54,7 @@ Cada evento de pedido llega a la cola aunque la petición original falle despué
 
 ### Variables de entorno y bindings
 
-- `META_WHATSAPP_TOKEN`, `META_PHONE_NUMBER_ID`, `META_GRAPH_API_VERSION`, `META_TEMPLATE_NEW_ORDER`, `META_TEMPLATE_LANG` (`es_MX`), y opcionales por estado para el comensal. Cron `* * * * *`. Agregar a `env.ts`, `.dev.vars.example` y `.env.example`.
+- `META_WHATSAPP_TOKEN`, `META_PHONE_NUMBER_ID`, `META_GRAPH_API_VERSION`, `META_TEMPLATE_NEW_ORDER`, `META_TEMPLATE_LANG` (`es_MX`), y opcionales por estado para el comensal. Reusa `ORDER_TOKEN_SECRET` (T21). Cron `* * * * *`. Agregar a `env.ts`, `.dev.vars.example` y `.env.example`.
 
 ### Pruebas requeridas
 
@@ -61,6 +66,10 @@ Cada evento de pedido llega a la cola aunque la petición original falle despué
 - [ ] Cinco fallos transitorios → DLQ → `dead`.
 - [ ] Owner sin verificar o sucursal sin opt-in → no se envía nada y queda registrado.
 - [ ] El cuerpo enviado a Meta no contiene calle ni número de la dirección.
+- [ ] Aviso al comensal: el token solo va en el parámetro del botón; no aparece en el mensaje de la cola, en `notification_deliveries` ni en logs.
+- [ ] Token derivado que no coincide con `tracking_token_hash` → sin llamada a Meta y entrega `failed`.
+- [ ] El aviso al negocio enlaza a `/app` y no lleva token.
+- [ ] `/pedido/[token]` responde `Referrer-Policy: no-referrer`.
 - [ ] El panel muestra el pedido aunque Meta esté caído.
 - [ ] Presupuesto agotado → no hay llamada a Meta, la entrega queda `skipped` y el pedido sigue en el panel; al cambiar de mes se vuelve a enviar.
 - [ ] Subir el presupuesto de una organización reanuda sus avisos sin tocar a las demás.
@@ -73,7 +82,6 @@ Cada evento de pedido llega a la cola aunque la petición original falle despué
 
 - **Decisión abierta:** el valor por defecto del presupuesto mensual. Un humano confirma antes la categoría que Meta asigna a las plantillas y su tarifa vigente para México. Referencia del dueño del producto (2026-11-14, sin verificar por el agente): la cuota gratuita de 1,000 mensajes aplica a mensajes de servicio, no a plantillas de utilidad; 1,000 mensajes de utilidad a números mexicanos costarían alrededor de $156.50 MXN a tarifa de lista.
 - Avisar al dueño dentro del panel que su presupuesto se agotó es trabajo de frontend; aquí solo se expone el uso en `GET /subscription`.
-- **Decisión abierta (ADR-022):** el enlace del aviso al comensal. Opciones: A, botón con `/pedido/{token}` (recomendada); B, enlace firmado que vence; C, sin enlace. No implementes esa parte hasta que el ADR se acepte; el resto de T24 no depende de ella.
 - **Migración:** `drizzle-kit generate` numera con `idx` y el repositorio con `idx + 1`: la migración de T24 debe ser `0016` y no debe sobrescribir `0015_snapshot.json` (`DATABASE.md` §3.1).
 - T23 no inserta eventos para pedidos de prueba sin dueño verificado; el consumidor vuelve a validar destinatarios al enviar.
 

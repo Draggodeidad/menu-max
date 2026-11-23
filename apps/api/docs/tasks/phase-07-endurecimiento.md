@@ -9,9 +9,9 @@
 
 ## T26 — Auditoría, mantenimiento y retención
 
-**Fase:** B7 · **Depende de:** T25 · **ADR:** 015 (Propuesto) · **Rama sugerida:** `feat/t26-auditoria-mantenimiento`
+**Fase:** B7 · **Depende de:** T25 · **ADR:** 015 (plazo: Propuesto) · **Rama sugerida:** `feat/t26-auditoria-mantenimiento`
 
-> La anonimización por retención depende de ADR-015 (`Propuesto`), que ya compara las opciones: reemplazo con `anonymized_at` (recomendada) o reconstruir `orders`. Implementa auditoría y limpieza; deja la anonimización hasta que se acepten la opción y el plazo.
+> ADR-015 ya aceptó el mecanismo de anonimización: valores de reemplazo con `anonymized_at`, sin reconstruir `orders`. El plazo sigue `Propuesto`: implementa auditoría y limpieza, y deja la migración y el Cron de anonimización hasta que se acepte, con revisión legal.
 
 ### Objetivo
 
