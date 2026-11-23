@@ -1,16 +1,13 @@
 import { z } from "zod";
 import { E164Phone, MAX_TABLE_COUNT, PostalCode } from "./businesses";
 import { MAX_OPTION_GROUPS_PER_PRODUCT, MAX_OPTIONS_PER_GROUP } from "./catalog";
+import { CursorQuery } from "./organizations";
 import { SLUG_MAX_LENGTH, SLUG_PATTERN } from "./storefront";
 
-// Pedidos (T21, ADR-010, ADR-011, ADR-013). El comensal pide como invitado; la API calcula
-// precios y totales con el catálogo de D1. Las transiciones del panel son de T23.
+// Pedidos (T21, T22, T23; ADR-007, ADR-010, ADR-011, ADR-013). El comensal pide como invitado; la
+// API calcula precios y totales con el catálogo de D1 y el panel opera la máquina de estados.
 
-/**
- * Estados del pedido. T21 solo crea `pending`; la lista completa está desde ahora para que el
- * `CHECK` de `orders.status` no obligue a reconstruir la tabla en T23, que define las
- * transiciones.
- */
+/** Estados del pedido. T21 crea `pending`; las transiciones están en `ORDER_TRANSITIONS`. */
 export const ORDER_STATUSES = [
   "pending",
   "accepted",
@@ -33,10 +30,49 @@ export const FINAL_STATUSES = [
   "cancelled",
 ] as const satisfies readonly OrderStatus[];
 
+/** Estados que el panel muestra como pedidos en curso. */
+export const ACTIVE_STATUSES = [
+  "pending",
+  "accepted",
+  "preparing",
+  "ready",
+  "out_for_delivery",
+] as const satisfies readonly OrderStatus[];
+
 /** Mesa, recoger en sucursal o domicilio. Mismos nombres que `BranchModes`. */
 export const ORDER_MODES = ["table", "pickup", "delivery"] as const;
 export const OrderMode = z.enum(ORDER_MODES);
 export type OrderMode = z.infer<typeof OrderMode>;
+
+type OrderTransitionMap = Readonly<Record<OrderStatus, readonly OrderStatus[]>>;
+
+const ON_SITE_TRANSITIONS: OrderTransitionMap = {
+  pending: ["accepted", "rejected"],
+  accepted: ["preparing", "cancelled"],
+  preparing: ["ready", "cancelled"],
+  ready: ["completed", "cancelled"],
+  out_for_delivery: [],
+  completed: [],
+  delivered: [],
+  rejected: [],
+  cancelled: [],
+};
+
+const DELIVERY_TRANSITIONS: OrderTransitionMap = {
+  ...ON_SITE_TRANSITIONS,
+  ready: ["out_for_delivery", "cancelled"],
+  out_for_delivery: ["delivered", "cancelled"],
+};
+
+/**
+ * Máquina de estados por modalidad (T23). `ready` y `out_for_delivery` admiten `cancelled` para
+ * cerrar un pedido que nadie recogió o una entrega fallida.
+ */
+export const ORDER_TRANSITIONS: Readonly<Record<OrderMode, OrderTransitionMap>> = {
+  table: ON_SITE_TRANSITIONS,
+  pickup: ON_SITE_TRANSITIONS,
+  delivery: DELIVERY_TRANSITIONS,
+};
 
 /** Pagos en línea están fuera del MVP: se paga al recibir. */
 export const PAYMENT_METHODS = ["cash"] as const;
@@ -192,3 +228,122 @@ export const PublicOrderDto = z
   })
   .meta({ id: "PublicOrderDto" });
 export type PublicOrderDto = z.infer<typeof PublicOrderDto>;
+
+// Panel de pedidos (T23, ADR-007). Solo para miembros de la organización.
+
+export const MAX_ORDER_REASON_LENGTH = 280;
+export const REASON_REQUIRED = "Escribe el motivo para rechazar o cancelar el pedido.";
+export const REASON_NOT_ALLOWED = "El motivo solo aplica al rechazar o cancelar un pedido.";
+
+/** Mayor fecha que representa `Date`: un `since` más grande no se puede convertir. */
+const MAX_DATE_MS = 8_640_000_000_000_000;
+
+export const OrderParams = z.strictObject({ orderId: z.uuidv7() });
+
+/**
+ * Listado del panel. `status` elige la pestaña (`active` o `done`). Con `since` (ms), `status` se
+ * ignora y vuelven todos los pedidos cambiados desde entonces, también los que ya terminaron, para
+ * que el panel los quite del tablero.
+ */
+export const OrderListQuery = CursorQuery.extend({
+  status: z.enum(["active", "done"]).default("active"),
+  since: z.coerce.number().int().min(0).max(MAX_DATE_MS).optional(),
+});
+export type OrderListQuery = z.infer<typeof OrderListQuery>;
+
+/** Cambio de estado. `reason` es obligatorio al rechazar o cancelar y no aplica en otro caso. */
+export const OrderTransitionInput = z
+  .strictObject({
+    to: OrderStatus,
+    version: z.int().positive(),
+    reason: text(MAX_ORDER_REASON_LENGTH).optional(),
+  })
+  .superRefine((input, ctx) => {
+    const needsReason = input.to === "rejected" || input.to === "cancelled";
+    if (needsReason && input.reason === undefined) {
+      ctx.addIssue({ code: "custom", path: ["reason"], message: REASON_REQUIRED });
+    }
+    if (!needsReason && input.reason !== undefined) {
+      ctx.addIssue({ code: "custom", path: ["reason"], message: REASON_NOT_ALLOWED });
+    }
+  });
+export type OrderTransitionInput = z.infer<typeof OrderTransitionInput>;
+
+const PanelOrderItemDto = z.strictObject({
+  name: z.string(),
+  variantName: z.string().nullable(),
+  options: z.array(z.strictObject({ name: z.string(), priceDeltaCents: z.int() })),
+  quantity: z.int().positive(),
+  unitPriceCents: z.int().nonnegative(),
+  lineTotalCents: z.int().nonnegative(),
+  notes: z.string().nullable(),
+});
+
+const panelOrderFields = {
+  id: z.uuidv7(),
+  number: z.int().positive(),
+  status: OrderStatus,
+  isFinal: z.boolean(),
+  mode: OrderMode,
+  tableNumber: z.int().positive().nullable(),
+  customerName: z.string(),
+  totalCents: z.int().nonnegative(),
+  notes: z.string().nullable(),
+  isTest: z.boolean(),
+  /** Se envía de vuelta en la transición (concurrencia optimista). */
+  version: z.int().positive(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+  items: z.array(PanelOrderItemDto),
+};
+
+/** Pedido en el listado: sin teléfono ni dirección, que solo van en el detalle. */
+export const OrderSummaryDto = z.strictObject(panelOrderFields).meta({ id: "OrderSummaryDto" });
+export type OrderSummaryDto = z.infer<typeof OrderSummaryDto>;
+
+export const OrderListDto = z
+  .strictObject({
+    items: z.array(OrderSummaryDto),
+    nextCursor: z.uuidv7().nullable(),
+    /**
+     * Valor de `since` para el siguiente sondeo. Con varias páginas, usa el de la primera: incluye
+     * un margen, así que un pedido puede repetirse; identifícalo por `id` y `version`.
+     */
+    nextSince: z.int().nonnegative(),
+  })
+  .meta({ id: "OrderListDto" });
+export type OrderListDto = z.infer<typeof OrderListDto>;
+
+/** Detalle para quien opera la sucursal: incluye teléfono, dirección e historial con actor. */
+export const OrderDetailDto = z
+  .strictObject({
+    ...panelOrderFields,
+    customerPhone: z.string(),
+    customerWhatsappOptIn: z.boolean(),
+    delivery: z
+      .strictObject({
+        street: z.string(),
+        number: z.string(),
+        neighborhood: z.string(),
+        city: z.string(),
+        postalCode: z.string(),
+        references: z.string().nullable(),
+      })
+      .nullable(),
+    subtotalCents: z.int().nonnegative(),
+    deliveryFeeCents: z.int().nonnegative(),
+    currency: z.enum(ORDER_CURRENCIES),
+    paymentMethod: z.enum(PAYMENT_METHODS),
+    history: z.array(
+      z.strictObject({
+        from: OrderStatus.nullable(),
+        to: OrderStatus,
+        /** `null` en la creación: el pedido lo hizo el comensal. */
+        actorMemberId: z.uuidv7().nullable(),
+        reason: z.string().nullable(),
+        at: z.iso.datetime(),
+      }),
+    ),
+  })
+  .meta({ id: "OrderDetailDto" });
+export type OrderDetailDto = z.infer<typeof OrderDetailDto>;
