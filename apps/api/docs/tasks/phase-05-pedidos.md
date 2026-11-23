@@ -137,6 +137,14 @@ El comensal consulta el estado de su pedido con el enlace no adivinable que reci
 - [ ] El DTO no contiene `customerPhone`, calle ni número (prueba con esquema estricto).
 - [ ] `ETag` sin cambios → 304; tras una transición → 200 con nuevo `ETag`.
 
+### Decisiones al implementar (acordadas el 2026-11-22)
+
+- **Token:** todo valor se hashea y se busca, aunque su formato sea inválido. No hay salida temprana que distinga por tiempo un token malformado de uno inexistente.
+- **DTO:** se limita a la lista de «Alcance». No lleva nombre del comensal, notas, opciones, costo de envío, motivo de rechazo ni `isTest`. La colonia va en `deliveryNeighborhood` (`null` fuera de domicilio).
+- **`ETag`:** solo `orders.version`. Si cambia el nombre o teléfono de la sucursal, una página abierta lo ve en la siguiente transición o al recargar.
+- **Disponibilidad:** el seguimiento sigue funcionando con la organización suspendida o la sucursal borrada.
+- **Vigencia:** el enlace no vence por ahora; la retención se decide con ADR-015 en T26.
+
 ---
 
 ## T23 — Panel de pedidos y máquina de estados
