@@ -2,6 +2,14 @@
 
 Auditoría del 2026-11-17 que cruza los contratos de `packages/contracts` y las rutas de `docs/api/openapi.json` contra las pantallas de `apps/web`. Es la base de las tasks 16 a 33.
 
+## Base de la auditoría
+
+| Corrida | Fecha      | Commit auditado de `main`                                    | Backend cubierto       | Tasks del frontend |
+| ------- | ---------- | ------------------------------------------------------------ | ---------------------- | ------------------ |
+| 1       | 2026-11-17 | `7b98fddc69864855413dbd3cfde49800279e5c52` (después del #74) | T01–T20c (fases B1–B4) | task-16 a task-33  |
+
+La siguiente corrida compara contra el commit de la última fila: `git diff <commit>..main -- packages/contracts/src docs/api/openapi.json`. Al terminar, agrega su propia fila. El procedimiento está en [`PROMPT-PARIDAD.md`](PROMPT-PARIDAD.md).
+
 ## Regla
 
 **La API es la única fuente de verdad y dicta el alcance del frontend.**
