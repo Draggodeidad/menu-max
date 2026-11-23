@@ -26,7 +26,7 @@ PHONE_HASH_SALT=cambia-esto-por-una-sal-de-32-caracteres-o-mas
 
 # Secreto que deriva el token de seguimiento de cada pedido (T21, ADR-013). Mínimo 32
 # caracteres; distinto de los demás secretos.
-ORDER_TOKEN_SECRET=cambia-esto-por-un-secreto-de-32-caracteres-o-mas
+ORDER_TOKEN_SECRET=
 
 # Dominio público del bucket R2 MEDIA (T17), sin diagonal final. En staging y production es el
 # dominio propio conectado al bucket (nunca r2.dev); lo configura un humano. En development el
