@@ -8,7 +8,9 @@
     "lint": "oxlint --deny-warnings . && oxfmt --check .",
     "test": "vitest run",
     "openapi:export": "node scripts/export-openapi.mjs && pnpm -w exec oxfmt docs/api/openapi.json",
-    "db:migrate:local": "wrangler d1 migrations apply DB --local"
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "release:prepare": "node scripts/prepare-release.mjs",
+    "release:smoke": "node scripts/smoke-release.mjs"
   },
   "dependencies": {
     "@menu-max/contracts": "workspace:*",
