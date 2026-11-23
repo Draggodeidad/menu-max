@@ -149,7 +149,7 @@ El comensal consulta el estado de su pedido con el enlace no adivinable que reci
 
 ## T23 — Panel de pedidos y máquina de estados
 
-**Fase:** B5 · **Depende de:** T21 · **ADR:** 007 · **Rama sugerida:** `feat/t23-panel-pedidos`
+**Fase:** B5 · **Depende de:** T21 · **ADR:** 007, 021 · **Rama sugerida:** `feat/t23-panel-pedidos`
 
 ### Objetivo
 
@@ -201,6 +201,7 @@ El personal ve los pedidos de sus sucursales casi en tiempo real y los avanza un
   - el tablero (`active` o `since`) usa el máximo de `updated_at`, el conteo y la suma de `version` de los pedidos en curso;
   - `done` usa la huella de la página, para no contar todo el historial;
   - las páginas con `cursor` no llevan `ETag`.
-- **Concurrencia:** la `version` se compara antes que la política, así que quien llega tarde recibe `CONFLICT`. Historial y outbox se insertan antes del `update` con la misma condición de `version` y estado; no hace falta el índice único `(pedido, to_status)` de `DATABASE.md`, y T23 no lleva migración.
+- **Concurrencia:** la `version` se compara antes que la política, así que quien llega tarde recibe `CONFLICT`. Historial y outbox se insertan antes del `update` con la misma condición de `version` y estado; no hace falta el índice único `(pedido, to_status)` que proponía el diseño original.
+- **Índice (migración `0015`):** `(organization_id, branch_id, id)` para paginar terminados. El tablero y `since` ordenan con `+id` para no recorrer el historial (ADR-021).
 - **DTOs:** el listado no lleva teléfono ni dirección. El motivo de rechazo o cancelación solo lo ve el panel, como se acordó en T22.
 - **Motivo:** enviarlo en una transición que no es `rejected` ni `cancelled` responde `400`.
