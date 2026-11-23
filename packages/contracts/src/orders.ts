@@ -25,6 +25,14 @@ export const ORDER_STATUSES = [
 export const OrderStatus = z.enum(ORDER_STATUSES);
 export type OrderStatus = z.infer<typeof OrderStatus>;
 
+/** Estados sin transición posible: al llegar a uno, WEB detiene el polling del seguimiento. */
+export const FINAL_STATUSES = [
+  "completed",
+  "delivered",
+  "rejected",
+  "cancelled",
+] as const satisfies readonly OrderStatus[];
+
 /** Mesa, recoger en sucursal o domicilio. Mismos nombres que `BranchModes`. */
 export const ORDER_MODES = ["table", "pickup", "delivery"] as const;
 export const OrderMode = z.enum(ORDER_MODES);
@@ -153,3 +161,34 @@ export const OrderCreatedDto = z
   })
   .meta({ id: "OrderCreatedDto" });
 export type OrderCreatedDto = z.infer<typeof OrderCreatedDto>;
+
+/**
+ * Seguimiento público del pedido (T22). Quien tiene el enlace ve solo esto: sin nombre ni teléfono
+ * del comensal, notas, opciones ni dirección (de un domicilio, solo la colonia).
+ */
+export const PublicOrderDto = z
+  .strictObject({
+    number: z.int().positive(),
+    status: OrderStatus,
+    /** `true` si `status` está en `FINAL_STATUSES`: WEB deja de consultar. */
+    isFinal: z.boolean(),
+    mode: OrderMode,
+    tableNumber: z.int().positive().nullable(),
+    deliveryNeighborhood: z.string().nullable(),
+    items: z.array(
+      z.strictObject({
+        name: z.string(),
+        variantName: z.string().nullable(),
+        quantity: z.int().positive(),
+      }),
+    ),
+    totalCents: z.int().nonnegative(),
+    createdAt: z.iso.datetime(),
+    history: z.array(z.strictObject({ status: OrderStatus, at: z.iso.datetime() })),
+    businessName: z.string(),
+    branchName: z.string(),
+    /** Teléfono público de la sucursal, si lo capturó. */
+    contactPhone: z.string().nullable(),
+  })
+  .meta({ id: "PublicOrderDto" });
+export type PublicOrderDto = z.infer<typeof PublicOrderDto>;
