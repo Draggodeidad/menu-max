@@ -4,7 +4,12 @@ Diseño de datos listo para implementar en `packages/database`: alcance, modelo,
 
 **Fuentes.** `README.md`, `ADR.md` (001–019), `apps/api/AGENTS.md`, `apps/web/AGENTS.md`, `DESIGN.md`, y el repositorio `Draggodeidad/menu-max` en el commit `119a9ea` (incluye `apps/api/docs/PLAN-BACKEND.md` y los datos simulados del frontend en `apps/web/src/lib/server/demo.ts`).
 
-**Estado del repositorio.** No existe `packages/database` ni ninguna migración (T03 está pendiente; `wrangler.jsonc` aún no declara el binding `DB`). Por eso estas son las migraciones iniciales: no hay datos que preservar ni cambios incrementales que proponer.
+> **Estado de este documento (2026-11-22).** Nació como diseño previo a la implementación. La fuente de verdad es `packages/database/src/schema/` y sus migraciones en `packages/database/migrations/`.
+>
+> - **Sincronizado con el código hasta T23 (migración `0015`):** pedidos y mensajería en §1.2, §1.3, §2.2, §2.3, §2.4, §4.4, §5.2 y §5.4.
+> - **Diseño original, sin sincronizar:** los demás dominios, los archivos SQL de §3.2 y las consultas de §4.1, §4.2, §4.3 y §4.5. Usan nombres anteriores (`order_number`, `dine_in`, `order_seq`) y no corren contra el esquema real.
+
+**Estado del repositorio al escribir el diseño.** No existía `packages/database` ni ninguna migración (T03 estaba pendiente; `wrangler.jsonc` aún no declaraba el binding `DB`). Por eso §3.2 propone migraciones iniciales.
 
 **Cómo se verificó.** Apliqué las siete migraciones desde cero en SQLite 3.53 con llaves foráneas activas y ejecuté todas las consultas y comprobaciones de la sección 4; los resultados que cito salen de esa corrida. No se ejecutó contra D1 ni Miniflare: esa corrida corresponde a las pruebas de integración de T03 (`wrangler d1 migrations apply DB --local`).
 
@@ -30,7 +35,7 @@ Diseño de datos listo para implementar en `packages/database`: alcance, modelo,
 | Ajustes: modalidades, horarios, zonas, mesas, tema, WhatsApp              | DESIGN §7.1 F                   | `branches`, `business_hours`, `delivery_zones`, `storefront_themes`, `media_assets`                                                                |
 | Catálogo: categorías, productos, variantes, extras, fotos, disponibilidad | README §2, T17–T18              | `categories`, `products`, `product_variants`, `option_groups`, `options`, `media_assets`, `menus.menu_version`                                     |
 | Menú público y QR (`/m/[slug]`, `?mesa=n`)                                | DESIGN §7.2 H, ADR-014, ADR-017 | Lectura de catálogo, tema, horarios y zonas por `branches.slug`                                                                                    |
-| Pedido como invitado en Mesa, Recoger o Domicilio                         | DESIGN §7.2 I, ADR-010, ADR-013 | `orders`, `order_items`, `order_status_history`, `notification_outbox`, `idempotency_keys`, `branches.order_seq`                                   |
+| Pedido como invitado en Mesa, Recoger o Domicilio                         | DESIGN §7.2 I, ADR-010, ADR-013 | `orders`, `order_items`, `order_status_history`, `notification_outbox`, `idempotency_keys`, `branches.next_order_number`                           |
 | Seguimiento por token (`/pedido/[token]`)                                 | ADR-013                         | Lectura de `orders`, `order_items`, `order_status_history`                                                                                         |
 | Operar pedidos en el panel (aceptar, preparar, listo, entregar, rechazar) | DESIGN §7.1 D, ADR-007          | `orders`, `order_status_history`, `notification_outbox`                                                                                            |
 | Aviso por WhatsApp al negocio y, con consentimiento, al comensal          | ADR-011, ADR-019                | `notification_outbox`, `notification_deliveries`                                                                                                   |
@@ -42,33 +47,33 @@ Las 31 tablas son exactamente las del ADR-016. No agregué ninguna.
 
 Todos son reversibles. La última columna dice qué costaría cambiarlos.
 
-| #   | Supuesto                                                                                                                                       | Motivo                                                                                                                           | Para revertirlo                                                              |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| S1  | El slug público vive en `branches`, es único global, no cambia una vez publicado y no se libera al borrar la sucursal.                         | ADR-016 fija un menú por sucursal y el pedido se registra contra una sucursal; el QR impreso debe ser permanente.                | Mover el slug a `businesses` es una migración _expand/contract_.             |
-| S2  | Las mesas son un número: `branches.table_count` y `orders.table_number`. El QR no se guarda; se genera desde `slug` y `mesa`.                  | ADR-016 no incluye `tables` ni `qr_codes`; el frontend ya maneja `mesas: number`.                                                | Tabla `tables` con token propio (ver 1.4).                                   |
-| S3  | Un solo estado final de éxito, `delivered`, para las tres modalidades.                                                                         | El README sugiere `completed` y `delivered`; DESIGN y el frontend usan "Entregado" / `delivered` en todas.                       | Agregar `completed` al CHECK (reconstrucción de `orders`, §3.3).             |
-| S4  | Los precios incluyen impuestos; no hay columnas de impuesto. `discount_cents` existe pero vale 0 en el MVP.                                    | "Impuestos" sigue pendiente en README §20. La columna de descuento evita reconstruir `orders` para cambiar la fórmula del total. | Columna `tax_cents` y nuevo CHECK del total (reconstrucción).                |
-| S5  | Entrega por zonas con lista de códigos postales en JSON; la dirección se guarda como una línea más código postal y referencias.                | ADR-018 (Propuesto); el checkout actual tiene un solo campo de dirección.                                                        | Si ADR-018 cambia, solo cambia `delivery_zones.postal_codes`.                |
-| S6  | `orders.anonymized_at` y `customer_phone_hash` existen desde ahora.                                                                            | ADR-015 (Propuesto). Agregar después el CHECK de anonimización obligaría a reconstruir `orders`.                                 | Si se rechaza ADR-015, las columnas quedan sin uso.                          |
-| S7  | Un número de WhatsApp para avisos por sucursal (`branches.notify_whatsapp_*`); el consentimiento del comensal se guarda por pedido.            | `/crear` pide un solo "WhatsApp para avisos"; ADR-016 quitó `notification_preferences`.                                          | Varios destinatarios requieren una tabla nueva.                              |
-| S8  | Los pedidos de prueba del dueño llevan `orders.is_test = 1`.                                                                                   | ADR-008 permite el pedido de prueba sin verificar; así no cuentan en estadísticas ni generan avisos.                             | Quitar la columna.                                                           |
-| S9  | Límites del plan como columnas (`NULL` = sin límite); se siembra un plan `free` sin límites; los estados de `subscriptions` son provisionales. | "Planes" está pendiente en README §20 y el onboarding necesita un plan.                                                          | Actualizar la fila del plan; cambiar estados es reconstruir `subscriptions`. |
-| S10 | Un grupo de opciones pertenece a un solo producto.                                                                                             | ADR-016 no incluye tabla puente. "Duplicar" producto copia sus grupos.                                                           | Tabla puente con ADR.                                                        |
-| S11 | El tema se guarda como JSON (`storefront_themes.config`) más dos FKs a imágenes.                                                               | PLAN-BACKEND: "JSON validado por Zod".                                                                                           | Pasar a columnas es _expand/contract_.                                       |
-| S12 | La suspensión se modela en `organizations.status`. No hay suspensión por usuario.                                                              | ADR-016 solo permite agregar `email_status` a `users`.                                                                           | Ver 1.3, punto 3.                                                            |
-| S13 | `payment_method` admite `cash` y `external`; `paid_at` registra el cobro manual.                                                               | README §2: efectivo y registro manual de pago externo.                                                                           | Los pagos en línea irán en tablas propias (1.4).                             |
-| S14 | Horarios en minutos desde medianoche; si `closes_min ≤ opens_min` el intervalo cierra al día siguiente.                                        | Los negocios nocturnos cierran después de medianoche.                                                                            | Solo cambia la interpretación en el servicio.                                |
-| S15 | `idempotency_keys` agrega `scope`, `resource_id` y `created_at` a las columnas del ADR-013.                                                    | El onboarding consulta la llave antes de que exista la organización.                                                             | Son columnas adicionales.                                                    |
-| S16 | `audit_logs.organization_id` admite `NULL`.                                                                                                    | El login y el cambio de contraseña no ocurren dentro de un tenant.                                                               | —                                                                            |
-| S17 | No hay `businesses.slug`.                                                                                                                      | PLAN-BACKEND lo menciona, pero ninguna ruta lo usa: las privadas van por id y la pública por el slug de la sucursal.             | `ALTER TABLE … ADD COLUMN` más índice único.                                 |
+| #   | Supuesto                                                                                                                                                                         | Motivo                                                                                                                          | Para revertirlo                                                                                                             |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| S1  | El slug público vive en `branches`, es único global, no cambia una vez publicado y no se libera al borrar la sucursal.                                                           | ADR-016 fija un menú por sucursal y el pedido se registra contra una sucursal; el QR impreso debe ser permanente.               | Mover el slug a `businesses` es una migración _expand/contract_.                                                            |
+| S2  | Las mesas son un número: `branches.table_count` y `orders.table_number`. El QR no se guarda; se genera desde `slug` y `mesa`.                                                    | ADR-016 no incluye `tables` ni `qr_codes`; el frontend ya maneja `mesas: number`.                                               | Tabla `tables` con token propio (ver 1.4).                                                                                  |
+| S3  | Dos estados finales de éxito: `completed` (mesa y recoger) y `delivered` (domicilio).                                                                                            | T23 y ADR-021: la modalidad decide la salida de `ready`.                                                                        | Unificarlos exige migrar los datos y reconstruir `orders` (§3.3).                                                           |
+| S4  | Los precios incluyen impuestos; no hay columnas de impuesto ni de descuento.                                                                                                     | "Impuestos" sigue pendiente; T21 calcula `total = subtotal + envío`.                                                            | Columnas nuevas y nuevo CHECK del total (reconstrucción).                                                                   |
+| S5  | Entrega por zonas con lista de códigos postales en JSON; la dirección se guarda por campos: calle, número, colonia, ciudad, código postal y referencias.                         | ADR-018 y T21.                                                                                                                  | Si ADR-018 cambia, solo cambia `delivery_zones.postal_codes`.                                                               |
+| S6  | `customer_phone_hash` existe desde T21; `orders.anonymized_at` todavía no.                                                                                                       | ADR-015 sigue Propuesto.                                                                                                        | Nombre, teléfono y dirección son obligatorios hoy: anonimizar (T26) exige reconstruir `orders` o usar valores de reemplazo. |
+| S7  | Un número de WhatsApp para avisos por sucursal (`branches.alert_whatsapp`, `alert_opt_in_at`); el consentimiento del comensal se guarda por pedido (`customer_whatsapp_opt_in`). | `/crear` pide un solo "WhatsApp para avisos"; ADR-016 quitó `notification_preferences`.                                         | Varios destinatarios requieren una tabla nueva.                                                                             |
+| S8  | Los pedidos de prueba llevan `orders.is_test = 1`.                                                                                                                               | ADR-008 permite el pedido de prueba sin verificar. No generan avisos si ningún dueño tiene el correo verificado (T21, ADR-021). | Quitar la columna.                                                                                                          |
+| S9  | Límites del plan como columnas (`NULL` = sin límite); se siembra un plan `free` sin límites; los estados de `subscriptions` son provisionales.                                   | "Planes" está pendiente en README §20 y el onboarding necesita un plan.                                                         | Actualizar la fila del plan; cambiar estados es reconstruir `subscriptions`.                                                |
+| S10 | Un grupo de opciones pertenece a un solo producto.                                                                                                                               | ADR-016 no incluye tabla puente. "Duplicar" producto copia sus grupos.                                                          | Tabla puente con ADR.                                                                                                       |
+| S11 | El tema se guarda como JSON (`storefront_themes.config`) más dos FKs a imágenes.                                                                                                 | PLAN-BACKEND: "JSON validado por Zod".                                                                                          | Pasar a columnas es _expand/contract_.                                                                                      |
+| S12 | La suspensión se modela en `organizations.status`. No hay suspensión por usuario.                                                                                                | ADR-016 solo permite agregar `email_status` a `users`.                                                                          | Ver 1.3, punto 3.                                                                                                           |
+| S13 | `payment_method` solo admite `cash`; no hay registro del cobro.                                                                                                                  | Los pagos en línea están fuera del MVP.                                                                                         | Otro valor exige reconstruir `orders`; los pagos en línea irán en tablas propias (1.4).                                     |
+| S14 | Horarios en minutos desde medianoche; si `closes_min ≤ opens_min` el intervalo cierra al día siguiente.                                                                          | Los negocios nocturnos cierran después de medianoche.                                                                           | Solo cambia la interpretación en el servicio.                                                                               |
+| S15 | `idempotency_keys` agrega `scope`, `resource_id` y `created_at` a las columnas del ADR-013.                                                                                      | El onboarding consulta la llave antes de que exista la organización.                                                            | Son columnas adicionales.                                                                                                   |
+| S16 | `audit_logs.organization_id` admite `NULL`.                                                                                                                                      | El login y el cambio de contraseña no ocurren dentro de un tenant.                                                              | —                                                                                                                           |
+| S17 | No hay `businesses.slug`.                                                                                                                                                        | PLAN-BACKEND lo menciona, pero ninguna ruta lo usa: las privadas van por id y la pública por el slug de la sucursal.            | `ALTER TABLE … ADD COLUMN` más índice único.                                                                                |
 
 ### 1.3 Puntos que necesitan tu decisión
 
-1. **Token de seguimiento y respuesta idempotente.** ADR-013 pide guardar la respuesta para repetirla y, a la vez, no guardar tokens en claro. La respuesta de crear pedido lleva el enlace de seguimiento, así que ambas reglas chocan. El esquema no guarda el token: `idempotency_keys.response` lleva el cuerpo sin token y `resource_id` apunta al pedido. Para reconstruir el enlace en un reintento hay dos caminos: (a) derivar el token con `HMAC-SHA256(secreto, orderId)` en vez de generarlo al azar, lo que permite recalcularlo siempre y exige un secreto nuevo y una nota en ADR-013; (b) mantenerlo aleatorio y guardar la respuesta completa durante 24 h. Recomiendo (a). El esquema sirve para los dos.
-2. **ADR-015 y ADR-018 siguen en Propuesto** y el esquema ya depende de ellos (S5, S6). Conviene aceptarlos antes de T16 y T21.
+1. **Token de seguimiento y respuesta idempotente.** _Resuelto en T21 (enmienda de ADR-013):_ el token se deriva con HMAC del `orderId` y la base guarda solo su SHA-256.
+2. **ADR-015 sigue en Propuesto.** ADR-018 ya está aceptado. La retención define si T26 reconstruye `orders` (S6).
 3. **Suspensión de cuenta.** ADR-008 describe una cuenta "Suspendida" con sesiones revocadas, pero no dice dónde se guarda. Aquí está a nivel de organización. Si debe ser por usuario, hace falta una columna en `users` y su ADR.
 4. **Roles del frontend.** La demo de Ajustes usa "cocina" y "mesera"; el backend define `owner`, `admin` y `staff`. El esquema sigue al backend: ambos son `staff`.
-5. **Política de cancelación.** La base solo fija el catálogo de estados. Desde qué estados se puede cancelar o rechazar sigue pendiente (README §20, "Operación") y vive en `ORDER_TRANSITIONS` de `contracts`.
+5. **Política de cancelación.** _Resuelto en ADR-021:_ se rechaza desde `pending` y se cancela desde `accepted`, `preparing`, `ready` y `out_for_delivery`. La matriz vive en `ORDER_TRANSITIONS` de `contracts`.
 
 ### 1.4 Funciones futuras
 
@@ -131,11 +136,10 @@ erDiagram
     delivery_zones |o--o{ orders : "cobra envio"
     orders ||--|{ order_items : "incluye"
     products ||--o{ order_items : "vendido en"
-    product_variants |o--o{ order_items : "variante"
     orders ||--|{ order_status_history : "registra"
     organization_members |o--o{ order_status_history : "actua"
-    orders ||--o{ notification_outbox : "emite"
-    notification_outbox ||--o{ notification_deliveries : "se entrega en"
+    organizations ||--o{ notification_outbox : "emite"
+    orders ||--o{ notification_deliveries : "se entrega en"
     organizations ||--o{ idempotency_keys : "deduplica"
     organizations |o--o{ audit_logs : "audita"
     users |o--o{ audit_logs : "actua"
@@ -156,7 +160,7 @@ erDiagram
         integer pickup_enabled
         integer delivery_enabled
         integer table_count
-        integer order_seq
+        integer next_order_number
     }
     menus {
         text id PK
@@ -176,9 +180,10 @@ erDiagram
         text id PK
         text organization_id FK
         text branch_id FK
-        integer order_number
+        text menu_id FK
+        integer number
         text tracking_token_hash UK
-        text mode "dine_in, pickup, delivery"
+        text mode "table, pickup, delivery"
         text status
         integer table_number
         text delivery_zone_id FK
@@ -191,8 +196,8 @@ erDiagram
         text id PK
         text order_id FK
         text product_id FK
-        text variant_id FK
         text product_name "snapshot"
+        text variant_name "snapshot"
         text options_snapshot "JSON"
         integer unit_price_cents
         integer quantity
@@ -200,8 +205,9 @@ erDiagram
     }
     notification_outbox {
         text id PK
-        text order_id FK
+        text organization_id FK
         text event
+        text payload_json "orderId, toStatus"
         text status
     }
     verifications {
@@ -682,42 +688,47 @@ Cada tabla indica qué reglas garantiza la base y cuáles quedan al backend. "FK
 
 **`orders`** — Pedido. Fuente de verdad del flujo; contiene los únicos datos personales del comensal.
 
-| Columna                   | Tipo    | Nulo | Default     | Notas                                                         |
-| ------------------------- | ------- | ---- | ----------- | ------------------------------------------------------------- |
-| `id`                      | TEXT    | no   | —           | PK. UUIDv7                                                    |
-| `organization_id`         | TEXT    | no   | —           | Tenant dueño de la fila                                       |
-| `branch_id`               | TEXT    | no   | —           | FK compuesta → `branches`                                     |
-| `order_number`            | INTEGER | no   | —           | Número visible (#1042), por sucursal. No sirve para consultar |
-| `tracking_token_hash`     | TEXT    | no   | —           | SHA-256 del token de seguimiento                              |
-| `mode`                    | TEXT    | no   | —           | `dine_in` (Mesa), `pickup` (Recoger), `delivery` (Domicilio)  |
-| `status`                  | TEXT    | no   | `'pending'` | Máquina de estados; ver §5.2                                  |
-| `is_test`                 | INTEGER | no   | `0`         | 1 = pedido de prueba del dueño; no cuenta ni notifica         |
-| `table_number`            | INTEGER | sí   | —           | Mesa; solo en `dine_in`                                       |
-| `customer_name`           | TEXT    | sí   | —           | PII; se anonimiza                                             |
-| `customer_phone`          | TEXT    | sí   | —           | PII, E.164; se anonimiza                                      |
-| `customer_phone_hash`     | TEXT    | sí   | —           | SHA-256 con sal del entorno; para cuotas y bloqueos           |
-| `customer_notify_consent` | INTEGER | no   | `0`         | 1 = aceptó avisos por WhatsApp                                |
-| `delivery_address`        | TEXT    | sí   | —           | PII; calle, número y colonia                                  |
-| `delivery_postal_code`    | TEXT    | sí   | —           | PII; 5 dígitos                                                |
-| `delivery_references`     | TEXT    | sí   | —           | PII; referencias                                              |
-| `delivery_zone_id`        | TEXT    | sí   | —           | FK compuesta → `delivery_zones`; se conserva tras anonimizar  |
-| `notes`                   | TEXT    | sí   | —           | Instrucciones del comensal; se anonimizan                     |
-| `payment_method`          | TEXT    | no   | `'cash'`    | `cash` o `external` (terminal física)                         |
-| `paid_at`                 | INTEGER | sí   | —           | Registro manual del cobro                                     |
-| `currency`                | TEXT    | no   | —           | Copiada de la sucursal                                        |
-| `subtotal_cents`          | INTEGER | no   | —           | Suma de líneas                                                |
-| `discount_cents`          | INTEGER | no   | `0`         | Siempre 0 en el MVP                                           |
-| `delivery_fee_cents`      | INTEGER | no   | `0`         | Tarifa de la zona al momento del pedido                       |
-| `total_cents`             | INTEGER | no   | —           | subtotal − descuento + envío                                  |
-| `version`                 | INTEGER | no   | `1`         | Concurrencia optimista                                        |
-| `anonymized_at`           | INTEGER | sí   | —           | Cuándo se borró la PII (ADR-015)                              |
-| `created_at`              | INTEGER | no   | —           | ms UTC                                                        |
-| `updated_at`              | INTEGER | no   | —           | ms UTC                                                        |
+| Columna                    | Tipo    | Nulo | Default     | Notas                                                         |
+| -------------------------- | ------- | ---- | ----------- | ------------------------------------------------------------- |
+| `id`                       | TEXT    | no   | —           | PK. UUIDv7                                                    |
+| `organization_id`          | TEXT    | no   | —           | Tenant dueño de la fila                                       |
+| `branch_id`                | TEXT    | no   | —           | FK compuesta → `branches`                                     |
+| `menu_id`                  | TEXT    | no   | —           | FK compuesta → `menus`                                        |
+| `number`                   | INTEGER | no   | —           | Número visible (#1042), por sucursal. No sirve para consultar |
+| `status`                   | TEXT    | no   | `'pending'` | Máquina de estados; ver §5.2                                  |
+| `mode`                     | TEXT    | no   | —           | `table` (Mesa), `pickup` (Recoger), `delivery` (Domicilio)    |
+| `table_number`             | INTEGER | sí   | —           | Mesa; solo en `table`                                         |
+| `customer_name`            | TEXT    | no   | —           | PII                                                           |
+| `customer_phone`           | TEXT    | no   | —           | PII, E.164; solo sale en el detalle del panel                 |
+| `customer_phone_hash`      | TEXT    | no   | —           | SHA-256 con `PHONE_HASH_SALT`; para cuotas                    |
+| `customer_whatsapp_opt_in` | INTEGER | no   | `0`         | 1 = aceptó avisos por WhatsApp                                |
+| `delivery_street`          | TEXT    | sí   | —           | PII; solo en `delivery`                                       |
+| `delivery_number`          | TEXT    | sí   | —           | PII; solo en `delivery`                                       |
+| `delivery_neighborhood`    | TEXT    | sí   | —           | PII; única parte de la dirección que ve el seguimiento        |
+| `delivery_city`            | TEXT    | sí   | —           | PII; solo en `delivery`                                       |
+| `delivery_postal_code`     | TEXT    | sí   | —           | PII; 5 dígitos                                                |
+| `delivery_references`      | TEXT    | sí   | —           | PII; referencias                                              |
+| `delivery_zone_id`         | TEXT    | sí   | —           | FK compuesta → `delivery_zones`                               |
+| `subtotal_cents`           | INTEGER | no   | —           | Suma de líneas                                                |
+| `delivery_fee_cents`       | INTEGER | no   | `0`         | Tarifa de la zona al momento del pedido                       |
+| `total_cents`              | INTEGER | no   | —           | subtotal + envío                                              |
+| `currency`                 | TEXT    | no   | `'MXN'`     | Solo `MXN`                                                    |
+| `payment_method`           | TEXT    | no   | `'cash'`    | Solo `cash`                                                   |
+| `notes`                    | TEXT    | sí   | —           | Instrucciones del comensal                                    |
+| `is_test`                  | INTEGER | no   | `0`         | 1 = pedido de prueba de un miembro; lo decide el servidor     |
+| `tracking_token_hash`      | TEXT    | no   | —           | SHA-256 del token de seguimiento                              |
+| `version`                  | INTEGER | no   | `1`         | Concurrencia optimista                                        |
+| `created_at`               | INTEGER | no   | —           | ms UTC                                                        |
+| `updated_at`               | INTEGER | no   | —           | ms UTC                                                        |
 
-- **Claves y unicidad:** PK `id`. Únicos: `(organization_id, id)`, `tracking_token_hash`, `(organization_id, branch_id, order_number)`.
-- **Borrado:** Nunca. Tampoco se pueden borrar su sucursal, su zona ni su organización.
-- **Garantiza la base:** Sucursal y zona del mismo tenant; el total cuadra; mesa solo en `dine_in`; dirección obligatoria en domicilio y prohibida fuera de él; `out_for_delivery` solo en domicilio; un pedido anonimizado no conserva PII.
-- **Valida el backend:** Precios y totales recalculados; modalidad activa, sucursal abierta, zona que atiende el código postal; mesa entre 1 y `table_count`; transiciones válidas y permisos; nombre y teléfono obligatorios al crear; cuotas y Turnstile.
+- **Claves y unicidad:** PK `id`. Únicos: `(organization_id, id)`, `tracking_token_hash`, `(organization_id, branch_id, number)`.
+- **Índices:**
+  - `(organization_id, branch_id, status, updated_at)`: tablero, huella del `ETag` y `since`;
+  - `(organization_id, branch_id, id)`: historial de terminados por cursor (ADR-021, migración `0015`);
+  - `(branch_id, customer_phone_hash, created_at)`: cuota por teléfono.
+- **Borrado:** Nunca. Tampoco se pueden borrar su sucursal, su menú, su zona ni su organización.
+- **Garantiza la base:** Sucursal, menú y zona del mismo tenant; el total cuadra; mesa solo en `table`; dirección y zona obligatorias en domicilio y prohibidas fuera de él.
+- **Valida el backend:** Precios y totales recalculados; modalidad activa, sucursal abierta, zona que atiende el código postal; mesa entre 1 y `table_count`; transiciones válidas para la modalidad (`out_for_delivery` solo en domicilio) y permisos; cuotas y Turnstile.
 
 **`order_items`** — Líneas del pedido con el snapshot de lo que se vendió.
 
@@ -726,86 +737,79 @@ Cada tabla indica qué reglas garantiza la base y cuáles quedan al backend. "FK
 | `id`               | TEXT    | no   | —       | PK. UUIDv7                                                      |
 | `organization_id`  | TEXT    | no   | —       | Tenant dueño de la fila                                         |
 | `order_id`         | TEXT    | no   | —       | FK compuesta → `orders`                                         |
-| `position`         | INTEGER | no   | —       | Orden de la línea (1..50)                                       |
 | `product_id`       | TEXT    | no   | —       | FK compuesta → `products`; para estadísticas                    |
-| `variant_id`       | TEXT    | sí   | —       | FK compuesta → `product_variants` (con `product_id`)            |
 | `product_name`     | TEXT    | no   | —       | Snapshot del nombre                                             |
 | `variant_name`     | TEXT    | sí   | —       | Snapshot de la variante                                         |
 | `options_snapshot` | TEXT    | no   | `'[]'`  | JSON: `[{groupId, groupName, optionId, name, priceDeltaCents}]` |
 | `unit_price_cents` | INTEGER | no   | —       | Precio unitario final: variante o base + recargos               |
 | `quantity`         | INTEGER | no   | —       | 1 a 99                                                          |
 | `line_total_cents` | INTEGER | no   | —       | unitario × cantidad                                             |
-| `notes`            | TEXT    | sí   | —       | Instrucciones de la línea; se anonimizan                        |
-| `created_at`       | INTEGER | no   | —       | ms UTC                                                          |
+| `notes`            | TEXT    | sí   | —       | Instrucciones de la línea                                       |
 
-- **Claves y unicidad:** PK `id`. Único `(organization_id, order_id, position)`.
+- **Claves e índices:** PK `id`. Índice `(organization_id, order_id)`. El orden de las líneas es el de inserción (`rowid`).
 - **Borrado:** Nunca.
-- **Garantiza la base:** Pedido, producto y variante del mismo tenant; la variante es de ese producto; importe de línea = unitario × cantidad; cantidad 1–99.
-- **Valida el backend:** Que el producto sea de la sucursal del pedido; máximo 50 líneas; que el snapshot corresponda a lo leído del catálogo.
+- **Garantiza la base:** Pedido y producto del mismo tenant; importe de línea = unitario × cantidad; cantidad 1–99.
+- **Valida el backend:** Que el producto sea del menú del pedido; máximo 50 líneas; que el snapshot corresponda a lo leído del catálogo.
 
 **`order_status_history`** — Bitácora de transiciones: quién, cuándo y por qué.
 
-| Columna           | Tipo    | Nulo | Default | Notas                                              |
-| ----------------- | ------- | ---- | ------- | -------------------------------------------------- |
-| `id`              | TEXT    | no   | —       | PK. UUIDv7                                         |
-| `organization_id` | TEXT    | no   | —       | Tenant dueño de la fila                            |
-| `order_id`        | TEXT    | no   | —       | FK compuesta → `orders`                            |
-| `from_status`     | TEXT    | sí   | —       | `NULL` en la creación                              |
-| `to_status`       | TEXT    | no   | —       | Estado alcanzado                                   |
-| `actor_type`      | TEXT    | no   | —       | `customer`, `member` o `system`                    |
-| `actor_member_id` | TEXT    | sí   | —       | FK compuesta → `organization_members`              |
-| `reason`          | TEXT    | sí   | —       | Motivo de rechazo o cancelación; lo ve el comensal |
-| `created_at`      | INTEGER | no   | —       | ms UTC                                             |
+| Columna           | Tipo    | Nulo | Default | Notas                                                  |
+| ----------------- | ------- | ---- | ------- | ------------------------------------------------------ |
+| `id`              | TEXT    | no   | —       | PK. UUIDv7                                             |
+| `organization_id` | TEXT    | no   | —       | Tenant dueño de la fila                                |
+| `order_id`        | TEXT    | no   | —       | FK compuesta → `orders`                                |
+| `from_status`     | TEXT    | sí   | —       | `NULL` en la creación                                  |
+| `to_status`       | TEXT    | no   | —       | Estado alcanzado                                       |
+| `actor_member_id` | TEXT    | sí   | —       | FK compuesta → `organization_members`; `NULL` al crear |
+| `reason`          | TEXT    | sí   | —       | Motivo de rechazo o cancelación; solo lo ve el panel   |
+| `created_at`      | INTEGER | no   | —       | ms UTC                                                 |
 
-- **Claves y unicidad:** PK `id`. Único `(organization_id, order_id, to_status)`.
+- **Claves e índices:** PK `id`. Índice `(organization_id, order_id)`, sin unicidad por estado (ADR-021).
 - **Borrado:** Nunca.
-- **Garantiza la base:** El actor es miembro del mismo tenant; cada estado se registra una sola vez por pedido.
-- **Valida el backend:** Motivo obligatorio al rechazar; sin PII en `reason`.
+- **Garantiza la base:** El actor es miembro del mismo tenant; los estados pertenecen al catálogo.
+- **Valida el backend:** Motivo obligatorio al rechazar o cancelar. Una fila por transición aplicada: se inserta solo si el pedido sigue en la `version` y el estado leídos.
 
 #### Mensajería y operación
 
-**`notification_outbox`** — Outbox transaccional de avisos de pedido (ADR-011). Solo guarda ids; el mensaje se arma al enviar.
+**`notification_outbox`** — Outbox transaccional de avisos de pedido (ADR-011). No guarda datos personales; el mensaje se arma al enviar.
 
-| Columna           | Tipo    | Nulo | Default     | Notas                                |
-| ----------------- | ------- | ---- | ----------- | ------------------------------------ |
-| `id`              | TEXT    | no   | —           | PK. UUIDv7                           |
-| `organization_id` | TEXT    | no   | —           | Tenant dueño de la fila              |
-| `order_id`        | TEXT    | no   | —           | FK compuesta → `orders`              |
-| `event`           | TEXT    | no   | —           | `order.created`, `order.accepted`, … |
-| `status`          | TEXT    | no   | `'pending'` | `pending` o `published` (en la cola) |
-| `attempts`        | INTEGER | no   | `0`         | Intentos de publicación              |
-| `created_at`      | INTEGER | no   | —           | ms UTC                               |
-| `published_at`    | INTEGER | sí   | —           | ms UTC                               |
+| Columna           | Tipo    | Nulo | Default     | Notas                                                 |
+| ----------------- | ------- | ---- | ----------- | ----------------------------------------------------- |
+| `id`              | TEXT    | no   | —           | PK. UUIDv7                                            |
+| `organization_id` | TEXT    | no   | —           | FK → `organizations`                                  |
+| `event`           | TEXT    | no   | —           | `order.created` u `order.status_changed`              |
+| `payload_json`    | TEXT    | no   | —           | `{ orderId }`, y `toStatus` en `order.status_changed` |
+| `status`          | TEXT    | no   | `'pending'` | `pending` o `published` (en la cola)                  |
+| `created_at`      | INTEGER | no   | —           | ms UTC                                                |
+| `published_at`    | INTEGER | sí   | —           | ms UTC                                                |
 
-- **Claves y unicidad:** PK `id`. Único `(organization_id, order_id, event)`. Único `(organization_id, id)`.
+- **Claves e índices:** PK `id`. T24 agrega `(status, created_at)` para el relay por Cron.
 - **Borrado:** Físico por Cron para filas `published` antiguas, si hace falta.
-- **Garantiza la base:** Pedido del mismo tenant; un evento por pedido.
-- **Valida el backend:** Qué eventos generan aviso; no crear outbox para pedidos de prueba.
+- **Garantiza la base:** Tenant existente, evento y estado del catálogo, JSON válido.
+- **Valida el backend:** Qué eventos generan aviso (`customer_whatsapp_opt_in`; ninguno en un pedido de prueba sin dueño verificado).
 
-**`notification_deliveries`** — Un intento de entrega por destinatario; da idempotencia al consumidor y recibe los estados de Meta.
+**`notification_deliveries`** — _Todavía no existe: la crea T24, cuya especificación en `phase-06-whatsapp.md` manda._ Un intento de entrega por destinatario; da idempotencia al consumidor y recibe los estados de Meta.
 
-| Columna                | Tipo    | Nulo | Default      | Notas                                                         |
-| ---------------------- | ------- | ---- | ------------ | ------------------------------------------------------------- |
-| `id`                   | TEXT    | no   | —            | PK. UUIDv7                                                    |
-| `organization_id`      | TEXT    | no   | —            | Tenant dueño de la fila                                       |
-| `outbox_id`            | TEXT    | no   | —            | FK compuesta → `notification_outbox`                          |
-| `dedupe_key`           | TEXT    | no   | —            | `orderId:event:recipient`                                     |
-| `channel`              | TEXT    | no   | `'whatsapp'` | `whatsapp`                                                    |
-| `recipient_type`       | TEXT    | no   | —            | `business` o `customer`                                       |
-| `recipient_phone_hash` | TEXT    | no   | —            | Hash del teléfono; nunca el número                            |
-| `template_name`        | TEXT    | no   | —            | Plantilla de Meta usada                                       |
-| `template_version`     | TEXT    | no   | —            | Versión o idioma de la plantilla                              |
-| `provider`             | TEXT    | no   | `'meta'`     | `meta`                                                        |
-| `provider_message_id`  | TEXT    | sí   | —            | Id del mensaje en Meta                                        |
-| `status`               | TEXT    | no   | `'pending'`  | `pending`, `sent`, `delivered`, `read`, `failed`, `ambiguous` |
-| `attempts`             | INTEGER | no   | `0`          | Intentos de envío                                             |
-| `error_code`           | TEXT    | sí   | —            | Código del proveedor, sin texto libre                         |
-| `created_at`           | INTEGER | no   | —            | ms UTC                                                        |
-| `updated_at`           | INTEGER | no   | —            | ms UTC                                                        |
+| Columna            | Tipo    | Nulo | Default      | Notas                                                                            |
+| ------------------ | ------- | ---- | ------------ | -------------------------------------------------------------------------------- |
+| `id`               | TEXT    | no   | —            | PK. UUIDv7                                                                       |
+| `organization_id`  | TEXT    | no   | —            | Tenant dueño de la fila                                                          |
+| `dedupe_key`       | TEXT    | no   | —            | `orderId:event:toStatus:recipientHash` (ADR-021)                                 |
+| `order_id`         | TEXT    | no   | —            | Pedido del aviso                                                                 |
+| `channel`          | TEXT    | no   | `'whatsapp'` | `whatsapp`                                                                       |
+| `recipient_hash`   | TEXT    | no   | —            | Hash del teléfono; nunca el número                                               |
+| `template`         | TEXT    | no   | —            | Plantilla de Meta usada                                                          |
+| `template_version` | TEXT    | no   | —            | Versión o idioma de la plantilla                                                 |
+| `status`           | TEXT    | no   | —            | `sending`, `sent`, `delivered`, `read`, `failed`, `ambiguous`, `dead`, `skipped` |
+| `external_id`      | TEXT    | sí   | —            | Id del mensaje en Meta                                                           |
+| `attempts`         | INTEGER | no   | `0`          | Intentos de envío                                                                |
+| `last_error`       | TEXT    | sí   | —            | Código del proveedor, sin texto libre                                            |
+| `created_at`       | INTEGER | no   | —            | ms UTC                                                                           |
+| `updated_at`       | INTEGER | no   | —            | ms UTC                                                                           |
 
-- **Claves y unicidad:** PK `id`. Únicos: `dedupe_key`, `provider_message_id`.
+- **Claves e índices:** PK `id`. Único `dedupe_key`. Índice `(organization_id, created_at)` para el presupuesto mensual.
 - **Borrado:** Físico por Cron de retención, si se define.
-- **Garantiza la base:** Un mismo aviso no se registra dos veces; un id de Meta apunta a una sola entrega.
+- **Garantiza la base:** Un mismo aviso no se registra dos veces.
 - **Valida el backend:** Clasificar errores; `ambiguous` sin reintento automático; consentimiento del comensal.
 
 **`audit_logs`** — Eventos sensibles: login, cambio de contraseña, altas y bajas de miembros, cambio de rol, publicación, cancelación, cambio de plan.
@@ -865,7 +869,9 @@ Estas reglas dependen de otra fila o del reloj, y el proyecto no usa triggers (D
 - `orders.subtotal_cents` es la suma de sus líneas.
 - Un código postal no está en dos zonas activas de la misma sucursal.
 - La sucursal está abierta y la modalidad está activa al crear el pedido.
-- La transición de estado es válida y el actor tiene permiso.
+- La transición de estado es válida para la modalidad y el actor tiene permiso (`ORDER_TRANSITIONS`, `canTransitionOrder`).
+- `out_for_delivery` solo ocurre en pedidos a domicilio.
+- Cada transición aplicada deja una sola fila de historial y, si corresponde, un solo evento de outbox.
 - Queda al menos un `owner` activo por organización.
 
 ---
@@ -880,6 +886,7 @@ Estas reglas dependen de otra fila o del reloj, y el proyecto no usa triggers (D
 - **Parámetros.** La API de D1 documenta parámetros `?` y `?NNN`, no con nombre. Las consultas de la sección 4 usan `:nombre` para que se lean; en Drizzle cada uno es un valor enlazado.
 - **Índices.** Cada índice lleva encima un comentario con la consulta que lo necesita. Los que no empiezan por `organization_id` son los que atienden una petición que todavía no conoce el tenant (slug, token de seguimiento, token de invitación, webhook de Meta) o un Cron que recorre todos los tenants.
 - **Índices parciales.** Solo filtran por `IS NULL` o `IS NOT NULL`. Un índice parcial del tipo `WHERE status = 'pending'` no lo aprovecha una consulta que envía `'pending'` como parámetro, que es lo que hace Drizzle.
+- **Numeración.** El repositorio nombra cada migración con `idx + 1`, pero `drizzle-kit generate` usa `idx`: el archivo nuevo sale con el número de la última migración y **sobrescribe su snapshot**. Después de generar, restaura ese snapshot con git, mueve el nuevo a `NNNN_snapshot.json`, renombra el `.sql` y corrige `tag` en `_journal.json`. Confirma con `drizzle-kit check`.
 - **`0000_identity.sql`.** La versión canónica la genera el CLI de Better Auth. Revisa que use tablas en plural y marcas de tiempo en milisegundos antes de fusionarla.
 
 ### 3.2 Archivos
@@ -1286,6 +1293,8 @@ CREATE INDEX options_group_idx ON options (organization_id, option_group_id, sor
 
 #### `0004_orders.sql`
 
+> Diseño original, no aplicado. El esquema vigente está en §2.3 y en las migraciones `0014_t21_pedidos.sql` y `0015_t23_panel_pedidos.sql`.
+
 ```sql
 -- 0004_orders.sql — Pedidos, líneas con snapshot e historial de estados
 
@@ -1404,6 +1413,8 @@ CREATE UNIQUE INDEX order_status_history_order_status_unique ON order_status_his
 ```
 
 #### `0005_messaging_operations.sql`
+
+> Diseño original, no aplicado. `notification_outbox` vigente está en `0014_t21_pedidos.sql`; `notification_deliveries` la crea T24.
 
 ```sql
 -- 0005_messaging_operations.sql — Outbox, entregas de WhatsApp, auditoría, cuotas, chequeo de dominios
@@ -1667,6 +1678,8 @@ Con el resultado de M1 el servicio decide qué mostrar: si `owner_verified = 0` 
 
 ### 4.3 Registrar un pedido completo
 
+> Diseño original: usa nombres anteriores. El flujo vigente está en `orders.service.ts` (T21).
+
 Dos batches, como fija el presupuesto de `POST /v1/public/orders`. Antes de ellos van Turnstile y las cuotas de `rate_counters`.
 
 **Lecturas.** El servicio valida modalidad, horario, mesa, zona, disponibilidad, selección de variantes y opciones, y calcula los importes solo con lo que devuelve la base.
@@ -1787,94 +1800,87 @@ Resultados de la corrida de prueba:
 
 ### 4.4 Recuperar y operar los pedidos de un negocio
 
+Consultas vigentes de T22 y T23. `:org_id` sale de la ruta verificada por `requireMembership`; `staff` solo llega a sus sucursales (`canAccessBranch`).
+
 ```sql
--- Pedidos de un negocio para el panel /app. :org_id sale de la ruta verificada por requireMembership.
--- Para staff, la lista de sucursales es tenant.branchIds; para owner/admin, las sucursales de la organización.
+-- P1. Huella del tablero para el ETag. Con If-None-Match vigente, es lo único que se lee.
+SELECT max(updated_at), count(*), coalesce(sum(version), 0)
+FROM orders
+WHERE organization_id = :org_id AND branch_id = :branch_id
+  AND status IN ('pending', 'accepted', 'preparing', 'ready', 'out_for_delivery');
 
--- P1. Tablero (Nuevos / En cocina / Listos). Sin dirección ni teléfono: la tarjeta no los necesita.
-SELECT o.id, o.branch_id, o.order_number, o.mode, o.status, o.table_number, o.customer_name,
-       o.total_cents, o.currency, o.is_test, o.version, o.created_at, o.updated_at
-FROM orders o
-WHERE o.organization_id = :org_id
-  AND o.branch_id IN (:branch_1, :branch_2)
-  AND o.status IN ('pending', 'accepted', 'preparing', 'ready', 'out_for_delivery')
-ORDER BY o.created_at;
+-- P2. Tablero. `+id` evita que SQLite recorra el historial por un índice de `id` (ADR-021).
+SELECT id, number, status, mode, table_number, customer_name, total_cents, notes, is_test,
+       version, created_at, updated_at
+FROM orders
+WHERE organization_id = :org_id AND branch_id = :branch_id
+  AND status IN ('pending', 'accepted', 'preparing', 'ready', 'out_for_delivery')
+ORDER BY +id
+LIMIT :limit_plus_one;
 
--- P2. Líneas de esos pedidos, en el mismo batch.
-SELECT i.order_id, i.position, i.product_name, i.variant_name, i.options_snapshot, i.quantity, i.line_total_cents, i.notes
-FROM order_items i
-JOIN orders o ON o.organization_id = i.organization_id AND o.id = i.order_id
-WHERE o.organization_id = :org_id
-  AND o.branch_id IN (:branch_1, :branch_2)
-  AND o.status IN ('pending', 'accepted', 'preparing', 'ready', 'out_for_delivery')
-ORDER BY i.order_id, i.position;
+-- P3. Cambios desde el último sondeo, también los terminados. Todos los estados en el IN:
+--     así el rango de updated_at usa el índice por estado.
+SELECT id, number, status, mode, table_number, customer_name, total_cents, notes, is_test,
+       version, created_at, updated_at
+FROM orders
+WHERE organization_id = :org_id AND branch_id = :branch_id
+  AND status IN ('pending', 'accepted', 'rejected', 'preparing', 'ready', 'out_for_delivery',
+                 'completed', 'delivered', 'cancelled')
+  AND updated_at >= :since
+ORDER BY +id
+LIMIT :limit_plus_one;
 
--- P3. Polling cada 10 s: solo lo que cambió desde la última respuesta (incluye los que salieron del tablero).
-SELECT o.id, o.status, o.version, o.updated_at
-FROM orders o
-WHERE o.organization_id = :org_id AND o.branch_id IN (:branch_1, :branch_2) AND o.updated_at > :since
-ORDER BY o.updated_at;
-
--- P4. Detalle de un pedido. Aquí sí salen teléfono y dirección, solo para quien opera esa sucursal.
-SELECT o.*
-FROM orders o
-WHERE o.organization_id = :org_id AND o.id = :order_id AND o.branch_id IN (:branch_1, :branch_2);
+-- P4. Historial de terminados por cursor, con el índice (organization_id, branch_id, id).
+SELECT id, number, status, mode, table_number, customer_name, total_cents, notes, is_test,
+       version, created_at, updated_at
+FROM orders
+WHERE organization_id = :org_id AND branch_id = :branch_id
+  AND status IN ('completed', 'delivered', 'rejected', 'cancelled')
+  AND id < :cursor
+ORDER BY id DESC
+LIMIT :limit_plus_one;
 ```
 
-Cambio de estado:
+Filas leídas en D1 local con 80,000 pedidos en la organización, 20,001 en la sucursal y 30 en curso:
+
+| Consulta                  | Antes  | Ahora |
+| ------------------------- | ------ | ----- |
+| Tablero (P2)              | 80,001 | 66    |
+| `since` (P3)              | 80,001 | 70    |
+| Terminados, 51 filas (P4) | 204    | 51    |
+
+Cambio de estado, en un solo `db.batch`:
 
 ```sql
--- Cambio de estado con concurrencia optimista, en un db.batch.
+-- T1. Historial, solo si el pedido sigue en la versión y el estado leídos.
+INSERT INTO order_status_history (id, organization_id, order_id, from_status, to_status,
+                                  actor_member_id, reason, created_at)
+SELECT :history_id, organization_id, id, :from_status, :to_status, :member_id, :reason, :now
+FROM orders
+WHERE organization_id = :org_id AND branch_id = :branch_id AND id = :order_id
+  AND version = :version_read AND status = :from_status;
 
--- T1. Solo avanza si nadie más tocó el pedido. meta.changes = 0 → CONFLICT.
+-- T2. Aviso, con la misma condición (se omite si no corresponde avisar).
+INSERT INTO notification_outbox (id, organization_id, event, payload_json, status, created_at, published_at)
+SELECT :outbox_id, organization_id, 'order.status_changed', :payload_json, 'pending', :now, NULL
+FROM orders
+WHERE organization_id = :org_id AND branch_id = :branch_id AND id = :order_id
+  AND version = :version_read AND status = :from_status;
+
+-- T3. El cambio va al final: las tres sentencias evalúan el mismo estado previo.
+--     Cero filas → CONFLICT, y T1 y T2 tampoco insertaron nada.
 UPDATE orders
 SET status = :to_status, version = version + 1, updated_at = :now
-WHERE organization_id = :org_id AND id = :order_id AND version = :version_read AND status = :from_status;
-
--- T2. Historial, solo si T1 aplicó (el pedido quedó en la versión siguiente). Si otro empleado hizo la
---     misma transición, el índice único (pedido, to_status) falla y el batch se revierte → CONFLICT.
-INSERT INTO order_status_history (id, organization_id, order_id, from_status, to_status, actor_type, actor_member_id, reason, created_at)
-SELECT :history_id, o.organization_id, o.id, :from_status, :to_status, 'member', :member_id, :reason, :now
-FROM orders o
-WHERE o.organization_id = :org_id AND o.id = :order_id AND o.version = :version_read + 1 AND o.status = :to_status;
-
--- T3. Aviso, con la misma condición.
-INSERT INTO notification_outbox (id, organization_id, order_id, event, created_at)
-SELECT :outbox_id, o.organization_id, o.id, 'order.' || :to_status, :now
-FROM orders o
-WHERE o.organization_id = :org_id AND o.id = :order_id AND o.version = :version_read + 1 AND o.status = :to_status;
+WHERE organization_id = :org_id AND branch_id = :branch_id AND id = :order_id
+  AND version = :version_read AND status = :from_status
+RETURNING id;
 ```
 
-Resultados de la corrida: la primera transición deja el pedido en `accepted`, versión 2. Repetir la misma transición con la versión vieja falla en T2 por el índice único y se revierte. Intentar otra transición con la versión vieja no cambia nada: T1 afecta 0 filas y T2 y T3 no insertan; el servicio responde `CONFLICT` al ver `meta.changes = 0`.
-
-Seguimiento del comensal:
-
-```sql
--- Seguimiento público (GET /v1/public/orders/:token). El servicio calcula SHA-256 del token y busca por el hash.
--- Sin teléfono ni dirección. id y organization_id solo se usan para S2; no salen en el DTO.
-
--- S1. Estado y totales.
-SELECT o.id, o.organization_id, o.order_number, o.mode, o.status, o.table_number, o.customer_name,
-       o.subtotal_cents, o.delivery_fee_cents, o.total_cents, o.currency, o.created_at, o.updated_at,
-       bs.name AS business_name, b.phone AS business_phone, b.prep_time_min
-FROM orders o
-JOIN branches b ON b.organization_id = o.organization_id AND b.id = o.branch_id
-JOIN businesses bs ON bs.organization_id = b.organization_id AND bs.id = b.business_id
-WHERE o.tracking_token_hash = :token_hash;
-
--- S2. Líneas y línea de tiempo (con el id que devolvió S1, en un segundo batch).
-SELECT i.position, i.product_name, i.variant_name, i.options_snapshot, i.quantity, i.line_total_cents
-FROM order_items i
-WHERE i.organization_id = :org_id AND i.order_id = :order_id
-ORDER BY i.position;
-
-SELECT h.to_status, h.reason, h.created_at
-FROM order_status_history h
-WHERE h.organization_id = :org_id AND h.order_id = :order_id
-ORDER BY h.created_at;
-```
+El seguimiento público busca por `tracking_token_hash` y solo selecciona columnas publicables (`findTrackedOrder`).
 
 ### 4.5 Comprobaciones
+
+> Diseño original: usa nombres anteriores y no corre contra el esquema real.
 
 Primero un pedido de referencia:
 
@@ -2092,23 +2098,33 @@ Un detalle de SQLite que el diseño aprovecha: si la columna hija es `NULL`, la 
 
 ### 5.2 Pedidos e importes
 
-**Moneda e importes.** Enteros en centavos, nunca `real`. La moneda vive en `branches.currency` y se copia a `orders.currency` al crear el pedido, así que un pedido se interpreta sin consultar la configuración actual. El pedido guarda `subtotal_cents`, `discount_cents`, `delivery_fee_cents` y `total_cents`, y la base exige `total = subtotal − descuento + envío`. Cada línea guarda `unit_price_cents`, `quantity` y `line_total_cents`, y la base exige `line_total = unit_price × quantity`. Que el subtotal sea la suma de las líneas lo calcula el servicio y lo vigila la auditoría.
+**Moneda e importes.** Enteros en centavos, nunca `real`. `orders.currency` guarda la moneda del pedido (solo `MXN` en el MVP). El pedido guarda `subtotal_cents`, `delivery_fee_cents` y `total_cents`, y la base exige `total = subtotal + envío`. Cada línea guarda `unit_price_cents`, `quantity` y `line_total_cents`, y la base exige `line_total = unit_price × quantity`. Que el subtotal sea la suma de las líneas lo calcula el servicio y lo vigila la auditoría.
 
-**Qué se guarda en cada línea.** El snapshot completo de lo vendido: `product_name`, `variant_name`, `options_snapshot` (grupo, opción, nombre y recargo de cada extra) y el precio unitario final. Con eso el pedido, el seguimiento y el mensaje de WhatsApp se arman sin leer el catálogo. `product_id` y `variant_id` se conservan como referencia para estadísticas, no para mostrar. La tarifa de envío es un snapshot en el pedido; `delivery_zone_id` solo dice de qué zona salió.
+**Qué se guarda en cada línea.** El snapshot completo de lo vendido: `product_name`, `variant_name`, `options_snapshot` (grupo, opción, nombre y recargo de cada extra) y el precio unitario final. Con eso el pedido, el seguimiento y el mensaje de WhatsApp se arman sin leer el catálogo. `product_id` se conserva como referencia para estadísticas, no para mostrar. La tarifa de envío es un snapshot en el pedido; `delivery_zone_id` solo dice de qué zona salió.
 
 **Catálogo que cambia.** Cambiar precio o nombre no toca pedidos anteriores (4.5). Agotar un producto (`is_available = 0`) lo deshabilita en el menú. Eliminarlo es un borrado lógico. El borrado físico de un producto pedido lo bloquea la FK.
 
-**Estados.** `pending → accepted → preparing → ready → delivered`, con `out_for_delivery` entre `ready` y `delivered` solo en Domicilio, y `rejected` y `cancelled` como salidas. La base fija el catálogo de valores y que `out_for_delivery` solo exista en pedidos a domicilio. La matriz de transiciones y sus permisos viven en código (ADR-007). Cada cambio se registra en `order_status_history` con actor, momento y motivo.
+**Estados (ADR-021).**
 
-**Concurrencia.** `orders.version` con actualización condicional (4.4). Como la máquina de estados no tiene ciclos, el historial admite una sola fila por pedido y estado: dos empleados que pulsan "Aceptar" a la vez producen un solo registro y un solo aviso. Si algún día se permite reabrir un pedido, basta con quitar ese índice único.
+| Estado             | Mesa y recoger           | Domicilio                       |
+| ------------------ | ------------------------ | ------------------------------- |
+| `pending`          | `accepted`, `rejected`   | `accepted`, `rejected`          |
+| `accepted`         | `preparing`, `cancelled` | `preparing`, `cancelled`        |
+| `preparing`        | `ready`, `cancelled`     | `ready`, `cancelled`            |
+| `ready`            | `completed`, `cancelled` | `out_for_delivery`, `cancelled` |
+| `out_for_delivery` | —                        | `delivered`, `cancelled`        |
+
+`completed`, `delivered`, `rejected` y `cancelled` son finales. La base fija el catálogo de valores; la matriz y sus permisos viven en código. Cancelar requiere `orders:cancel` (`owner` y `admin`), y rechazar o cancelar requiere motivo. Cada cambio se registra en `order_status_history` con actor, momento y motivo.
+
+**Concurrencia.** `orders.version` con sentencias condicionales (4.4). Historial, outbox y `update` exigen la misma `version` y el mismo estado dentro de un batch, así que dos empleados que pulsan "Aceptar" a la vez producen un solo registro y un solo aviso. No hace falta un índice único por pedido y estado, y reabrir un pedido en el futuro no chocaría con él.
 
 **Sin pedidos parciales.** Pedido, líneas, historial, evento de outbox, llave de idempotencia y contador van en un solo `db.batch`, que D1 ejecuta como transacción. La FK de las líneas hace de candado: si el pedido no se insertó, ninguna línea entra y el batch completo se revierte.
 
 **Sin pedidos duplicados.** El checkout genera la llave en `load` y la envía en un campo oculto. La primera sentencia del batch inserta `(scope, key)`; si la llave ya existe, la PK falla y nada se escribe. El servicio responde con lo guardado si el cuerpo es el mismo, o `IDEMPOTENCY_CONFLICT` si cambió. La llave vence a las 24 h. La cuota por teléfono (3 pedidos en 10 minutos) cubre el caso de alguien que recarga el checkout y obtiene una llave nueva.
 
-**Número visible.** `branches.order_seq` se incrementa en el mismo batch y el pedido toma ese valor. D1 tiene un solo escritor por base, así que no hay dos pedidos con el mismo número; el índice único es la red de seguridad. El número nunca se usa para consultar.
+**Número visible.** `branches.next_order_number` se incrementa en el mismo batch y el pedido toma ese valor. D1 tiene un solo escritor por base, así que no hay dos pedidos con el mismo número; el índice único es la red de seguridad. El número nunca se usa para consultar.
 
-**Pago.** El MVP no cobra. `payment_method` y `paid_at` registran cómo y cuándo se cobró fuera del sistema.
+**Pago.** El MVP no cobra: `payment_method` siempre es `cash` y no se registra el cobro.
 
 ### 5.3 Menú, QR y modalidades
 
@@ -2148,21 +2164,21 @@ Que la modalidad esté activa en la sucursal lo valida el servicio con R2. Una s
 
 **Qué persiste WhatsApp.**
 
-- `branches.notify_whatsapp_phone`, `notify_whatsapp_enabled` y `notify_whatsapp_opt_in_at`: a qué número avisar y desde cuándo lo autorizó el negocio. La base exige número y fecha de autorización para activarlo; el correo verificado lo exige el backend (ADR-008).
-- `orders.customer_notify_consent`: si el comensal aceptó recibir avisos.
-- `notification_outbox`: un evento por pedido y tipo, insertado en el mismo batch que el cambio que lo origina.
-- `notification_deliveries`: una fila por destinatario con llave de deduplicación, plantilla, id del mensaje en Meta y estado. El webhook de Meta (ADR-019) localiza la fila por `provider_message_id`.
+- `branches.alert_whatsapp` y `alert_opt_in_at`: a qué número avisar y desde cuándo lo autorizó el negocio. El correo verificado lo exige el backend (ADR-008).
+- `orders.customer_whatsapp_opt_in`: si el comensal aceptó recibir avisos.
+- `notification_outbox`: un evento por transición aplicada, insertado en el mismo batch que el cambio que lo origina. `order.status_changed` guarda `toStatus`, porque el pedido puede avanzar otra vez antes de que salga el aviso.
+- `notification_deliveries` (T24): una fila por destinatario con llave `orderId:event:toStatus:recipientHash`, plantilla, id del mensaje en Meta y estado. El webhook de Meta (ADR-019) localiza la fila por `external_id`.
 
 **Cómo se limita la exposición de direcciones y teléfonos.**
 
-1. **Un solo lugar.** Nombre, teléfono y dirección del comensal existen únicamente en `orders`. El outbox guarda ids; las entregas guardan el hash del teléfono. El consumidor lee el pedido en el momento de enviar, así que no quedan copias en la cola ni en tablas de mensajería.
-2. **Consultas separadas por audiencia.** El seguimiento público (S1) no selecciona teléfono ni dirección. El tablero del panel (P1) tampoco. Solo el detalle (P4) los devuelve, filtrado por organización y por las sucursales del miembro.
+1. **Un solo lugar.** Nombre, teléfono y dirección del comensal existen únicamente en `orders`. El outbox guarda el id del pedido y el estado destino; las entregas guardan el hash del teléfono. El consumidor lee el pedido en el momento de enviar, así que no quedan copias en la cola ni en tablas de mensajería.
+2. **Consultas separadas por audiencia.** El seguimiento público (S1) no selecciona teléfono ni dirección. El listado del panel (P2 a P4) tampoco. Solo el detalle (`findPanelOrder`) los devuelve, filtrado por organización y sucursal.
 3. **Mensajes.** La dirección entra al mensaje solo si el pedido es a domicilio y el destinatario es el negocio. El mensaje al comensal nunca la lleva.
 4. **Hash para lo operativo.** Las cuotas por teléfono y los bloqueos futuros usan `customer_phone_hash` (SHA-256 con sal del entorno). `rate_counters.key` también guarda el sujeto hasheado.
-5. **Retención.** Al anonimizar (ADR-015) se ponen en `NULL` nombre, teléfono, dirección, código postal, referencias y notas, y se marca `anonymized_at`. La base rechaza un pedido marcado como anonimizado que conserve alguno de esos campos. Importes, productos, zona y fechas se quedan. Las notas de cada línea se limpian en el mismo batch.
+5. **Retención.** ADR-015 sigue Propuesto y `orders` todavía no tiene `anonymized_at`. Como nombre, teléfono y dirección son obligatorios, T26 deberá reconstruir la tabla o usar valores de reemplazo (S6).
 6. **Fuera de la base.** Logs con `redact()` y respuestas por mapper a DTO, como ya exige `AGENTS.md`.
 
-El ADR-016 puso los datos de entrega dentro de `orders` en lugar de la tabla separada que proponía el README. Eso simplifica el batch y las lecturas; a cambio, la separación entre datos personales y operativos depende de que cada consulta seleccione columnas explícitas. Por eso P4 es la única consulta de este documento que usa `SELECT o.*`, y en el repositorio conviene que sea la única función que lo haga.
+El ADR-016 puso los datos de entrega dentro de `orders` en lugar de la tabla separada que proponía el README. Eso simplifica el batch y las lecturas; a cambio, la separación entre datos personales y operativos depende de que cada consulta seleccione columnas explícitas. Por eso el repositorio selecciona columnas explícitas en todas las lecturas de pedidos.
 
 ---
 
