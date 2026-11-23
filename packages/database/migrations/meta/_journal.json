@@ -99,6 +99,13 @@
       "when": 1794980073400,
       "tag": "0014_t21_pedidos",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1795410978690,
+      "tag": "0015_t23_panel_pedidos",
+      "breakpoints": true
     }
   ]
 }

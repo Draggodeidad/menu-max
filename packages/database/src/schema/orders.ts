@@ -105,6 +105,8 @@ export const orders = sqliteTable(
       table.status,
       table.updatedAt,
     ),
+    // Panel (T23, ADR-021): historial de terminados paginado por `id` dentro de la sucursal.
+    index("orders_org_branch_id_idx").on(table.organizationId, table.branchId, table.id),
     // Cuota de pedidos por teléfono y sucursal (ADR-010).
     index("orders_branch_phone_created_idx").on(
       table.branchId,
