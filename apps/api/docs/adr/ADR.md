@@ -20,7 +20,7 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 | [008](#adr-008--verificación-de-correo-no-bloqueante)                 | Verificación de correo no bloqueante                     | Aceptado (gracia de 21 días) | 2026-11-11 |
 | [009](#adr-009--correo-transaccional-con-cloudflare-email-service)    | Correo con Cloudflare Email Service tras puerto `Mailer` | Reemplazado por ADR-020      | 2026-11-11 |
 | [010](#adr-010--anti-abuso-en-capas)                                  | Anti-abuso en capas                                      | Aceptado (login: Propuesto)  | 2026-11-11 |
-| [011](#adr-011--una-cola-con-dlq-y-outbox-solo-para-pedidos)          | Una cola con DLQ; outbox solo para pedidos               | Aceptado                     | 2026-11-11 |
+| [011](#adr-011--una-cola-con-dlq-y-outbox-solo-para-pedidos)          | Una cola con DLQ; outbox solo para pedidos               | Aceptado (enmienda T23)      | 2026-11-11 |
 | [012](#adr-012--documentación-openapi-solo-en-desarrollo)             | Documentación OpenAPI solo en desarrollo                 | Aceptado                     | 2026-11-11 |
 | [013](#adr-013--ids-uuidv7-y-tokens-públicos-hasheados)               | Ids UUIDv7 y tokens públicos hasheados                   | Aceptado (enmienda T21)      | 2026-11-11 |
 | [014](#adr-014--caché-del-menú-público-en-web-con-versión)            | Caché del menú público en WEB con versión                | Aceptado (TTL: Propuesto)    | 2026-11-11 |
@@ -29,6 +29,7 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 | [017](#adr-017--qr-en-svg-generado-en-la-api-con-uqr)                 | QR en SVG generado en la API con `uqr`                   | Aceptado                     | 2026-11-17 |
 | [018](#adr-018--zonas-de-entrega-por-código-postal-con-tarifa-fija)   | Zonas de entrega por código postal con tarifa fija       | Aceptado                     | 2026-11-14 |
 | [020](#adr-020--correo-transaccional-con-resend)                      | Correo con Resend tras puerto `Mailer`                   | Aceptado                     | 2026-11-13 |
+| [021](#adr-021--máquina-de-estados-y-panel-de-pedidos)                | Máquina de estados y panel de pedidos                    | Aceptado                     | 2026-11-22 |
 
 ---
 
@@ -334,6 +335,12 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 
 **Alternativas descartadas.** Una cola por tipo de mensaje; outbox para todo.
 
+**Enmienda (2026-11-22, T23).** Solo cambia la llave de deduplicación; el resto de la decisión sigue igual.
+
+- `dedupe_key` pasa de `orderId:event:recipient` a `orderId:event:toStatus:recipientHash`.
+- Todos los cambios de estado usan el evento `order.status_changed`: con la llave anterior, cada comensal recibiría solo el primero.
+- `order.created` no lleva `toStatus` en su payload y usa `pending`. El detalle está en ADR-021.
+
 ---
 
 ## ADR-012 — Documentación OpenAPI solo en desarrollo
@@ -550,6 +557,45 @@ Registro de decisiones del backend (`apps/api`, `packages/contracts`, `packages/
 **Pendiente.** Prueba de entregabilidad a Gmail, Outlook y Yahoo antes del piloto.
 
 **Alternativas descartadas.** Cloudflare Email Service (costo, beta y rebotes sin definir); SDK oficial `resend` (dependencia extra para una llamada HTTP); Amazon SES (más configuración y firma de peticiones propia para el mismo resultado).
+
+---
+
+## ADR-021 — Máquina de estados y panel de pedidos
+
+**Estado:** Aceptado · **Fecha:** 2026-11-22 · Precisa ADR-007 y ADR-011
+
+**Contexto.** T23 entrega el panel: el personal consulta cada 10 s y avanza los pedidos sin pisarse. Faltaba definir desde qué estados se cancela (`DATABASE.md` lo dejó abierto), cómo evitar historial y avisos duplicados sin transacciones interactivas (ADR-003), qué necesita T24 para avisar de cada cambio y cómo leer el tablero sin recorrer el historial. Una medición en D1 local con 80,000 pedidos mostró que la primera versión del listado leía toda la organización en cada sondeo.
+
+**Decisión.**
+
+- **Transiciones** (`ORDER_TRANSITIONS`, por modalidad):
+  - `pending → accepted | rejected`;
+  - `accepted → preparing | cancelled`;
+  - `preparing → ready | cancelled`;
+  - `ready → completed | cancelled` en mesa y recoger;
+  - `ready → out_for_delivery | cancelled` y `out_for_delivery → delivered | cancelled` en domicilio.
+- **Permisos.** Cancelar requiere `orders:cancel` (`owner` y `admin`). Rechazar o cancelar requiere motivo de hasta 280 caracteres, visible solo en el panel.
+- **Concurrencia.** Un solo `db.batch` inserta historial y outbox, y al final hace el `update`. Las tres sentencias exigen la `version` y el estado leídos, así que evalúan el mismo estado previo: si otra persona ganó, ninguna escribe y se responde `CONFLICT`.
+- **Avisos.** `order.status_changed` guarda `{ orderId, toStatus }` y solo se inserta con `customer_whatsapp_opt_in`. Un pedido de prueba sin dueño verificado no genera avisos (ADR-008). T24 usa `orderId:event:toStatus:recipientHash` como llave y elige la plantilla por `toStatus`, nunca por el estado actual del pedido.
+- **Lectura del panel.**
+  - El tablero y `since` usan `(organization_id, branch_id, status, updated_at)` y ordenan con `ORDER BY +id`, para que SQLite no elija un índice por `id` y recorra el historial.
+  - Los terminados se paginan con el índice nuevo `(organization_id, branch_id, id)`, migración `0015`.
+  - `since` ignora `status` y compara con `>=`. `nextSince` lleva 5 s de margen; un pedido repetido se identifica por `id` y `version`.
+  - El `ETag` del tablero combina máximo de `updated_at`, conteo y suma de `version`.
+
+**Consecuencias.**
+
+- El tablero pasa de 80,001 a 66 filas leídas por sondeo, y `since` de 80,001 a 70. Una prueba de `rows_read` lo protege.
+- La migración solo crea un índice: no reescribe datos y el código funciona antes y después de aplicarla. Cada escritura en `orders` mantiene un índice más.
+- La base no impide un `out_for_delivery` fuera de domicilio: agregar ese `CHECK` exige reconstruir `orders` y hoy lo cubre la política.
+- La base tampoco impide dos filas de historial con el mismo estado; las sentencias condicionales lo evitan, y reabrir un pedido en el futuro no requeriría quitar un índice.
+
+**Alternativas descartadas.**
+
+- Índice único `(organization_id, order_id, to_status)`: no es necesario con sentencias condicionales y bloquearía reabrir un pedido.
+- `order_id` en `notification_outbox`: T24 publica por el id del outbox y el payload ya lleva el pedido.
+- Un evento por estado (`order.accepted`, …): obliga a reconstruir la tabla por el `CHECK` de `event`.
+- Índice `(organization_id, branch_id, updated_at)`: no resuelve el orden por `id` del historial.
 
 ---
 
