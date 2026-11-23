@@ -5,6 +5,7 @@ import {
   OUTBOX_EVENTS,
   OUTBOX_STATUSES,
   PAYMENT_METHODS,
+  type OrderStatus,
 } from "@menu-max/contracts";
 import { sql } from "drizzle-orm";
 import {
@@ -34,8 +35,12 @@ export type OrderOptionSnapshot = {
   priceDeltaCents: number;
 };
 
-/** Contenido de `notification_outbox.payload_json`: solo ids; el aviso se arma al enviarlo. */
-export type OutboxPayload = { orderId: string };
+/**
+ * Contenido de `notification_outbox.payload_json`, sin datos personales; el aviso se arma al
+ * enviarlo. `toStatus` va en `order.status_changed`: distingue cada cambio del mismo pedido en la
+ * llave de deduplicación de T24.
+ */
+export type OutboxPayload = { orderId: string; toStatus?: OrderStatus };
 
 /**
  * Pedido. `number` es el número visible por sucursal (`#1042`, ADR-013): sale de
